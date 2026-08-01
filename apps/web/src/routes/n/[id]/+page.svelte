@@ -261,6 +261,15 @@
 						{/each}
 					</select>
 				{/if}
+			{:else}
+				<button
+					class="icon"
+					aria-label="Dictation unavailable"
+					title="Dictation needs Chrome/Edge/Safari (Web Speech) or a WebGPU browser (on-device)"
+					disabled
+				>
+					<Mic size={18} />
+				</button>
 			{/if}
 			<button class="icon" aria-label="Export note" onclick={exportNote}>
 				<Download size={18} />
