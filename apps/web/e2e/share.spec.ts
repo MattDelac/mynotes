@@ -23,7 +23,7 @@ test('share creates an encrypted link that decrypts in a fresh browser', async (
 	await context.close();
 });
 
-test('re-sharing pushes updated content to the same link', async ({ page, browser }) => {
+test('edits auto-sync to the shared link within seconds', async ({ page, browser }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
 	await editor.fill('version one');
@@ -34,16 +34,36 @@ test('re-sharing pushes updated content to the same link', async ({ page, browse
 	await expect(linkInput).toBeVisible({ timeout: 10_000 });
 	const link = await linkInput.inputValue();
 
-	await editor.fill('version two');
-	await page.waitForTimeout(700);
 	await page.getByRole('button', { name: 'Close share panel' }).click();
-	await page.getByRole('button', { name: 'Share note' }).click();
-	await expect(linkInput).toBeVisible({ timeout: 10_000 });
-	expect(await linkInput.inputValue()).toBe(link);
+	await editor.fill('version two');
+	await expect(page.locator('header .sync')).toHaveText('shared ✓', { timeout: 15_000 });
 
 	const context = await browser.newContext();
 	const viewer = await context.newPage();
 	await viewer.goto(link);
 	await expect(viewer.locator('.preview')).toContainText('version two');
+	await context.close();
+});
+
+test('an open shared view pulls new content automatically', async ({ page, browser }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('live v1');
+	await page.waitForTimeout(700);
+
+	await page.getByRole('button', { name: 'Share note' }).click();
+	const linkInput = page.locator('.sharebar input');
+	await expect(linkInput).toBeVisible({ timeout: 10_000 });
+	const link = await linkInput.inputValue();
+	await page.getByRole('button', { name: 'Close share panel' }).click();
+
+	const context = await browser.newContext();
+	const viewer = await context.newPage();
+	await viewer.goto(link);
+	await expect(viewer.locator('.preview')).toContainText('live v1');
+
+	await editor.fill('live v2');
+	await expect(page.locator('header .sync')).toHaveText('shared ✓', { timeout: 15_000 });
+	await expect(viewer.locator('.preview')).toContainText('live v2', { timeout: 20_000 });
 	await context.close();
 });

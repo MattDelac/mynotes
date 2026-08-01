@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { editorText } from './helpers';
 
 test('export downloads a markdown file', async ({ page }) => {
 	await page.goto('/');
@@ -27,8 +28,6 @@ test('import creates a note from a markdown file', async ({ page }) => {
 	});
 
 	await expect(page).toHaveURL(/\/n\/[\w-]+/);
-	await expect(page.getByRole('textbox', { name: 'Note' })).toHaveValue(
-		'# Imported Title\n\nimported body'
-	);
+	await expect.poll(() => editorText(page)).toBe('# Imported Title\n\nimported body');
 	await expect(page.locator('header .title')).toHaveText('Imported Title');
 });

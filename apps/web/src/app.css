@@ -1,0 +1,146 @@
+:root {
+	--bg: #ffffff;
+	--bg-subtle: #f6f6f7;
+	--bg-hover: #ececee;
+	--bg-active: #e2e2e6;
+	--fg: #1c1c1e;
+	--fg-muted: #6e6e73;
+	--border: #e4e4e8;
+	--accent: #2563eb;
+	--accent-soft: #dbe7fd;
+	--danger: #dc2626;
+	--danger-soft: #fdecec;
+	--success: #16a34a;
+	--info-soft: #eef2ff;
+	--radius: 8px;
+	--content-width: 720px;
+	--font:
+		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+	color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #17181a;
+		--bg-subtle: #1e1f22;
+		--bg-hover: #28292d;
+		--bg-active: #323338;
+		--fg: #ececef;
+		--fg-muted: #9a9aa0;
+		--border: #2e2f33;
+		--accent: #5b8def;
+		--accent-soft: #24344f;
+		--danger: #f05656;
+		--danger-soft: #3a2020;
+		--success: #3fb96c;
+		--info-soft: #1f2536;
+
+		color-scheme: dark;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+}
+
+body {
+	font-family: var(--font);
+	background: var(--bg);
+	color: var(--fg);
+	-webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+	font-family: inherit;
+	color: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+	border-radius: var(--radius);
+}
+
+.preview {
+	line-height: 1.7;
+	font-size: 1.05rem;
+	word-wrap: break-word;
+}
+.preview h1 {
+	font-size: 1.7em;
+	margin: 1.2em 0 0.5em;
+}
+.preview h2 {
+	font-size: 1.45em;
+	margin: 1.2em 0 0.5em;
+}
+.preview h3 {
+	font-size: 1.2em;
+	margin: 1.1em 0 0.4em;
+}
+.preview h1:first-child,
+.preview h2:first-child,
+.preview h3:first-child,
+.preview p:first-child {
+	margin-top: 0;
+}
+.preview p {
+	margin: 0.6em 0;
+}
+.preview ul,
+.preview ol {
+	padding-left: 1.5em;
+	margin: 0.6em 0;
+}
+.preview code {
+	font-family: var(--mono);
+	font-size: 0.9em;
+	background: var(--bg-subtle);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 0.1em 0.35em;
+}
+.preview pre {
+	background: var(--bg-subtle);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 0.75rem 1rem;
+	overflow-x: auto;
+}
+.preview pre code {
+	background: none;
+	border: none;
+	padding: 0;
+}
+.preview blockquote {
+	margin: 0.8em 0;
+	padding: 0.1em 0 0.1em 1em;
+	border-left: 3px solid var(--border);
+	color: var(--fg-muted);
+}
+.preview a {
+	color: var(--accent);
+}
+.preview hr {
+	border: none;
+	border-top: 1px solid var(--border);
+	margin: 1.5em 0;
+}
+.preview img {
+	max-width: 100%;
+}

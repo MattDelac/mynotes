@@ -1,8 +1,4 @@
-export interface Dictation {
-	readonly active: boolean;
-	start(): void;
-	stop(): void;
-}
+import type { VoiceCallbacks, VoiceEngine } from './types';
 
 interface SpeechRecognitionResultItem {
 	transcript: string;
@@ -18,13 +14,17 @@ interface SpeechRecognitionEventLike {
 	results: { length: number; [index: number]: SpeechRecognitionResult };
 }
 
+interface SpeechRecognitionErrorLike {
+	error: string;
+}
+
 interface SpeechRecognitionLike {
 	continuous: boolean;
 	interimResults: boolean;
 	lang: string;
 	onresult: ((event: SpeechRecognitionEventLike) => void) | null;
 	onend: (() => void) | null;
-	onerror: (() => void) | null;
+	onerror: ((event: SpeechRecognitionErrorLike) => void) | null;
 	start(): void;
 	stop(): void;
 }
@@ -39,47 +39,43 @@ function ctor(): SpeechRecognitionCtor | null {
 	return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-export function dictationSupported(): boolean {
-	return typeof window !== 'undefined' && ctor() !== null;
-}
+const ERROR_MESSAGES: Record<string, string> = {
+	'not-allowed': 'microphone access denied',
+	'no-speech': 'no speech detected',
+	network: 'speech service unreachable (browser speech recognition needs network)',
+	'audio-capture': 'no microphone found',
+	'not-supported': 'speech recognition not supported in this browser'
+};
 
-export function createDictation(
-	onFinal: (text: string) => void,
-	onActiveChange?: (active: boolean) => void
-): Dictation | null {
+export function createWebSpeechEngine(callbacks: VoiceCallbacks): VoiceEngine | null {
 	const Ctor = ctor();
 	if (!Ctor) return null;
 	const recognition = new Ctor();
 	recognition.continuous = true;
 	recognition.interimResults = false;
-	let active = false;
-
-	function setActive(value: boolean) {
-		active = value;
-		onActiveChange?.(value);
-	}
 
 	recognition.onresult = (event) => {
 		for (let i = event.resultIndex; i < event.results.length; i++) {
 			const result = event.results[i];
 			if (result.isFinal) {
-				onFinal(result[0].transcript);
+				callbacks.onText(result[0].transcript);
 			}
 		}
 	};
-	recognition.onend = () => setActive(false);
-	recognition.onerror = () => setActive(false);
+	recognition.onend = () => callbacks.onActiveChange?.(false);
+	recognition.onerror = (event) => {
+		callbacks.onError?.(ERROR_MESSAGES[event.error] ?? `speech error: ${event.error}`);
+		callbacks.onActiveChange?.(false);
+	};
 
 	return {
-		get active() {
-			return active;
-		},
+		kind: 'webspeech',
 		start() {
-			setActive(true);
+			callbacks.onActiveChange?.(true);
 			recognition.start();
 		},
 		stop() {
-			setActive(false);
+			callbacks.onActiveChange?.(false);
 			recognition.stop();
 		}
 	};
