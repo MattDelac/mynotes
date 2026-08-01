@@ -8,8 +8,6 @@
 	import { mailtoLink, shareNote, viewLink } from '$lib/share';
 	import { createDictation, dictationSupported, type Dictation } from '$lib/voice';
 	import { downloadNote } from '$lib/export';
-	import { transcript } from '$lib/chat-store.svelte';
-	import Chat from '$lib/Chat.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -22,8 +20,8 @@
 	let sharing = $state(false);
 	let shareError = $state('');
 	let copied = $state(false);
-	let chatOpen = $state(false);
 	let textarea = $state<HTMLTextAreaElement | null>(null);
+	let fileInput = $state<HTMLInputElement | null>(null);
 	let dictation = $state<Dictation | null>(null);
 	let dictating = $state(false);
 
@@ -57,15 +55,21 @@
 	}
 
 	function exportNote() {
-		const extra = transcript();
-		const ok = confirm(
-			'This will export an unencrypted copy of the note' +
-				(extra ? ' including the AI chat transcript' : '') +
-				'. Continue?'
-		);
+		const ok = confirm('This will export an unencrypted copy of the note. Continue?');
 		if (ok) {
-			downloadNote(note, extra);
+			downloadNote(note);
 		}
+	}
+
+	async function importFile(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		const fresh = createNote();
+		fresh.content = await file.text();
+		await saveNote(fresh);
+		input.value = '';
+		await goto(resolve(`/n/${fresh.id}`));
 	}
 
 	const persist = debounce(async () => {
@@ -96,7 +100,7 @@
 		const fresh = createNote();
 		await saveNote(fresh);
 		sidebarOpen = false;
-		goto(resolve(`/n/${fresh.id}`));
+		await goto(resolve(`/n/${fresh.id}`));
 	}
 
 	async function removeNote(id: string) {
@@ -104,11 +108,11 @@
 		notes = await listNotes();
 		if (id === note.id) {
 			if (notes.length > 0) {
-				goto(resolve(`/n/${notes[0].id}`));
+				await goto(resolve(`/n/${notes[0].id}`));
 			} else {
 				const fresh = createNote();
 				await saveNote(fresh);
-				goto(resolve(`/n/${fresh.id}`));
+				await goto(resolve(`/n/${fresh.id}`));
 			}
 		}
 	}
@@ -173,9 +177,14 @@
 				</button>
 			{/if}
 			<button class="icon" aria-label="Export note" onclick={exportNote}>⬇</button>
-			<button class="icon" aria-label="Toggle AI chat" onclick={() => (chatOpen = !chatOpen)}>
-				💬
-			</button>
+			<button class="icon" aria-label="Import note" onclick={() => fileInput?.click()}>⬆</button>
+			<input
+				bind:this={fileInput}
+				type="file"
+				accept=".md,.markdown,.txt,text/markdown,text/plain"
+				hidden
+				onchange={importFile}
+			/>
 			<button class="icon" aria-label="Share note" disabled={sharing} onclick={share}>
 				{note.share ? '⇪' : '🔗'}
 			</button>
@@ -232,10 +241,6 @@
 				></textarea>
 			{/if}
 		</main>
-
-		{#if chatOpen}
-			<Chat noteContent={note.content} onclose={() => (chatOpen = false)} />
-		{/if}
 	</div>
 </div>
 

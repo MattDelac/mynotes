@@ -57,7 +57,7 @@ export async function getNote(id: string): Promise<Note | undefined> {
 
 export async function saveNote(note: Note): Promise<void> {
 	const database = await db();
-	await database.put('notes', note);
+	await database.put('notes', JSON.parse(JSON.stringify(note)) as Note);
 }
 
 export async function deleteNote(id: string): Promise<void> {

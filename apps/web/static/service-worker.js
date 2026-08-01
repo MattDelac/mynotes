@@ -1,12 +1,7 @@
-const CACHE = 'mynotes-v1';
+const CACHE = 'mynotes-v2';
 
 self.addEventListener('install', (event) => {
-	event.waitUntil(
-		caches
-			.open(CACHE)
-			.then((cache) => cache.addAll(['./', './manifest.webmanifest', './icon.svg']))
-			.then(() => self.skipWaiting())
-	);
+	event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
@@ -20,21 +15,38 @@ self.addEventListener('activate', (event) => {
 	);
 });
 
+async function networkFirst(request) {
+	try {
+		const response = await fetch(request);
+		if (response.ok) {
+			const cache = await caches.open(CACHE);
+			cache.put(request, response.clone());
+		}
+		return response;
+	} catch {
+		const cached = await caches.match(request);
+		if (cached) return cached;
+		throw new Error('offline and not cached');
+	}
+}
+
+async function cacheFirst(request) {
+	const cached = await caches.match(request);
+	if (cached) return cached;
+	const response = await fetch(request);
+	if (response.ok) {
+		const cache = await caches.open(CACHE);
+		cache.put(request, response.clone());
+	}
+	return response;
+}
+
 self.addEventListener('fetch', (event) => {
 	const { request } = event;
 	if (request.method !== 'GET' || new URL(request.url).origin !== location.origin) return;
-	event.respondWith(
-		caches.match(request, { ignoreSearch: true }).then(async (cached) => {
-			const network = fetch(request)
-				.then((response) => {
-					if (response.ok) {
-						const copy = response.clone();
-						caches.open(CACHE).then((cache) => cache.put(request, copy));
-					}
-					return response;
-				})
-				.catch(() => cached);
-			return cached ?? (await network);
-		})
-	);
+	if (new URL(request.url).pathname.includes('/_app/immutable/')) {
+		event.respondWith(cacheFirst(request));
+	} else {
+		event.respondWith(networkFirst(request));
+	}
 });
