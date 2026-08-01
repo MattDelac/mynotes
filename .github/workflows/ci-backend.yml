@@ -1,0 +1,30 @@
+name: CI Backend
+
+on:
+  push:
+    branches: [main]
+    paths: ["api/**", ".github/workflows/ci-backend.yml"]
+  pull_request:
+    paths: ["api/**", ".github/workflows/ci-backend.yml"]
+
+env:
+  SQLX_OFFLINE: "true"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test

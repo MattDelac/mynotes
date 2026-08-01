@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mynotes-api
+spec:
+  selector:
+    app: mynotes-api
+  ports:
+    - port: 80
+      targetPort: 3000

@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mynotes-api
+  labels:
+    app: mynotes-api
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mynotes-api
+  template:
+    metadata:
+      labels:
+        app: mynotes-api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/OWNER/mynotes-api:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: LITESTREAM_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: mynotes-litestream
+                  key: bucket
+            - name: LITESTREAM_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: mynotes-litestream
+                  key: endpoint
+            - name: LITESTREAM_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: mynotes-litestream
+                  key: access-key-id
+            - name: LITESTREAM_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mynotes-litestream
+                  key: secret-access-key
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mynotes-api-data
