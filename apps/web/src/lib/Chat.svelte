@@ -1,23 +1,18 @@
 <script lang="ts">
-	import {
-		defaultModel,
-		loadKey,
-		saveKey,
-		streamChat,
-		type ChatMessage,
-		type Provider
-	} from './ai';
+	import { defaultModel, loadKey, saveKey, streamChat, type Provider } from './ai';
+	import { addMessage, appendToLast, chatState, removeLast } from './chat-store.svelte';
 
 	let { noteContent, onclose }: { noteContent: string; onclose: () => void } = $props();
 
 	let provider = $state<Provider>('anthropic');
 	let key = $state('');
 	let model = $state('');
-	let messages = $state<ChatMessage[]>([]);
 	let input = $state('');
 	let includeNote = $state(true);
 	let streaming = $state(false);
 	let error = $state('');
+
+	const messages = $derived(chatState.messages);
 
 	$effect(() => {
 		key = loadKey(provider);
@@ -38,19 +33,18 @@
 		}
 		error = '';
 		input = '';
-		messages = [...messages, { role: 'user', content: text }];
-		messages = [...messages, { role: 'assistant', content: '' }];
+		addMessage({ role: 'user', content: text });
+		addMessage({ role: 'assistant', content: '' });
 		streaming = true;
 		try {
-			const history = messages.slice(0, -1);
+			const history = chatState.messages.slice(0, -1);
 			const context = includeNote && noteContent.trim() ? noteContent : null;
 			for await (const delta of streamChat(provider, key, model, history, context)) {
-				const last = messages[messages.length - 1];
-				messages = [...messages.slice(0, -1), { ...last, content: last.content + delta }];
+				appendToLast(delta);
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'request failed';
-			messages = messages.slice(0, -1);
+			removeLast();
 		} finally {
 			streaming = false;
 		}

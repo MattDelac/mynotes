@@ -6,6 +6,9 @@
 	import { listNotes, saveNote, deleteNote, createNote, noteTitle, type Note } from '$lib/db';
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, shareNote, viewLink } from '$lib/share';
+	import { createDictation, dictationSupported, type Dictation } from '$lib/voice';
+	import { downloadNote } from '$lib/export';
+	import { transcript } from '$lib/chat-store.svelte';
 	import Chat from '$lib/Chat.svelte';
 	import type { PageProps } from './$types';
 
@@ -20,6 +23,50 @@
 	let shareError = $state('');
 	let copied = $state(false);
 	let chatOpen = $state(false);
+	let textarea = $state<HTMLTextAreaElement | null>(null);
+	let dictation = $state<Dictation | null>(null);
+	let dictating = $state(false);
+
+	$effect(() => {
+		if (dictationSupported() && !dictation) {
+			dictation = createDictation(insertAtCursor, (active) => (dictating = active));
+		}
+	});
+
+	function insertAtCursor(text: string) {
+		if (!textarea) {
+			note.content += text;
+			persist();
+			return;
+		}
+		const start = textarea.selectionStart ?? note.content.length;
+		const end = textarea.selectionEnd ?? start;
+		note.content = note.content.slice(0, start) + text + note.content.slice(end);
+		const cursor = start + text.length;
+		textarea.setSelectionRange(cursor, cursor);
+		persist();
+	}
+
+	function toggleDictation() {
+		if (!dictation) return;
+		if (dictating) {
+			dictation.stop();
+		} else {
+			dictation.start();
+		}
+	}
+
+	function exportNote() {
+		const extra = transcript();
+		const ok = confirm(
+			'This will export an unencrypted copy of the note' +
+				(extra ? ' including the AI chat transcript' : '') +
+				'. Continue?'
+		);
+		if (ok) {
+			downloadNote(note, extra);
+		}
+	}
 
 	const persist = debounce(async () => {
 		note.updatedAt = Date.now();
@@ -115,6 +162,17 @@
 				☰
 			</button>
 			<span class="title">{noteTitle(note.content)}</span>
+			{#if dictation}
+				<button
+					class="icon"
+					class:recording={dictating}
+					aria-label="Toggle dictation"
+					onclick={toggleDictation}
+				>
+					{dictating ? '⏹' : '🎙'}
+				</button>
+			{/if}
+			<button class="icon" aria-label="Export note" onclick={exportNote}>⬇</button>
 			<button class="icon" aria-label="Toggle AI chat" onclick={() => (chatOpen = !chatOpen)}>
 				💬
 			</button>
@@ -166,6 +224,7 @@
 				</article>
 			{:else}
 				<textarea
+					bind:this={textarea}
 					bind:value={note.content}
 					oninput={onInput}
 					placeholder="Start typing…"
@@ -206,6 +265,9 @@
 		font-size: 1.2rem;
 		cursor: pointer;
 		padding: 0.25rem 0.5rem;
+	}
+	.icon.recording {
+		color: #c00;
 	}
 	.sharebar {
 		display: flex;
