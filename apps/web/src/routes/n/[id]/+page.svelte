@@ -6,6 +6,7 @@
 	import { listNotes, saveNote, deleteNote, createNote, noteTitle, type Note } from '$lib/db';
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, shareNote, viewLink } from '$lib/share';
+	import Chat from '$lib/Chat.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -18,6 +19,7 @@
 	let sharing = $state(false);
 	let shareError = $state('');
 	let copied = $state(false);
+	let chatOpen = $state(false);
 
 	const persist = debounce(async () => {
 		note.updatedAt = Date.now();
@@ -113,6 +115,9 @@
 				☰
 			</button>
 			<span class="title">{noteTitle(note.content)}</span>
+			<button class="icon" aria-label="Toggle AI chat" onclick={() => (chatOpen = !chatOpen)}>
+				💬
+			</button>
 			<button class="icon" aria-label="Share note" disabled={sharing} onclick={share}>
 				{note.share ? '⇪' : '🔗'}
 			</button>
@@ -168,6 +173,10 @@
 				></textarea>
 			{/if}
 		</main>
+
+		{#if chatOpen}
+			<Chat noteContent={note.content} onclose={() => (chatOpen = false)} />
+		{/if}
 	</div>
 </div>
 
