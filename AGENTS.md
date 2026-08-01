@@ -21,8 +21,14 @@ only when sharing. Share links carry the AES-GCM key in the URL fragment. Full s
 
 ## Local development
 
-Use the Nix dev shell if available (`nix develop`) — provides rust, node 22, pnpm via corepack,
-sqlx-cli, docker, kubectl. Otherwise install rust + node 22 + `corepack pnpm` manually.
+Use the Nix dev shell if available — provides rust, node 22, pnpm via corepack, sqlx-cli, docker,
+kubectl:
+
+```sh
+nix develop --extra-experimental-features nix-command --extra-experimental-features flakes
+```
+
+Otherwise install rust + node 22 + `corepack pnpm` manually.
 
 ### Frontend (`apps/web`)
 
@@ -61,6 +67,11 @@ Env vars: `DATABASE_URL` (default `sqlite:mynotes.db`), `BIND_ADDR` (default `0.
 - Rust: axum handlers in `api/src/lib.rs` (testable), `main.rs` is wiring only. Dynamic
   `sqlx::query` (not macros) so no `.sqlx/` offline data is needed. Migrations in
   `api/migrations/NNNN_name.sql`.
+- Frontend lib modules (`apps/web/src/lib/`): `db.ts` (IndexedDB), `crypto.ts` (AES-GCM,
+  base64url), `api.ts` (blob client), `share.ts` (link building + push), `ai.ts` (BYOK SSE
+  streaming), `chat-store.svelte.ts` (shared chat state — runes modules need the `.svelte.ts`
+  suffix and an eslint parser override), `voice.ts` (Web Speech dictation), `export.ts` (.md
+  download).
 - Svelte 5 runes (`$state`, `$derived`), tabs for indentation (Prettier config), no comments
   unless asked.
 - Commit style: conventional commits (`feat:`, `fix:`, `chore:`).
