@@ -1,10 +1,17 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
+export interface ShareInfo {
+	remoteId: string;
+	key: string;
+	editToken: string;
+}
+
 export interface Note {
 	id: string;
 	content: string;
 	createdAt: number;
 	updatedAt: number;
+	share?: ShareInfo;
 }
 
 interface NotesDB extends DBSchema {

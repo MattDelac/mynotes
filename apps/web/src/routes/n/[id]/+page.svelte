@@ -5,6 +5,7 @@
 	import DOMPurify from 'dompurify';
 	import { listNotes, saveNote, deleteNote, createNote, noteTitle, type Note } from '$lib/db';
 	import { debounce } from '$lib/debounce';
+	import { mailtoLink, shareNote, viewLink } from '$lib/share';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -13,6 +14,10 @@
 	let notes = $state<Note[]>([]);
 	let preview = $state(false);
 	let sidebarOpen = $state(false);
+	let shareOpen = $state(false);
+	let sharing = $state(false);
+	let shareError = $state('');
+	let copied = $state(false);
 
 	const persist = debounce(async () => {
 		note.updatedAt = Date.now();
@@ -21,7 +26,9 @@
 	}, 400);
 
 	const rendered = $derived(
-		preview ? DOMPurify.sanitize(marked.parse(note.content, { async: false }) as string) : ''
+		DOMPurify.sanitize(
+			marked.parse(data.shared ? data.shared.content : note.content, { async: false }) as string
+		)
 	);
 
 	$effect(() => {
@@ -29,8 +36,11 @@
 	});
 
 	$effect(() => {
-		note = { ...data.note };
-		preview = false;
+		if (data.note) {
+			note = { ...data.note };
+			preview = false;
+			shareOpen = false;
+		}
 	});
 
 	async function newNote() {
@@ -54,6 +64,37 @@
 		}
 	}
 
+	async function share() {
+		sharing = true;
+		shareError = '';
+		try {
+			note.share = await shareNote(note);
+			await saveNote(note);
+			shareOpen = true;
+		} catch (e) {
+			shareError = e instanceof Error ? e.message : 'share failed';
+		} finally {
+			sharing = false;
+		}
+	}
+
+	async function copyLink() {
+		if (!note.share) return;
+		await navigator.clipboard.writeText(viewLink(note.share));
+		copied = true;
+		setTimeout(() => (copied = false), 2000);
+	}
+
+	function email() {
+		if (!note.share) return;
+		const ok = confirm(
+			'Anyone with this link can read the note. The key is in the link — treat the email as sensitive.'
+		);
+		if (ok) {
+			location.href = mailtoLink(noteTitle(note.content), viewLink(note.share));
+		}
+	}
+
 	function onInput() {
 		persist();
 	}
@@ -61,17 +102,40 @@
 
 <div class="shell">
 	<header>
-		<button class="icon" aria-label="Toggle note list" onclick={() => (sidebarOpen = !sidebarOpen)}>
-			☰
-		</button>
-		<span class="title">{noteTitle(note.content)}</span>
-		<button class="icon" aria-label="Toggle preview" onclick={() => (preview = !preview)}>
-			{preview ? '✎' : '◉'}
-		</button>
+		{#if data.shared}
+			<span class="title">Shared note (read-only)</span>
+		{:else}
+			<button
+				class="icon"
+				aria-label="Toggle note list"
+				onclick={() => (sidebarOpen = !sidebarOpen)}
+			>
+				☰
+			</button>
+			<span class="title">{noteTitle(note.content)}</span>
+			<button class="icon" aria-label="Share note" disabled={sharing} onclick={share}>
+				{note.share ? '⇪' : '🔗'}
+			</button>
+			<button class="icon" aria-label="Toggle preview" onclick={() => (preview = !preview)}>
+				{preview ? '✎' : '◉'}
+			</button>
+		{/if}
 	</header>
 
+	{#if shareOpen && note.share}
+		<div class="sharebar">
+			<input readonly value={viewLink(note.share)} aria-label="Share link" />
+			<button onclick={copyLink}>{copied ? 'Copied' : 'Copy'}</button>
+			<button onclick={email}>Email</button>
+			<button aria-label="Close share panel" onclick={() => (shareOpen = false)}>×</button>
+		</div>
+	{/if}
+	{#if shareError}
+		<div class="error">{shareError}</div>
+	{/if}
+
 	<div class="body">
-		{#if sidebarOpen}
+		{#if sidebarOpen && !data.shared}
 			<aside>
 				<button class="new" onclick={newNote}>+ New note</button>
 				<ul>
@@ -90,7 +154,7 @@
 		{/if}
 
 		<main>
-			{#if preview}
+			{#if data.shared || preview}
 				<article class="preview">
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized with DOMPurify above -->
 					{@html rendered}
@@ -133,6 +197,28 @@
 		font-size: 1.2rem;
 		cursor: pointer;
 		padding: 0.25rem 0.5rem;
+	}
+	.sharebar {
+		display: flex;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid #e2e2e2;
+		background: #f8f8f8;
+	}
+	.sharebar input {
+		flex: 1;
+		min-width: 0;
+		font: inherit;
+		padding: 0.25rem 0.5rem;
+	}
+	.sharebar button {
+		cursor: pointer;
+		padding: 0.25rem 0.75rem;
+	}
+	.error {
+		padding: 0.5rem 0.75rem;
+		background: #fee;
+		color: #900;
 	}
 	.body {
 		display: flex;
