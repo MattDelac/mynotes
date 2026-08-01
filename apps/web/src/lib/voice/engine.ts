@@ -17,7 +17,7 @@ export function availableEngines(): { kind: VoiceEngineKind; label: string }[] {
 		engines.push({ kind: 'webspeech', label: 'Browser speech' });
 	}
 	if (webGpuSupported()) {
-		engines.push({ kind: 'ondevice', label: 'On-device (Voxtral, WebGPU)' });
+		engines.push({ kind: 'ondevice', label: 'On-device (Whisper, WebGPU)' });
 	}
 	return engines;
 }

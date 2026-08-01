@@ -23,4 +23,4 @@ export function webGpuSupported(): boolean {
 	return typeof navigator !== 'undefined' && 'gpu' in navigator;
 }
 
-export const DEFAULT_ONDEVICE_MODEL = 'mistralai/Voxtral-Mini-4B-Realtime-2602';
+export const DEFAULT_ONDEVICE_MODEL = 'onnx-community/whisper-base';
