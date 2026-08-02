@@ -44,16 +44,17 @@ Zero-knowledge encrypted blob store. No auth, no accounts.
 
 Optional blob TTL (e.g., auto-delete after 30 days).
 
-## Sharing Flow
+## Sharing Flow (CRDT collaboration)
 
-1. User hits "Share" → client generates AES key + edit token
-2. Ciphertext pushed to server, returns `note_id`
+1. User hits "Share" → client generates AES key + edit token, creates a room
+2. An encrypted snapshot of the note's Yjs document seeds the server's update log
 3. Links:
-   - View: `https://app/n/{id}#{key}`
-   - Owner: `https://app/n/{id}#{key}:{edit_token}`
-4. Recipient's browser fetches blob, decrypts locally — server never sees plaintext
-5. Sharing is one-way push: edits after sharing do not auto-sync; user re-shares
-   to update
+   - View: `https://app/n/{id}#{key}` (read-only)
+   - Owner/editor: `https://app/n/{id}#{key}:{edit_token}` (can edit)
+4. All participants sync live over an encrypted WebSocket relay: every Yjs update
+   is encrypted client-side before broadcast — the server never sees plaintext
+5. Edits converge via CRDT; no conflicts, no last-write-wins data loss
+6. The update log is compacted with an encrypted snapshot when it grows large
 
 ## Features
 
@@ -102,8 +103,8 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 
 ## Explicitly Out of Scope (v1)
 
-- Real-time collaboration / CRDTs
-- Accounts, cross-device sync without sharing
+- Presence/awareness (collaborator cursors, names)
+- Accounts
 - Rich text, images, drawing
 - Server-side AI proxying
 

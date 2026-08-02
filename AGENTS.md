@@ -2,9 +2,11 @@
 
 ## What this is
 
-MyNotes: local-first, end-to-end encrypted note taking (markdown only). Excalidraw-simplicity UI —
-one blank page. Notes live in IndexedDB; the server is a zero-knowledge encrypted blob store used
-only when sharing. Share links carry the AES-GCM key in the URL fragment. Full spec: `docs/PLAN.md`.
+MyNotes: local-first, end-to-end encrypted note taking (markdown only) with live collaboration.
+Excalidraw-simplicity UI — one blank page. Notes are Yjs documents persisted locally via
+y-indexeddb; the server is a zero-knowledge relay: it stores and broadcasts encrypted Yjs updates
+but can never read them. Share links carry the AES-GCM key in the URL fragment. Full spec:
+`docs/PLAN.md`.
 
 ## Monorepo layout
 
@@ -56,23 +58,33 @@ Env vars: `DATABASE_URL` (default `sqlite:mynotes.db`), `BIND_ADDR` (default `0.
 
 ## API contract (zero-knowledge — payloads are opaque ciphertext bytes)
 
-| Endpoint              | Behavior                                                    |
-| --------------------- | ----------------------------------------------------------- |
-| `GET /healthz`        | `200 "ok"`                                                  |
-| `POST /notes`         | body = ciphertext → `201 {id, edit_token}`                  |
-| `GET /notes/{id}`     | → `200` ciphertext bytes, `404` if missing                  |
-| `PUT /notes/{id}`     | requires `x-edit-token` header → `204`, `403` on bad token  |
+| Endpoint                       | Behavior                                                              |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `GET /healthz`                 | `200 "ok"`                                                            |
+| `POST /notes`                  | body = ciphertext → `201 {id, edit_token}` (creates a room)           |
+| `GET /notes/{id}`              | → `200` ciphertext bytes, `404` if missing                            |
+| `PUT /notes/{id}`              | requires `x-edit-token` header → `204`, `403` on bad token            |
+| `GET /rooms/{id}/updates?after=` | → `{updates: [{seq, blob(base64url)}]}` — encrypted Yjs update log  |
+| `PUT /rooms/{id}/snapshot`     | requires `x-edit-token` → replaces update log with encrypted snapshot |
+| `GET /ws/{room}`               | WebSocket relay; first text message `{edit_token}` grants write       |
+
+## Collaboration architecture
+
+CRDT (Yjs) over an encrypted dumb relay. Clients encrypt every Yjs update with the room key before
+sending; the server persists (`room_updates` table) and broadcasts ciphertext without reading it.
+New clients catch up via `GET /rooms/{id}/updates`, then join the WebSocket. A writable client
+compacts the log with `PUT snapshot` when it grows past 500 updates. No presence/awareness yet.
 
 ## Conventions
 
 - Rust: axum handlers in `api/src/lib.rs` (testable), `main.rs` is wiring only. Dynamic
   `sqlx::query` (not macros) so no `.sqlx/` offline data is needed. Migrations in
   `api/migrations/NNNN_name.sql`.
-- Frontend lib modules (`apps/web/src/lib/`): `db.ts` (IndexedDB), `crypto.ts` (AES-GCM,
-  base64url), `api.ts` (blob client), `share.ts` (link building + push), `ai.ts` (BYOK SSE
-  streaming), `chat-store.svelte.ts` (shared chat state — runes modules need the `.svelte.ts`
-  suffix and an eslint parser override), `voice.ts` (Web Speech dictation), `export.ts` (.md
-  download).
+- Frontend lib modules (`apps/web/src/lib/`): `db.ts` (note metadata in IndexedDB), `docs.ts`
+  (per-note Yjs docs via y-indexeddb, legacy migration), `crypto.ts` (AES-GCM, base64url),
+  `api.ts` (relay client), `collab.ts` (RoomSession — encrypted Yjs-over-WS sync), `share.ts`
+  (link building), `shared.ts` (share fragment parsing), `ai.ts` REMOVED, `voice/` (dictation
+  engines), `export.ts` (.md download), `Editor.svelte` (CodeMirror 6 + yCollab binding).
 - Svelte 5 runes (`$state`, `$derived`), tabs for indentation (Prettier config), no comments
   unless asked.
 - Commit style: conventional commits (`feat:`, `fix:`, `chore:`).

@@ -72,5 +72,7 @@ repository variable (Settings → Secrets and variables → Actions → Variable
 - The backend only ever sees ciphertext. The AES-GCM key lives in the share link's URL fragment
   and never reaches the server.
 - Serve the backend behind HTTPS (ingress annotations assume cert-manager + Let's Encrypt).
-- There are no accounts: possession of a note's edit token allows overwriting its blob. Edit
-  tokens are UUIDs transmitted only via the `x-edit-token` header.
+- The collaboration relay uses WebSockets (`/ws/{room}`) — make sure your ingress/proxy forwards
+  WebSocket upgrades (nginx ingress does by default).
+- There are no accounts: possession of a note's edit token allows writing to its room. Edit
+  tokens are UUIDs transmitted only via the `x-edit-token` header or the first WS message.
