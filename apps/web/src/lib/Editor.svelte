@@ -9,6 +9,7 @@
 	import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 	import { classHighlighter, tags } from '@lezer/highlight';
 	import { concealMarks } from './cm-conceal';
+	import { clickableLinks } from './cm-links';
 
 	let { ytext, editable = true }: { ytext: Y.Text; editable?: boolean } = $props();
 
@@ -53,6 +54,7 @@
 				syntaxHighlighting(markdownStyle),
 				syntaxHighlighting(classHighlighter),
 				concealMarks,
+				clickableLinks,
 				cmPlaceholder('Start typing…'),
 				EditorView.lineWrapping,
 				EditorView.editable.of(editable),

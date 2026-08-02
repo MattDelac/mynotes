@@ -38,6 +38,47 @@ test('markdown marks are concealed except on the cursor line', async ({ page }) 
 	await expect(firstLine).toHaveText('## Hidden Marks');
 });
 
+test('cmd+click on a link opens it in a new tab', async ({ page, context }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('[Example](https://example.com/page)');
+
+	const link = page.locator('.cm-line .tok-link').first();
+	await expect(link).toBeVisible();
+
+	const [popup] = await Promise.all([
+		context.waitForEvent('page'),
+		(async () => {
+			await page.keyboard.down('Meta');
+			await link.click();
+			await page.keyboard.up('Meta');
+		})()
+	]);
+	expect(popup.url()).toBe('https://example.com/page');
+	await popup.close();
+});
+
+test('plain click on a link places the cursor without navigating', async ({ page, context }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('[Example](https://example.com/page)');
+
+	const link = page.locator('.cm-line .tok-link').first();
+	await link.click();
+	await page.waitForTimeout(300);
+	expect(context.pages()).toHaveLength(1);
+	await expect(page).toHaveURL(/\/s\/[\w-]+/);
+});
+
+test('preview links open in a new tab', async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('[Example](https://example.com)');
+	await page.getByRole('button', { name: 'Toggle preview' }).click();
+	const link = page.locator('.preview a', { hasText: 'Example' });
+	await expect(link).toHaveAttribute('target', '_blank');
+	await expect(link).toHaveAttribute('rel', /noopener/);
+});
+
 test('preview preserves single line breaks like the editor does', async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('textbox', { name: 'Note' }).fill('Hello\nyou');
