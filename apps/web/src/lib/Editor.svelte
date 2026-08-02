@@ -1,19 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import * as Y from 'yjs';
 	import { EditorState } from '@codemirror/state';
 	import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view';
-	import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+	import { defaultKeymap } from '@codemirror/commands';
+	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 	import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 	import { classHighlighter, tags } from '@lezer/highlight';
 
-	let {
-		value,
-		onchange
-	}: {
-		value: string;
-		onchange(value: string): void;
-	} = $props();
+	let { ytext }: { ytext: Y.Text } = $props();
 
 	let container = $state<HTMLDivElement | null>(null);
 	let view: EditorView | null = null;
@@ -35,10 +31,9 @@
 	export function insertAtCursor(text: string): void {
 		if (!view) return;
 		const { from, to } = view.state.selection.main;
-		view.dispatch({
-			changes: { from, to, insert: text },
-			selection: { anchor: from + text.length }
-		});
+		ytext.delete(from, to - from);
+		ytext.insert(from, text);
+		view.dispatch({ selection: { anchor: from + text.length } });
 		view.focus();
 	}
 
@@ -48,22 +43,18 @@
 
 	onMount(() => {
 		if (!container) return;
+		const undoManager = new Y.UndoManager(ytext);
 		const state = EditorState.create({
-			doc: value,
+			doc: ytext.toString(),
 			extensions: [
-				history(),
-				keymap.of([...defaultKeymap, ...historyKeymap]),
+				keymap.of([...yUndoManagerKeymap, ...defaultKeymap]),
 				markdown({ base: markdownLanguage }),
 				syntaxHighlighting(markdownStyle),
 				syntaxHighlighting(classHighlighter),
 				cmPlaceholder('Start typing…'),
 				EditorView.lineWrapping,
 				EditorView.contentAttributes.of({ 'aria-label': 'Note' }),
-				EditorView.updateListener.of((update) => {
-					if (update.docChanged) {
-						onchange(update.state.doc.toString());
-					}
-				}),
+				yCollab(ytext, null, { undoManager }),
 				EditorView.theme({
 					'&': { height: '100%', fontSize: '1.05rem', backgroundColor: 'transparent' },
 					'.cm-content': {
@@ -84,6 +75,7 @@
 		});
 		view = new EditorView({ state, parent: container });
 		return () => {
+			undoManager.destroy();
 			view?.destroy();
 			view = null;
 		};

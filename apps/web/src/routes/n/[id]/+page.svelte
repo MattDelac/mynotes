@@ -4,6 +4,8 @@
 	import { renderMarkdown } from '$lib/markdown';
 	import { fetchSharedContent, SHARED_POLL_INTERVAL_MS } from '$lib/shared';
 	import { listNotes, saveNote, deleteNote, createNote, noteTitle, type Note } from '$lib/db';
+	import { destroyNoteDoc, getNoteDoc, migrateLegacyContent, setDocContent } from '$lib/docs';
+	import type * as Y from 'yjs';
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, shareNote, syncShared, viewLink } from '$lib/share';
 	import {
@@ -19,13 +21,12 @@
 		Copy,
 		Download,
 		Eye,
+		Link2,
 		Mail,
-		Menu,
 		Mic,
 		Pencil,
 		Plus,
 		RefreshCw,
-		Share2,
 		Square,
 		Trash2,
 		Upload,
@@ -36,9 +37,9 @@
 	let { data }: PageProps = $props();
 
 	let note = $state<Note>({ id: '', content: '', createdAt: 0, updatedAt: 0 });
+	let ytext = $state<Y.Text | null>(null);
 	let notes = $state<Note[]>([]);
 	let preview = $state(false);
-	let sidebarOpen = $state(false);
 	let shareOpen = $state(false);
 	let sharing = $state(false);
 	let shareError = $state('');
@@ -97,7 +98,8 @@
 		const file = input.files?.[0];
 		if (!file) return;
 		const fresh = createNote();
-		fresh.content = await file.text();
+		fresh.content = '';
+		await setDocContent(fresh.id, await file.text());
 		await saveNote(fresh);
 		input.value = '';
 		await goto(resolve(`/n/${fresh.id}`));
@@ -148,23 +150,48 @@
 	});
 
 	$effect(() => {
-		if (data.note) {
-			note = { ...data.note };
-			preview = false;
-			shareOpen = false;
-			syncState = data.note.share ? 'synced' : 'idle';
-		}
+		if (!data.note) return;
+		note = { ...data.note };
+		ytext = null;
+		preview = false;
+		shareOpen = false;
+		syncState = data.note.share ? 'synced' : 'idle';
+		const id = data.note.id;
+		const legacy = data.note.content;
+		let observer: (() => void) | null = null;
+		let cancelled = false;
+		void (async () => {
+			const doc = await getNoteDoc(id);
+			if (cancelled) return;
+			await migrateLegacyContent(id, legacy);
+			if (cancelled) return;
+			ytext = doc.ytext;
+			note.content = doc.ytext.toString();
+			observer = () => {
+				note.content = doc.ytext.toString();
+				if (note.share) syncState = 'pending';
+				persist();
+				syncRemote();
+			};
+			doc.ytext.observe(observer);
+		})();
+		return () => {
+			cancelled = true;
+			if (observer) {
+				getNoteDoc(id).then((doc) => doc.ytext.unobserve(observer!));
+			}
+		};
 	});
 
 	async function newNote() {
 		const fresh = createNote();
 		await saveNote(fresh);
-		sidebarOpen = false;
 		await goto(resolve(`/n/${fresh.id}`));
 	}
 
 	async function removeNote(id: string) {
 		await deleteNote(id);
+		await destroyNoteDoc(id);
 		notes = await listNotes();
 		if (id === note.id) {
 			if (notes.length > 0) {
@@ -178,6 +205,12 @@
 	}
 
 	async function share() {
+		if (!note.share) {
+			const ok = confirm(
+				'Sharing your note will store it encrypted on the server. Anyone with the link can read it. Confirm?'
+			);
+			if (!ok) return;
+		}
 		sharing = true;
 		shareError = '';
 		try {
@@ -215,13 +248,6 @@
 		{#if data.shared}
 			<span class="title">Shared note (read-only)</span>
 		{:else}
-			<button
-				class="icon"
-				aria-label="Toggle note list"
-				onclick={() => (sidebarOpen = !sidebarOpen)}
-			>
-				<Menu size={18} />
-			</button>
 			<span class="title">{noteTitle(note.content)}</span>
 			{#if note.share}
 				<span
@@ -285,7 +311,7 @@
 				onchange={importFile}
 			/>
 			<button class="icon" aria-label="Share note" disabled={sharing} onclick={share}>
-				{#if note.share}<RefreshCw size={18} />{:else}<Share2 size={18} />{/if}
+				{#if note.share}<RefreshCw size={18} />{:else}<Link2 size={18} />{/if}
 			</button>
 			<button class="icon" aria-label="Toggle preview" onclick={() => (preview = !preview)}>
 				{#if preview}<Pencil size={18} />{:else}<Eye size={18} />{/if}
@@ -319,7 +345,7 @@
 	{/if}
 
 	<div class="body">
-		{#if sidebarOpen && !data.shared}
+		{#if !data.shared}
 			<aside>
 				<button class="new" onclick={newNote}>
 					<Plus size={15} />
@@ -328,9 +354,7 @@
 				<ul>
 					{#each notes as n (n.id)}
 						<li class:active={n.id === note.id}>
-							<a href={resolve(`/n/${n.id}`)} onclick={() => (sidebarOpen = false)}
-								>{noteTitle(n.content)}</a
-							>
+							<a href={resolve(`/n/${n.id}`)}>{noteTitle(n.content)}</a>
 							<button class="delete" aria-label="Delete note" onclick={() => removeNote(n.id)}>
 								<Trash2 size={14} />
 							</button>
@@ -346,18 +370,9 @@
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized with DOMPurify above -->
 					{@html rendered}
 				</article>
-			{:else if note.id}
+			{:else if note.id && ytext}
 				{#key note.id}
-					<Editor
-						bind:this={editor}
-						value={note.content}
-						onchange={(text) => {
-							note.content = text;
-							if (note.share) syncState = 'pending';
-							persist();
-							syncRemote();
-						}}
-					/>
+					<Editor bind:this={editor} {ytext} />
 				{/key}
 			{/if}
 		</main>
@@ -566,10 +581,7 @@
 	}
 	@media (max-width: 640px) {
 		aside {
-			position: absolute;
-			z-index: 10;
-			height: 100%;
-			box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+			width: 9rem;
 		}
 	}
 </style>

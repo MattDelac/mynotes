@@ -42,7 +42,6 @@ test('sidebar shows the updated note title', async ({ page }) => {
 	await editor.fill('My renamed note');
 	await page.waitForTimeout(700);
 
-	await page.getByRole('button', { name: 'Toggle note list' }).click();
 	await expect(page.locator('aside a')).toHaveText('My renamed note');
 });
 
@@ -72,13 +71,11 @@ test('creates a second note and lists both', async ({ page }) => {
 	await page.waitForTimeout(700);
 	const firstUrl = page.url();
 
-	await page.getByRole('button', { name: 'Toggle note list' }).click();
 	await page.getByRole('button', { name: 'New note' }).click();
 	await expect(page).not.toHaveURL(firstUrl);
 	await page.getByRole('textbox', { name: 'Note' }).fill('second note');
 	await page.waitForTimeout(700);
 
-	await page.getByRole('button', { name: 'Toggle note list' }).click();
 	const links = page.locator('aside a');
 	await expect(links).toHaveCount(2);
 });
@@ -89,18 +86,15 @@ test('navigating between notes via sidebar shows each note content', async ({ pa
 	await page.waitForTimeout(700);
 	const urlA = page.url();
 
-	await page.getByRole('button', { name: 'Toggle note list' }).click();
 	await page.getByRole('button', { name: 'New note' }).click();
 	await expect(page).not.toHaveURL(urlA);
 	await page.getByRole('textbox', { name: 'Note' }).fill('note BBBB content');
 	await page.waitForTimeout(700);
 
-	await page.getByRole('button', { name: 'Toggle note list' }).click();
 	await page.locator('aside a', { hasText: 'note AAAA' }).click();
 	await expect(page).toHaveURL(urlA);
 	await expect.poll(() => editorText(page)).toBe('note AAAA content');
 
-	await page.getByRole('button', { name: 'Toggle note list' }).click();
 	await page.locator('aside a', { hasText: 'note BBBB' }).click();
 	await expect.poll(() => editorText(page)).toBe('note BBBB content');
 });
@@ -110,7 +104,6 @@ test('deletes a note', async ({ page }) => {
 	await page.getByRole('textbox', { name: 'Note' }).fill('doomed note');
 	await page.waitForTimeout(700);
 
-	await page.getByRole('button', { name: 'Toggle note list' }).click();
 	await page.getByRole('button', { name: 'Delete note' }).click();
 	await expect(page.locator('aside a')).toHaveCount(0);
 	await expect(page).toHaveURL(/\/n\/[\w-]+/);
