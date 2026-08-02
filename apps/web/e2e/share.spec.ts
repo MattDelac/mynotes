@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function shareCurrentSession(page: Page): Promise<string> {
 	await page.getByRole('button', { name: 'Share session' }).click();
-	const linkInput = page.locator('.sharebar input');
+	const linkInput = page.locator('input[aria-label="Share link"]');
 	await expect(linkInput).toBeVisible({ timeout: 10_000 });
 	return linkInput.inputValue();
 }
@@ -53,6 +53,8 @@ test('view-only link does not allow editing', async ({ page, browser }) => {
 		timeout: 10_000
 	});
 	expect(await viewer.locator('.cm-content').getAttribute('contenteditable')).toBe('false');
+	await expect(viewer.getByRole('button', { name: 'Toggle preview' })).toHaveCount(0);
+	await expect(viewer.getByRole('button', { name: 'Export note' })).toHaveCount(0);
 	await context.close();
 });
 
@@ -105,6 +107,20 @@ test('notes created after sharing appear in the viewer sidebar', async ({ page, 
 	await context.close();
 });
 
+test('copying the edit link requires no confirmation', async ({ page }) => {
+	await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('edit link flow');
+	await page.waitForTimeout(700);
+	await shareCurrentSession(page);
+
+	await page.locator('select[aria-label="Link type"]').selectOption('edit');
+	await expect(page.locator('input[aria-label="Share link"]')).toHaveValue(/\/s\/[\w-]+#[\w-]+:/);
+	await page.locator('button[title="Copy link"]').click();
+	await expect(page.locator('button[title="Copy link"]')).toContainText('Copied');
+});
+
 test('collaborator with edit token edits and both sides converge', async ({ page, browser }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');
@@ -112,26 +128,19 @@ test('collaborator with edit token edits and both sides converge', async ({ page
 	await editor.fill('from owner');
 	await page.waitForTimeout(700);
 
-	const viewLinkValue = await shareCurrentSession(page);
+	await shareCurrentSession(page);
 	await expect(page.locator('header .sync')).toHaveText('live', { timeout: 10_000 });
 
-	const shareInfo = await page.evaluate(async () => {
-		const req = indexedDB.open('mynotes');
-		const db = await new Promise<IDBDatabase>((res) => (req.onsuccess = () => res(req.result)));
-		const tx = db.transaction('sessions').objectStore('sessions').getAll();
-		const sessions = await new Promise<{ share?: { key: string; editToken: string } }[]>(
-			(res) => (tx.onsuccess = () => res(tx.result))
-		);
-		return sessions[0].share;
-	});
-	const ownerLinkValue = `${viewLinkValue}:${shareInfo?.editToken}`;
+	await page.locator('select[aria-label="Link type"]').selectOption('edit');
+	const ownerLinkValue = await page.locator('input[aria-label="Share link"]').inputValue();
+	expect(ownerLinkValue).toMatch(/\/s\/[\w-]+#[\w-]+:[\w-]+$/);
 
 	const context = await browser.newContext();
 	const collaborator = await context.newPage();
 	await collaborator.goto(ownerLinkValue);
-	await expect(collaborator.locator('header .title')).toHaveText('Shared session', {
-		timeout: 10_000
-	});
+	await expect(collaborator.locator('header .sync')).toHaveText('live', { timeout: 10_000 });
+	await expect(collaborator.getByRole('button', { name: 'Toggle preview' })).toBeVisible();
+	await expect(collaborator.getByRole('button', { name: 'Export note' })).toBeVisible();
 	await expect(collaborator.locator('.cm-content')).toContainText('from owner', {
 		timeout: 10_000
 	});

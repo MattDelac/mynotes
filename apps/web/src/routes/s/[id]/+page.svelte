@@ -27,7 +27,7 @@
 	} from '$lib/sessions';
 	import * as Y from 'yjs';
 	import { debounce } from '$lib/debounce';
-	import { mailtoLink, sessionViewLink } from '$lib/share';
+	import { mailtoLink, sessionOwnerLink, sessionViewLink } from '$lib/share';
 	import {
 		availableEngines,
 		createEngine,
@@ -70,6 +70,7 @@
 	let sharing = $state(false);
 	let shareError = $state('');
 	let copied = $state(false);
+	let shareKind = $state<'view' | 'edit'>('view');
 	let editor = $state<Editor | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let dictation = $state<VoiceEngine | null>(null);
@@ -85,6 +86,9 @@
 	const title = $derived(noteTitle(content));
 	const rendered = $derived(renderMarkdown(content));
 	const canWrite = $derived(!data.shared || data.shared.owner);
+	const activeShareLink = $derived(
+		share ? (shareKind === 'edit' ? sessionOwnerLink(share) : sessionViewLink(share)) : ''
+	);
 
 	$effect(() => {
 		if (!engineKind) return;
@@ -353,28 +357,30 @@
 		}
 	}
 
-	async function copyLink() {
-		if (!share) return;
-		await navigator.clipboard.writeText(sessionViewLink(share));
+	async function copyLink(link: string) {
+		await navigator.clipboard.writeText(link);
 		copied = true;
 		setTimeout(() => (copied = false), 2000);
 	}
 
-	function email() {
-		if (!share) return;
+	function email(link: string, edit: boolean) {
+		if (edit) {
+			location.href = mailtoLink('My notes', link);
+			return;
+		}
 		const ok = confirm(
 			'Anyone with this link can read the notes. The key is in the link — treat the email as sensitive.'
 		);
 		if (ok) {
-			location.href = mailtoLink('My notes', sessionViewLink(share));
+			location.href = mailtoLink('My notes', link);
 		}
 	}
 </script>
 
 <div class="shell">
 	<header>
-		{#if data.shared}
-			<span class="title">Shared session{data.shared.owner ? '' : ' (read-only)'}</span>
+		{#if data.shared && !data.shared.owner}
+			<span class="title">Shared session (read-only)</span>
 			<span class="sync" class:sync-error={sessionState === 'offline'}>
 				{sessionState === 'live'
 					? 'live'
@@ -392,7 +398,7 @@
 				<Menu size={18} />
 			</button>
 			<span class="title">{title}</span>
-			{#if share}
+			{#if share || data.shared}
 				<span class="sync" class:sync-error={sessionState === 'offline'}>
 					{sessionState === 'live'
 						? 'live'
@@ -458,23 +464,25 @@
 				hidden
 				onchange={importFile}
 			/>
-			<button
-				class="icon"
-				aria-label="Share session"
-				title="Share this session"
-				disabled={sharing}
-				onclick={shareSession}
-			>
-				{#if share}<RefreshCw size={18} />{:else}<Link2 size={18} />{/if}
-			</button>
-			<button
-				class="icon"
-				aria-label="Start empty session"
-				title="Start an empty session"
-				onclick={startEmptySession}
-			>
-				<FilePlus2 size={18} />
-			</button>
+			{#if !data.shared}
+				<button
+					class="icon"
+					aria-label="Share session"
+					title="Share this session"
+					disabled={sharing}
+					onclick={shareSession}
+				>
+					{#if share}<RefreshCw size={18} />{:else}<Link2 size={18} />{/if}
+				</button>
+				<button
+					class="icon"
+					aria-label="Start empty session"
+					title="Start an empty session"
+					onclick={startEmptySession}
+				>
+					<FilePlus2 size={18} />
+				</button>
+			{/if}
 			<button
 				class="icon"
 				aria-label="Toggle preview"
@@ -488,12 +496,20 @@
 
 	{#if shareOpen && share}
 		<div class="sharebar">
-			<input readonly value={sessionViewLink(share)} aria-label="Share link" />
-			<button class="text-btn" title="Copy link" onclick={copyLink}>
+			<select class="share-kind" aria-label="Link type" bind:value={shareKind}>
+				<option value="view">Read only</option>
+				<option value="edit">Edit</option>
+			</select>
+			<input readonly value={activeShareLink} aria-label="Share link" />
+			<button class="text-btn" title="Copy link" onclick={() => copyLink(activeShareLink)}>
 				<Copy size={15} />
 				{copied ? 'Copied' : 'Copy'}
 			</button>
-			<button class="text-btn" title="Email link" onclick={email}>
+			<button
+				class="text-btn"
+				title="Email link"
+				onclick={() => email(activeShareLink, shareKind === 'edit')}
+			>
 				<Mail size={15} />
 				Email
 			</button>
@@ -506,6 +522,9 @@
 				<X size={16} />
 			</button>
 		</div>
+		{#if shareKind === 'edit'}
+			<div class="share-warning">Anyone with this link can edit all notes in this session.</div>
+		{/if}
 	{/if}
 	{#if shareError}
 		<div class="error">{shareError}</div>
@@ -627,6 +646,20 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius);
 		background: var(--bg);
+	}
+	.share-kind {
+		font-size: 0.85rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--bg);
+		padding: 0.4rem 0.4rem;
+		flex-shrink: 0;
+	}
+	.share-warning {
+		padding: 0.4rem 1rem;
+		background: var(--danger-soft);
+		color: var(--danger);
+		font-size: 0.8rem;
 	}
 	.text-btn {
 		display: inline-flex;

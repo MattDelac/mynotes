@@ -56,7 +56,7 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 
 1. User hits "Share" → client generates AES key + edit token, creates a room
 2. An encrypted snapshot of the session's Yjs document seeds the server's update log
-3. Links:
+3. Links (both exposed in the share panel):
    - View: `https://app/s/{id}#{key}` (read-only)
    - Owner/editor: `https://app/s/{id}#{key}:{edit_token}` (can edit)
 4. All participants sync live over an encrypted WebSocket relay: every Yjs update
