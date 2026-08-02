@@ -11,10 +11,10 @@ spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - notes.mdelacour.com
+        - api-notes.mdelacour.com
       secretName: mynotes-api-tls
   rules:
-    - host: notes.mdelacour.com
+    - host: api-notes.mdelacour.com
       http:
         paths:
           - path: /

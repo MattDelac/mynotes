@@ -65,7 +65,7 @@ DATABASE_URL=sqlite:mynotes.db ./target/release/mynotes-api
 
 ### k3s
 
-Manifests live in `.infrastructure/` (namespace `mynotes`, host `notes.mdelacour.com` — edit to
+Manifests live in `.infrastructure/` (namespace `mynotes`, host `api-notes.mdelacour.com` — edit to
 your domain):
 
 ```sh

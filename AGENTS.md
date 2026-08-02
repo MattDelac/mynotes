@@ -113,10 +113,10 @@ presence/awareness yet.
 
 ## Deployment
 
-- Frontend: GitHub Pages (static, SPA fallback); `PUBLIC_API_URL=https://notes.mdelacour.com`
+- Frontend: GitHub Pages (static, SPA fallback); `PUBLIC_API_URL=https://api-notes.mdelacour.com`
   repo variable.
 - Backend: personal k3s cluster (`production-master1`), manifests in `.infrastructure/`
-  (namespace `mynotes`, host `notes.mdelacour.com`), applied manually. Cluster-level wiring
+  (namespace `mynotes`, host `api-notes.mdelacour.com`), applied manually. Cluster-level wiring
   (namespace, network policies, ghcr pull-secret reflection) lives in the separate
   `infrastructure` repo. SQLite on a PVC; Litestream replicates the WAL to Hetzner Object
   Storage once `.infrastructure/litestream-secret.yaml` (from the example) is applied. CD:
