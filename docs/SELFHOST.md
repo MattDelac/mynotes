@@ -46,16 +46,14 @@ Abuse protection (all optional, sane defaults):
 | `MAX_WS_PER_IP`          | `10`    | Max concurrent WebSocket connections per IP                      |
 | `MAX_ROOM_SUBSCRIBERS`   | `32`    | Max concurrent WebSocket subscribers per room                    |
 | `CREATE_TOKEN`           | unset   | If set, `POST /notes` requires a matching `x-create-token` header |
-| `TRUST_PROXY_HEADERS`    | `true`  | Use `X-Forwarded-For` for client IPs (set `false` without a proxy) |
+| `TRUST_PROXY_HEADERS`    | `false` | Use rightmost `X-Forwarded-For` entry for client IPs; enable only behind a proxy that appends XFF |
 
 "Activity" for TTL means any room write (update, snapshot). Viewing does not extend a room's
 life; a room with live collaborators never expires.
 
 **Abuse runbook**: if your public instance gets spammed, set `CREATE_TOKEN=<long random string>`
 and restart — new room creation stops immediately; existing rooms keep syncing. To reclaim
-storage, lower `TTL_DAYS` temporarily. Optionally apply `deploy/k8s/middleware-ratelimit.yaml`
-and uncomment the middleware annotation in `ingress.yaml` for ingress-level limiting on top of
-the app-level limits.
+storage, lower `TTL_DAYS` temporarily.
 
 ### From source
 
@@ -73,7 +71,7 @@ Manifests live in `deploy/k8s/`:
 cp deploy/k8s/litestream-secret.example.yaml deploy/k8s/litestream-secret.yaml
 # fill in bucket, endpoint, keys
 kubectl apply -f deploy/k8s/litestream-secret.yaml
-kubectl apply -f deploy/k8s/pvc.yaml -f deploy/k8s/deployment.yaml -f deploy/k8s/service.yaml -f deploy/k8s/ingress.yaml
+kubectl apply -f deploy/k8s/pvc.yaml -f deploy/k8s/deployment.yaml -f deploy/k8s/service.yaml -f deploy/k8s/middleware-ratelimit.yaml -f deploy/k8s/ingress.yaml
 ```
 
 Edit `deployment.yaml` (image owner) and `ingress.yaml` (host, TLS issuer) first. The PVC stores
@@ -104,6 +102,11 @@ repository variable (Settings → Secrets and variables → Actions → Variable
   WebSocket upgrades (nginx ingress does by default).
 - There are no accounts: possession of a note's edit token allows writing to its room. Edit
   tokens are UUIDs transmitted only via the `x-edit-token` header or the first WS message.
-- Rate limiting keys on client IP. Behind an ingress/proxy keep `TRUST_PROXY_HEADERS=true` and
-  make sure your proxy sets `X-Forwarded-For` (Traefik and nginx ingress do); clients can spoof
-  the header only if requests can reach the pod directly, which ingress prevents.
+- Rate limiting keys on client IP. When `TRUST_PROXY_HEADERS=true`, the app reads the
+  **rightmost** `X-Forwarded-For` entry — the one your ingress appended; any client-supplied
+  entries to its left are ignored. Only enable it behind a proxy that appends XFF (Traefik and
+  nginx ingress both do), and make sure the pod is not reachable directly (bypassing the
+  ingress), or clients could spoof their IP. The k3s manifests set this for you.
+- Ingress-level rate limiting ships in `deploy/k8s/middleware-ratelimit.yaml` and is referenced
+  by `ingress.yaml` — apply them together (Traefik errors the route if the middleware is
+  missing).

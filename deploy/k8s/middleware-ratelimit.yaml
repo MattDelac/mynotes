@@ -1,6 +1,6 @@
-# Optional Traefik middleware: ingress-level rate limiting (defense in depth on
-# top of the app-level limits). k3s ships Traefik, so this is a plain CRD apply.
-# After applying, uncomment the router.middlewares annotation in ingress.yaml.
+# Traefik middleware: ingress-level rate limiting (defense in depth on top of
+# the app-level limits). k3s ships Traefik, so this is a plain CRD apply.
+# ingress.yaml references this middleware — apply both together.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:

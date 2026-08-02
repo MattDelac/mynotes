@@ -105,8 +105,10 @@ where
 fn client_ip(headers: &HeaderMap, peer: &PeerAddr, trust_proxy: bool) -> IpAddr {
     if trust_proxy {
         if let Some(value) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-            if let Some(first) = value.split(',').next() {
-                if let Ok(ip) = first.trim().parse() {
+            // The rightmost entry is the one our ingress appended; everything to
+            // its left may be client-supplied and is not trustworthy.
+            if let Some(last) = value.rsplit(',').map(str::trim).find(|s| !s.is_empty()) {
+                if let Ok(ip) = last.parse() {
                     return ip;
                 }
             }

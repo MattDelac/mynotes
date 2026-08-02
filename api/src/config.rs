@@ -67,7 +67,7 @@ impl Config {
             create_token: std::env::var("CREATE_TOKEN")
                 .ok()
                 .filter(|token| !token.is_empty()),
-            trust_proxy_headers: env_bool("TRUST_PROXY_HEADERS", true),
+            trust_proxy_headers: env_bool("TRUST_PROXY_HEADERS", false),
         }
     }
 }

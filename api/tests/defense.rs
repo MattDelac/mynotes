@@ -166,6 +166,90 @@ async fn rate_limit_keys_on_forwarded_for() {
 }
 
 #[tokio::test]
+async fn forwarded_for_uses_rightmost_entry() {
+    let mut config = test_config();
+    config.rate_create_per_min = 1;
+    let base = spawn_server(test_pool().await, config).await;
+    let client = reqwest::Client::new();
+
+    // Proxies append the real client IP to any client-supplied chain, so the
+    // rightmost entry is the trustworthy one.
+    let chained = client
+        .post(format!("{base}/notes"))
+        .header("x-forwarded-for", "9.9.9.9, 1.1.1.1")
+        .body(b"blob".to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(chained.status(), 201);
+
+    let same_rightmost = client
+        .post(format!("{base}/notes"))
+        .header("x-forwarded-for", "8.8.8.8, 1.1.1.1")
+        .body(b"blob".to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(same_rightmost.status(), 429);
+}
+
+#[tokio::test]
+async fn spoofed_leftmost_entries_do_not_reset_the_bucket() {
+    let mut config = test_config();
+    config.rate_create_per_min = 1;
+    let base = spawn_server(test_pool().await, config).await;
+    let client = reqwest::Client::new();
+
+    let first = client
+        .post(format!("{base}/notes"))
+        .header("x-forwarded-for", "1.1.1.1")
+        .body(b"blob".to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 201);
+
+    for spoofed in ["2.2.2.2", "3.3.3.3", "4.4.4.4"] {
+        let res = client
+            .post(format!("{base}/notes"))
+            .header("x-forwarded-for", format!("{spoofed}, 1.1.1.1"))
+            .body(b"blob".to_vec())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 429);
+    }
+}
+
+#[tokio::test]
+async fn forwarded_for_ignored_when_proxy_headers_not_trusted() {
+    let mut config = test_config();
+    config.rate_create_per_min = 1;
+    config.trust_proxy_headers = false;
+    let base = spawn_server(test_pool().await, config).await;
+    let client = reqwest::Client::new();
+
+    let first = client
+        .post(format!("{base}/notes"))
+        .header("x-forwarded-for", "1.1.1.1")
+        .body(b"blob".to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 201);
+
+    // A different XFF value must not yield a fresh bucket: the key is the peer addr.
+    let limited = client
+        .post(format!("{base}/notes"))
+        .header("x-forwarded-for", "2.2.2.2")
+        .body(b"blob".to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(limited.status(), 429);
+}
+
+#[tokio::test]
 async fn snapshot_over_limit_returns_413() {
     let mut config = test_config();
     config.max_snapshot_size = 64;

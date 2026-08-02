@@ -22,6 +22,9 @@ spec:
           ports:
             - containerPort: 3000
           env:
+            # Required: Traefik sits in front, so rate limiting keys on X-Forwarded-For.
+            - name: TRUST_PROXY_HEADERS
+              value: "true"
             # Panic button: uncomment to require this header for new room creation.
             # - name: CREATE_TOKEN
             #   value: "change-me-long-random-string"
