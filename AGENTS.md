@@ -19,7 +19,7 @@ Share links carry the AES-GCM key in the URL fragment. Routes: `/s/{sessionId}` 
 | `api/migrations/`    | SQL migrations, embedded at compile time via `sqlx::migrate!`     |
 | `api/Dockerfile`     | Multi-stage build; distroless runtime; Litestream sidecar binary  |
 | `api/litestream.yml` | SQLite replication config (Hetzner Object Storage, S3-compatible) |
-| `deploy/k8s/`        | k3s manifests (Deployment, Service, PVC, Ingress) — applied manually |
+| `.infrastructure/`   | k3s manifests (Deployment, Service, PVC, Ingress) — applied manually |
 | `.github/workflows/` | CI: `ci-frontend`, `ci-backend`; CD: `deploy-pages`, `release-backend` |
 | `docs/PLAN.md`       | Product spec and milestone roadmap                                |
 
@@ -107,15 +107,20 @@ presence/awareness yet.
 
 - `ci-frontend.yml` / `ci-backend.yml`: run on PRs and main, path-filtered.
 - `deploy-pages.yml`: builds `apps/web` with `BASE_PATH=/<repo-name>` and deploys to GitHub Pages.
-- `release-backend.yml`: builds `api/Dockerfile`, pushes `ghcr.io/<owner>/mynotes-api:sha-<short>`
-  and `:latest`.
+- `release-backend.yml`: builds `api/Dockerfile` (linux/arm64), pushes
+  `ghcr.io/mattdelac/mynotes-api:sha-<short>` and `:latest`, then deploys to the k3s cluster via
+  Tailscale (`kubectl set image`).
 
 ## Deployment
 
-- Frontend: GitHub Pages (static, SPA fallback).
-- Backend: k3s cluster, image from GHCR, SQLite on a PVC, Litestream replicates WAL to Hetzner
-  Object Storage. Secrets: `deploy/k8s/litestream-secret.example.yaml` (copy, fill, `kubectl apply`).
-  Deploy automation (GitOps vs manual) not yet decided.
+- Frontend: GitHub Pages (static, SPA fallback); `PUBLIC_API_URL=https://notes.mdelacour.com`
+  repo variable.
+- Backend: personal k3s cluster (`production-master1`), manifests in `.infrastructure/`
+  (namespace `mynotes`, host `notes.mdelacour.com`), applied manually. Cluster-level wiring
+  (namespace, network policies, ghcr pull-secret reflection) lives in the separate
+  `infrastructure` repo. SQLite on a PVC; Litestream replicates the WAL to Hetzner Object
+  Storage once `.infrastructure/litestream-secret.yaml` (from the example) is applied. CD:
+  `release-backend.yml` sets the image on every push to main.
 
 ## Before finishing any task
 

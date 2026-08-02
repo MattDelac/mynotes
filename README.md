@@ -11,7 +11,7 @@ Local-first, end-to-end encrypted note taking. Open the app, get a blank page, s
 | --------------- | ---------------------------------------------- |
 | `apps/web/`     | SvelteKit frontend (deployed to GitHub Pages)  |
 | `api/`          | Rust/Axum backend — zero-knowledge blob store  |
-| `deploy/k8s/`   | Kubernetes manifests (k3s)                     |
+| `.infrastructure/` | Kubernetes manifests (k3s)                     |
 | `docs/PLAN.md`  | Full spec and roadmap                          |
 
 ## Development

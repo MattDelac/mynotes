@@ -65,18 +65,22 @@ DATABASE_URL=sqlite:mynotes.db ./target/release/mynotes-api
 
 ### k3s
 
-Manifests live in `deploy/k8s/`:
+Manifests live in `.infrastructure/` (namespace `mynotes`, host `notes.mdelacour.com` — edit to
+your domain):
 
 ```sh
-cp deploy/k8s/litestream-secret.example.yaml deploy/k8s/litestream-secret.yaml
-# fill in bucket, endpoint, keys
-kubectl apply -f deploy/k8s/litestream-secret.yaml
-kubectl apply -f deploy/k8s/pvc.yaml -f deploy/k8s/deployment.yaml -f deploy/k8s/service.yaml -f deploy/k8s/middleware-ratelimit.yaml -f deploy/k8s/ingress.yaml
+kubectl apply -f .infrastructure/namespace.yaml -f .infrastructure/pvc.yaml \
+  -f .infrastructure/deployment.yaml -f .infrastructure/service.yaml -f .infrastructure/ingress.yaml
+# optional, enables Litestream replication:
+cp .infrastructure/litestream-secret.example.yaml .infrastructure/litestream-secret.yaml
+# fill in bucket, endpoint, keys, then:
+kubectl apply -f .infrastructure/litestream-secret.yaml
 ```
 
-Edit `deployment.yaml` (image owner) and `ingress.yaml` (host, TLS issuer) first. The PVC stores
-the live SQLite DB; Litestream continuously replicates the WAL to object storage and can restore
-on a fresh volume.
+The ingress assumes Traefik + cert-manager (`letsencrypt-prod` ClusterIssuer) and wires two
+middlewares defined in the same file: HTTPS redirect and ingress-level rate limiting. The PVC
+stores the live SQLite DB; Litestream continuously replicates the WAL to object storage and can
+restore on a fresh volume. The deployment runs without the Litestream secret (no replication).
 
 ## Frontend
 
@@ -107,6 +111,5 @@ repository variable (Settings → Secrets and variables → Actions → Variable
   entries to its left are ignored. Only enable it behind a proxy that appends XFF (Traefik and
   nginx ingress both do), and make sure the pod is not reachable directly (bypassing the
   ingress), or clients could spoof their IP. The k3s manifests set this for you.
-- Ingress-level rate limiting ships in `deploy/k8s/middleware-ratelimit.yaml` and is referenced
-  by `ingress.yaml` — apply them together (Traefik errors the route if the middleware is
-  missing).
+- Ingress-level rate limiting ships in `.infrastructure/ingress.yaml` (Traefik `ratelimit`
+  middleware) and is referenced by the ingress annotations on top of the app-level limits.

@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mynotes-api
+  namespace: mynotes
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: mynotes-redirect-https@kubernetescrd,mynotes-ratelimit@kubernetescrd
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - notes.mdelacour.com
+      secretName: mynotes-api-tls
+  rules:
+    - host: notes.mdelacour.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mynotes-api
+                port:
+                  number: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: mynotes
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+# Ingress-level rate limiting (defense in depth on top of the app-level limits).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ratelimit
+  namespace: mynotes
+spec:
+  rateLimit:
+    # token bucket per source IP: ~2 req/s sustained, burst of 60
+    average: 120
+    period: 1m
+    burst: 60
+    sourceCriterion:
+      ipStrategy:
+        depth: 1
