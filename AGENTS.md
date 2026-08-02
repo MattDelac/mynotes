@@ -3,9 +3,11 @@
 ## What this is
 
 MyNotes: local-first, end-to-end encrypted note taking (markdown only) with live collaboration.
-Excalidraw-simplicity UI — one blank page. Notes are Yjs documents persisted locally via
-y-indexeddb; the server is a zero-knowledge relay: it stores and broadcasts encrypted Yjs updates
-but can never read them. Share links carry the AES-GCM key in the URL fragment. Full spec:
+Excalidraw-simplicity UI — one blank page. A **session** is a single Yjs document holding all of
+the user's notes (`Y.Map<Y.Text>`), persisted locally via y-indexeddb; the server is a
+zero-knowledge relay: it stores and broadcasts encrypted Yjs updates but can never read them.
+Share links carry the AES-GCM key in the URL fragment. Routes: `/s/{sessionId}` (current note in
+`?n={noteId}`); legacy per-note shares `/n/{id}` are frozen but keep working. Full spec:
 `docs/PLAN.md`.
 
 ## Monorepo layout
@@ -70,21 +72,26 @@ Env vars: `DATABASE_URL` (default `sqlite:mynotes.db`), `BIND_ADDR` (default `0.
 
 ## Collaboration architecture
 
-CRDT (Yjs) over an encrypted dumb relay. Clients encrypt every Yjs update with the room key before
-sending; the server persists (`room_updates` table) and broadcasts ciphertext without reading it.
-New clients catch up via `GET /rooms/{id}/updates`, then join the WebSocket. A writable client
-compacts the log with `PUT snapshot` when it grows past 500 updates. No presence/awareness yet.
+CRDT (Yjs) over an encrypted dumb relay. The shared unit is a **session**: one Yjs document per
+session containing all notes as a `Y.Map<Y.Text>`. Clients encrypt every Yjs update with the room
+key before sending; the server persists (`room_updates` table) and broadcasts ciphertext without
+reading it. New clients catch up via `GET /rooms/{id}/updates`, then join the WebSocket. A
+writable client compacts the log with `PUT snapshot` when it grows past 500 updates. No
+presence/awareness yet.
 
 ## Conventions
 
 - Rust: axum handlers in `api/src/lib.rs` (testable), `main.rs` is wiring only. Dynamic
   `sqlx::query` (not macros) so no `.sqlx/` offline data is needed. Migrations in
   `api/migrations/NNNN_name.sql`.
-- Frontend lib modules (`apps/web/src/lib/`): `db.ts` (note metadata in IndexedDB), `docs.ts`
-  (per-note Yjs docs via y-indexeddb, legacy migration), `crypto.ts` (AES-GCM, base64url),
+- Frontend lib modules (`apps/web/src/lib/`): `db.ts` (note + session metadata in IndexedDB),
+  `sessions.ts` (session Y.Docs via y-indexeddb, legacy per-note migration), `docs.ts` (legacy
+  per-note Yjs docs — only for frozen pre-session shares), `crypto.ts` (AES-GCM, base64url),
   `api.ts` (relay client), `collab.ts` (RoomSession — encrypted Yjs-over-WS sync), `share.ts`
-  (link building), `shared.ts` (share fragment parsing), `ai.ts` REMOVED, `voice/` (dictation
-  engines), `export.ts` (.md download), `Editor.svelte` (CodeMirror 6 + yCollab binding).
+  (link building), `shared.ts` (share fragment parsing), `cm-conceal.ts` (Typora-style markdown
+  mark concealment), `voice/` (dictation engines), `export.ts` (.md download), `Editor.svelte`
+  (CodeMirror 6 + yCollab binding). Routes: `s/[id]` (session page), `n/[id]` (frozen legacy
+  per-note shares, redirects local notes to their session).
 - Svelte 5 runes (`$state`, `$derived`), tabs for indentation (Prettier config), no comments
   unless asked.
 - Commit style: conventional commits (`feat:`, `fix:`, `chore:`).

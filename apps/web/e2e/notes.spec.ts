@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { editorText } from './helpers';
 
-test('home redirects to a note and typing updates the title bar', async ({ page }) => {
+test('home redirects to a session and typing updates the title bar', async ({ page }) => {
 	await page.goto('/');
-	await expect(page).toHaveURL(/\/n\/[\w-]+/);
+	await expect(page).toHaveURL(/\/s\/[\w-]+/);
 
 	const editor = page.getByRole('textbox', { name: 'Note' });
 	await editor.fill('# Shopping List\n\n- milk');
@@ -26,6 +26,18 @@ test('editor renders markdown headings as styled text', async ({ page }) => {
 	expect(maxFontSize).toBeGreaterThan(20);
 });
 
+test('markdown marks are concealed except on the cursor line', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('## Hidden Marks\n\nplain line');
+
+	const firstLine = page.locator('.cm-line').first();
+	await expect(firstLine).toHaveText('Hidden Marks');
+
+	await firstLine.click();
+	await expect(firstLine).toHaveText('## Hidden Marks');
+});
+
 test('preview preserves single line breaks like the editor does', async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('textbox', { name: 'Note' }).fill('Hello\nyou');
@@ -34,6 +46,14 @@ test('preview preserves single line breaks like the editor does', async ({ page 
 	await expect(preview).toContainText('Hello');
 	const breaks = await preview.locator('br').count();
 	expect(breaks).toBe(1);
+});
+
+test('sidebar is hidden by default on mobile and toggled by the menu button', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/');
+	await expect(page.locator('aside')).toBeHidden();
+	await page.getByRole('button', { name: 'Toggle note list' }).click();
+	await expect(page.locator('aside')).toBeVisible();
 });
 
 test('sidebar shows the updated note title', async ({ page }) => {
@@ -55,7 +75,7 @@ test('reload preserves note content', async ({ page }) => {
 	await expect.poll(() => editorText(page)).toBe('persistent content here');
 });
 
-test('reload at home restores the latest note', async ({ page }) => {
+test('reload at home restores the latest session and note', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
 	await editor.fill('latest note body');
@@ -84,15 +104,13 @@ test('navigating between notes via sidebar shows each note content', async ({ pa
 	await page.goto('/');
 	await page.getByRole('textbox', { name: 'Note' }).fill('note AAAA content');
 	await page.waitForTimeout(700);
-	const urlA = page.url();
 
 	await page.getByRole('button', { name: 'New note' }).click();
-	await expect(page).not.toHaveURL(urlA);
+	await expect(page).toHaveURL(/\?n=/);
 	await page.getByRole('textbox', { name: 'Note' }).fill('note BBBB content');
 	await page.waitForTimeout(700);
 
 	await page.locator('aside a', { hasText: 'note AAAA' }).click();
-	await expect(page).toHaveURL(urlA);
 	await expect.poll(() => editorText(page)).toBe('note AAAA content');
 
 	await page.locator('aside a', { hasText: 'note BBBB' }).click();
@@ -105,6 +123,24 @@ test('deletes a note', async ({ page }) => {
 	await page.waitForTimeout(700);
 
 	await page.getByRole('button', { name: 'Delete note' }).click();
-	await expect(page.locator('aside a')).toHaveCount(0);
-	await expect(page).toHaveURL(/\/n\/[\w-]+/);
+	await expect(page.locator('aside a')).toHaveCount(1);
+	await expect(page.locator('aside a')).toHaveText('Untitled');
+	await expect(page).toHaveURL(/\/s\/[\w-]+\?n=[\w-]+/);
+});
+
+test('start empty session creates a fresh session', async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('old session note');
+	await page.waitForTimeout(700);
+	const firstUrl = page.url();
+	const firstSession = /\/s\/([\w-]+)/.exec(firstUrl)?.[1];
+
+	await page.getByRole('button', { name: 'Start empty session' }).click();
+	await expect(page).not.toHaveURL(firstUrl);
+	const secondSession = /\/s\/([\w-]+)/.exec(page.url())?.[1];
+	expect(secondSession).not.toBe(firstSession);
+
+	await expect(page.locator('aside a')).toHaveCount(1);
+	await expect(page.locator('aside a')).toHaveText('Untitled');
+	await expect(page.locator('header .title')).toHaveText('Untitled');
 });

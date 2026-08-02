@@ -4,7 +4,6 @@
 
 Excalidraw-simplicity note-taking: open the app, get a blank page, start typing.
 Local-first, end-to-end encrypted, fully open source. Share via encrypted link.
-Optional AI sidecar chat with bring-your-own-key (BYOK).
 
 ## Core Principles
 
@@ -19,18 +18,27 @@ Optional AI sidecar chat with bring-your-own-key (BYOK).
 
 ### Frontend (TypeScript + Svelte)
 
-- Editor: markdown editor (CodeMirror or plain textarea for v1) with optional
+- Editor: CodeMirror 6 with live markdown highlighting and Typora-style mark
+  concealment (formatting marks hidden except on the cursor line), plus optional
   rendered preview toggle
-- Local persistence: IndexedDB via `idb`, autosave
+- Local persistence: IndexedDB via `idb` + y-indexeddb (Yjs documents), autosave
 - Crypto: Web Crypto API, AES-GCM-256. Key gen → encrypt → export key to URL
   fragment
-- Voice input: Web Speech API (`webkitSpeechRecognition` on iOS Safari),
-  appends transcript at cursor
-- AI panel: collapsible sidebar
-  - API key stored in `sessionStorage` only (never persisted to disk)
-  - Calls go directly browser → Anthropic/OpenAI (no server proxy)
-  - Note content sent as context only on explicit user action
+- Voice input: Web Speech API dictation by default, optional on-device Whisper
+  (WebGPU) engine; transcript appended at cursor
 - PWA manifest for "add to home screen" on mobile
+
+### Session model
+
+A **session** is a single Yjs document (`Y.Map<Y.Text>`) holding all of the
+user's notes. Sessions are the unit of persistence, routing, and sharing:
+
+- Routes: `/s/{sessionId}` (current note in `?n={noteId}` query param)
+- Notes within a session are listed in the sidebar; "Start empty session" creates
+  a fresh, unrelated session
+- Sharing operates on the whole session (all notes at once)
+- Legacy per-note shares (`/n/{id}`) are frozen: old links keep working, new
+  shares are always session-level
 
 ### Backend (Rust, Axum + SQLite)
 
@@ -47,10 +55,10 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 ## Sharing Flow (CRDT collaboration)
 
 1. User hits "Share" → client generates AES key + edit token, creates a room
-2. An encrypted snapshot of the note's Yjs document seeds the server's update log
+2. An encrypted snapshot of the session's Yjs document seeds the server's update log
 3. Links:
-   - View: `https://app/n/{id}#{key}` (read-only)
-   - Owner/editor: `https://app/n/{id}#{key}:{edit_token}` (can edit)
+   - View: `https://app/s/{id}#{key}` (read-only)
+   - Owner/editor: `https://app/s/{id}#{key}:{edit_token}` (can edit)
 4. All participants sync live over an encrypted WebSocket relay: every Yjs update
    is encrypted client-side before broadcast — the server never sees plaintext
 5. Edits converge via CRDT; no conflicts, no last-write-wins data loss
@@ -60,8 +68,8 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 
 ### Export to disk
 
-- "Export" button → serialize note (markdown, plus optional AI chat transcript
-  appended as a section) → browser download as `{title-or-id}.md`
+- "Export" button → serialize the current note as markdown → browser download
+  as `{title-or-id}.md`
 - **Unencrypted plaintext** — confirmation dialog: "This will export an
   unencrypted copy"
 - On mobile, uses the standard share/download flow (lands in Files)
@@ -79,16 +87,16 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 - Abuse posture: nothing is sent from our server; it's the user's own mail
   client. No relay to protect, no rate limits needed.
 
-### AI chat
-
-- BYOK (Anthropic/OpenAI), key in `sessionStorage`, client-direct calls
-- "Send note as context" button — note content only leaves the device on
-  explicit action
-
 ### Voice input
 
-- Web Speech API dictation, transcript appended at cursor
-- Browser-native, zero dependencies
+- Web Speech API dictation by default; optional on-device Whisper (WebGPU) via
+  transformers.js for fully offline speech recognition
+- Transcript appended at cursor
+
+### Removed: AI chat
+
+A BYOK AI sidecar chat was built in M4 and later removed — the project stays
+focused on notes + collaboration.
 
 ## Roadmap
 
@@ -97,7 +105,7 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 | **M1**    | Skeleton: repo setup, Axum hello-world, Svelte frontend, CI (fmt/clippy) |
 | **M2**    | Local notes: markdown editor + IndexedDB autosave, note list       |
 | **M3**    | Share: crypto module, blob API, share/view links, mailto-with-link flow |
-| **M4**    | AI chat: BYOK panel, streaming responses, send-note-as-context     |
+| **M4**    | AI chat: BYOK panel (later removed)                                 |
 | **M5**    | Voice + Export: Web Speech API dictation, plaintext export-to-disk |
 | **M6**    | Polish: PWA, mobile UX, self-host docs, MIT license                |
 

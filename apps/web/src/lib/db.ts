@@ -11,6 +11,14 @@ export interface Note {
 	content: string;
 	createdAt: number;
 	updatedAt: number;
+	sessionId?: string;
+	share?: ShareInfo;
+}
+
+export interface Session {
+	id: string;
+	createdAt: number;
+	updatedAt: number;
 	share?: ShareInfo;
 }
 
@@ -20,16 +28,27 @@ interface NotesDB extends DBSchema {
 		value: Note;
 		indexes: { 'by-updated': number };
 	};
+	sessions: {
+		key: string;
+		value: Session;
+		indexes: { 'by-updated': number };
+	};
 }
 
 let dbPromise: Promise<IDBPDatabase<NotesDB>> | null = null;
 
 function db(): Promise<IDBPDatabase<NotesDB>> {
 	if (!dbPromise) {
-		dbPromise = openDB<NotesDB>('mynotes', 1, {
-			upgrade(database) {
-				const store = database.createObjectStore('notes', { keyPath: 'id' });
-				store.createIndex('by-updated', 'updatedAt');
+		dbPromise = openDB<NotesDB>('mynotes', 2, {
+			upgrade(database, oldVersion) {
+				if (oldVersion < 1) {
+					const store = database.createObjectStore('notes', { keyPath: 'id' });
+					store.createIndex('by-updated', 'updatedAt');
+				}
+				if (oldVersion < 2) {
+					const store = database.createObjectStore('sessions', { keyPath: 'id' });
+					store.createIndex('by-updated', 'updatedAt');
+				}
 			}
 		});
 	}
@@ -68,4 +87,30 @@ export async function deleteNote(id: string): Promise<void> {
 export function createNote(): Note {
 	const now = Date.now();
 	return { id: crypto.randomUUID(), content: '', createdAt: now, updatedAt: now };
+}
+
+export async function listSessions(): Promise<Session[]> {
+	const database = await db();
+	const sessions = await database.getAllFromIndex('sessions', 'by-updated');
+	return sessions.reverse();
+}
+
+export async function getSession(id: string): Promise<Session | undefined> {
+	const database = await db();
+	return database.get('sessions', id);
+}
+
+export async function saveSession(session: Session): Promise<void> {
+	const database = await db();
+	await database.put('sessions', JSON.parse(JSON.stringify(session)) as Session);
+}
+
+export async function deleteSession(id: string): Promise<void> {
+	const database = await db();
+	await database.delete('sessions', id);
+}
+
+export function createSession(): Session {
+	const now = Date.now();
+	return { id: crypto.randomUUID(), createdAt: now, updatedAt: now };
 }

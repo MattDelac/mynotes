@@ -6,11 +6,28 @@
 	import { RoomSession, type SessionState } from '$lib/collab';
 	import { encryptBytes, exportKey, generateKey, importKey } from '$lib/crypto';
 	import { pushBlob, pushSnapshot } from '$lib/api';
-	import { listNotes, saveNote, deleteNote, createNote, noteTitle, type Note } from '$lib/db';
-	import { destroyNoteDoc, getNoteDoc, migrateLegacyContent, setDocContent } from '$lib/docs';
+	import {
+		createSession,
+		getSession,
+		listNotes,
+		saveNote,
+		saveSession,
+		deleteNote,
+		noteTitle,
+		type Note,
+		type ShareInfo
+	} from '$lib/db';
+	import {
+		addNote,
+		currentNoteId,
+		getSessionDoc,
+		rememberCurrentNote,
+		removeNote,
+		type SessionDoc
+	} from '$lib/sessions';
 	import * as Y from 'yjs';
 	import { debounce } from '$lib/debounce';
-	import { mailtoLink, viewLink } from '$lib/share';
+	import { mailtoLink, sessionViewLink } from '$lib/share';
 	import {
 		availableEngines,
 		createEngine,
@@ -24,6 +41,7 @@
 		Copy,
 		Download,
 		Eye,
+		FilePlus2,
 		Link2,
 		Mail,
 		Menu,
@@ -40,9 +58,12 @@
 
 	let { data }: PageProps = $props();
 
-	let note = $state<Note>({ id: '', content: '', createdAt: 0, updatedAt: 0 });
+	let sessionDoc = $state<SessionDoc | null>(null);
+	let noteId = $state('');
 	let ytext = $state<Y.Text | null>(null);
+	let content = $state('');
 	let notes = $state<Note[]>([]);
+	let share = $state<ShareInfo | null>(null);
 	let preview = $state(false);
 	let sidebarOpen = $state(false);
 	let shareOpen = $state(false);
@@ -57,6 +78,13 @@
 	let voiceStatus = $state('');
 	const engines = availableEngines();
 	let engineKind = $state<VoiceEngineKind | null>(loadEngineChoice() ?? engines[0]?.kind ?? null);
+	let sessionState = $state<SessionState | 'idle'>('idle');
+	let collab: RoomSession | null = null;
+	let textObserver: (() => void) | null = null;
+
+	const title = $derived(noteTitle(content));
+	const rendered = $derived(renderMarkdown(content));
+	const canWrite = $derived(!data.shared || data.shared.owner);
 
 	$effect(() => {
 		if (!engineKind) return;
@@ -94,170 +122,230 @@
 	function exportNote() {
 		const ok = confirm('This will export an unencrypted copy of the note. Continue?');
 		if (ok) {
-			downloadNote(note);
+			downloadNote({ id: noteId, content, createdAt: 0, updatedAt: Date.now() });
 		}
 	}
 
 	async function importFile(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
-		if (!file) return;
-		const fresh = createNote();
-		fresh.content = '';
-		await setDocContent(fresh.id, await file.text());
-		await saveNote(fresh);
 		input.value = '';
-		await goto(resolve(`/n/${fresh.id}`));
+		if (!file || !sessionDoc) return;
+		const text = await file.text();
+		const doc = sessionDoc;
+		const id = await addNote(docId());
+		const target = doc.notes.get(id);
+		if (target && text.length > 0) target.insert(0, text);
+		selectNote(id);
 	}
 
-	const persist = debounce(async () => {
-		note.updatedAt = Date.now();
-		await saveNote(note);
-		notes = await listNotes();
-	}, 400);
+	function docId(): string {
+		return data.sessionId ?? data.shared?.remoteId ?? '';
+	}
 
-	let sessionState = $state<SessionState | 'idle'>('idle');
-	let session: RoomSession | null = null;
-	let sharedYtext = $state<Y.Text | null>(null);
+	async function syncMetadata() {
+		const doc = sessionDoc;
+		if (!doc) return;
+		const ids = [...doc.notes.keys()];
+		const all = await listNotes();
+		const byId = new Map(all.map((n) => [n.id, n]));
+		const result: Note[] = [];
+		for (const id of ids) {
+			const text = doc.notes.get(id)?.toString() ?? '';
+			const existing = byId.get(id);
+			const changed = !existing || existing.content !== text;
+			const meta: Note = existing
+				? { ...existing, content: text }
+				: { id, content: text, createdAt: Date.now(), updatedAt: Date.now() };
+			if (data.sessionId) meta.sessionId = data.sessionId;
+			if (changed) {
+				meta.updatedAt = Date.now();
+				await saveNote(meta);
+			}
+			result.push(meta);
+		}
+		result.sort((a, b) => b.updatedAt - a.updatedAt);
+		notes = result;
+	}
 
-	const rendered = $derived(renderMarkdown(note.content));
+	const syncMeta = debounce(syncMetadata, 300);
+
+	function openNote(id: string) {
+		const doc = sessionDoc;
+		if (!doc) return;
+		const text = doc.notes.get(id);
+		if (!text) return;
+		if (textObserver && ytext) ytext.unobserve(textObserver);
+		noteId = id;
+		ytext = text;
+		content = text.toString();
+		textObserver = () => {
+			content = text.toString();
+			void syncMeta();
+		};
+		text.observe(textObserver);
+	}
+
+	function selectNote(id: string) {
+		sidebarOpen = false;
+		const sessionKey = docId();
+		if (data.sessionId) rememberCurrentNote(sessionKey, id);
+		openNote(id);
+		history.replaceState(null, '', `${resolve(`/s/${sessionKey}`)}?n=${id}`);
+	}
+
+	async function startCollab(ydoc: Y.Doc, info: ShareInfo) {
+		collab?.stop();
+		collab = new RoomSession({
+			ydoc,
+			roomId: info.remoteId,
+			key: await importKey(info.key),
+			editToken: info.editToken,
+			onState: (state) => (sessionState = state)
+		});
+		try {
+			await collab.start();
+		} catch {
+			sessionState = 'offline';
+		}
+	}
+	$effect(() => {
+		if (!data.sessionId) return;
+		const sessionId = data.sessionId;
+		let cancelled = false;
+		let boundDoc: SessionDoc | null = null;
+		let mapObserver: (() => void) | null = null;
+		void (async () => {
+			const doc = await getSessionDoc(sessionId);
+			if (cancelled) return;
+			sessionDoc = doc;
+			boundDoc = doc;
+			const meta = await getSession(sessionId);
+			share = meta?.share ?? null;
+			await syncMetadata();
+			mapObserver = () => void syncMeta();
+			doc.notes.observeDeep(mapObserver);
+			let id = data.noteId && doc.notes.has(data.noteId) ? data.noteId : currentNoteId(sessionId);
+			if (!id || !doc.notes.has(id)) id = notes[0]?.id ?? '';
+			if (!id) id = await addNote(sessionId);
+			rememberCurrentNote(sessionId, id);
+			openNote(id);
+			if (share) await startCollab(doc.ydoc, share);
+		})();
+		return () => {
+			cancelled = true;
+			collab?.stop();
+			collab = null;
+			if (mapObserver) boundDoc?.notes.unobserveDeep(mapObserver);
+			if (textObserver) ytext?.unobserve(textObserver);
+			textObserver = null;
+			sessionDoc = null;
+			ytext = null;
+			noteId = '';
+		};
+	});
 
 	$effect(() => {
 		if (!data.shared) return;
 		const remoteId = data.shared.remoteId;
-		let session: RoomSession | null = null;
 		let cancelled = false;
+		let boundDoc: SessionDoc | null = null;
+		let mapObserver: (() => void) | null = null;
 		void (async () => {
 			const fragment = parseShareFragment(location.hash);
 			if (!fragment) return;
-			const ydoc = new Y.Doc();
-			session = new RoomSession({
-				ydoc,
+			const doc = await getSessionDoc(remoteId);
+			if (cancelled) return;
+			const room = new RoomSession({
+				ydoc: doc.ydoc,
 				roomId: remoteId,
 				key: await importKey(fragment.key),
 				editToken: fragment.editToken,
 				onState: (state) => (sessionState = state)
 			});
+			collab = room;
 			try {
-				await session.start();
+				await room.start();
 			} catch {
 				sessionState = 'offline';
 				return;
 			}
-			if (cancelled) {
-				session.stop();
-				ydoc.destroy();
-				return;
-			}
-			sharedYtext = ydoc.getText('content');
-		})();
-		return () => {
-			cancelled = true;
-			session?.stop();
-			sharedYtext = null;
-		};
-	});
-
-	$effect(() => {
-		listNotes().then((all) => (notes = all));
-	});
-
-	$effect(() => {
-		if (!data.note) return;
-		note = { ...data.note };
-		ytext = null;
-		preview = false;
-		shareOpen = false;
-		sessionState = 'idle';
-		const id = data.note.id;
-		const legacy = data.note.content;
-		let observer: (() => void) | null = null;
-		let cancelled = false;
-		void (async () => {
-			const doc = await getNoteDoc(id);
 			if (cancelled) return;
-			await migrateLegacyContent(id, legacy);
-			if (cancelled) return;
-			ytext = doc.ytext;
-			note.content = doc.ytext.toString();
-			observer = () => {
-				note.content = doc.ytext.toString();
-				persist();
+			sessionDoc = doc;
+			boundDoc = doc;
+			await syncMetadata();
+			mapObserver = () => {
+				void syncMeta();
+				if (!noteId) {
+					const first = [...doc.notes.keys()][0];
+					if (first) openNote(first);
+				}
 			};
-			doc.ytext.observe(observer);
-			if (data.note?.share) {
-				startSession(doc.ydoc, data.note.share);
-			}
+			doc.notes.observeDeep(mapObserver);
+			const id = data.noteId && doc.notes.has(data.noteId) ? data.noteId : (notes[0]?.id ?? '');
+			if (id) openNote(id);
 		})();
 		return () => {
 			cancelled = true;
-			session?.stop();
-			session = null;
-			if (observer) {
-				getNoteDoc(id).then((doc) => doc.ytext.unobserve(observer!));
-			}
+			collab?.stop();
+			collab = null;
+			if (mapObserver) boundDoc?.notes.unobserveDeep(mapObserver);
+			if (textObserver) ytext?.unobserve(textObserver);
+			textObserver = null;
+			sessionDoc = null;
+			ytext = null;
+			noteId = '';
+			sessionState = 'idle';
 		};
 	});
-
-	async function startSession(ydoc: Y.Doc, share: NonNullable<Note['share']>) {
-		session?.stop();
-		session = new RoomSession({
-			ydoc,
-			roomId: share.remoteId,
-			key: await importKey(share.key),
-			editToken: share.editToken,
-			onState: (state) => (sessionState = state)
-		});
-		try {
-			await session.start();
-		} catch {
-			sessionState = 'offline';
-		}
-	}
 
 	async function newNote() {
-		const fresh = createNote();
-		await saveNote(fresh);
-		await goto(resolve(`/n/${fresh.id}`));
+		const id = await addNote(docId());
+		selectNote(id);
 	}
 
-	async function removeNote(id: string) {
+	async function removeNoteById(id: string) {
+		await removeNote(docId(), id);
 		await deleteNote(id);
-		await destroyNoteDoc(id);
-		notes = await listNotes();
-		if (id === note.id) {
+		await syncMetadata();
+		if (id === noteId) {
 			if (notes.length > 0) {
-				await goto(resolve(`/n/${notes[0].id}`));
-			} else {
-				const fresh = createNote();
-				await saveNote(fresh);
-				await goto(resolve(`/n/${fresh.id}`));
+				selectNote(notes[0].id);
+			} else if (canWrite) {
+				const fresh = await addNote(docId());
+				selectNote(fresh);
 			}
 		}
 	}
 
-	async function share() {
-		if (note.share) {
+	async function startEmptySession() {
+		const fresh = createSession();
+		await saveSession(fresh);
+		await goto(resolve(`/s/${fresh.id}`));
+	}
+
+	async function shareSession() {
+		if (share) {
 			shareOpen = true;
 			return;
 		}
 		const ok = confirm(
-			'Sharing your note will store it encrypted on the server. Anyone with the link can read it. Confirm?'
+			'Sharing this session will store all its notes encrypted on the server. Anyone with the link can read them. Confirm?'
 		);
-		if (!ok) return;
+		if (!ok || !data.sessionId || !sessionDoc) return;
 		sharing = true;
 		shareError = '';
 		try {
 			const cryptoKey = await generateKey();
 			const encoded = await exportKey(cryptoKey);
-			const doc = await getNoteDoc(note.id);
-			const snapshot = await encryptBytes(cryptoKey, Y.encodeStateAsUpdate(doc.ydoc));
+			const snapshot = await encryptBytes(cryptoKey, Y.encodeStateAsUpdate(sessionDoc.ydoc));
 			const { id, edit_token } = await pushBlob(snapshot);
 			await pushSnapshot(id, edit_token, snapshot);
-			note.share = { remoteId: id, key: encoded, editToken: edit_token };
-			await saveNote(note);
+			share = { remoteId: id, key: encoded, editToken: edit_token };
+			const meta = await getSession(data.sessionId);
+			if (meta) await saveSession({ ...meta, share, updatedAt: Date.now() });
 			shareOpen = true;
-			startSession(doc.ydoc, note.share);
+			await startCollab(sessionDoc.ydoc, share);
 		} catch (e) {
 			shareError = e instanceof Error ? e.message : 'share failed';
 		} finally {
@@ -266,19 +354,19 @@
 	}
 
 	async function copyLink() {
-		if (!note.share) return;
-		await navigator.clipboard.writeText(viewLink(note.share));
+		if (!share) return;
+		await navigator.clipboard.writeText(sessionViewLink(share));
 		copied = true;
 		setTimeout(() => (copied = false), 2000);
 	}
 
 	function email() {
-		if (!note.share) return;
+		if (!share) return;
 		const ok = confirm(
-			'Anyone with this link can read the note. The key is in the link — treat the email as sensitive.'
+			'Anyone with this link can read the notes. The key is in the link — treat the email as sensitive.'
 		);
 		if (ok) {
-			location.href = mailtoLink(noteTitle(note.content), viewLink(note.share));
+			location.href = mailtoLink('My notes', sessionViewLink(share));
 		}
 	}
 </script>
@@ -286,7 +374,7 @@
 <div class="shell">
 	<header>
 		{#if data.shared}
-			<span class="title">Shared note{data.shared.owner ? '' : ' (read-only)'}</span>
+			<span class="title">Shared session{data.shared.owner ? '' : ' (read-only)'}</span>
 			<span class="sync" class:sync-error={sessionState === 'offline'}>
 				{sessionState === 'live'
 					? 'live'
@@ -303,8 +391,8 @@
 			>
 				<Menu size={18} />
 			</button>
-			<span class="title">{noteTitle(note.content)}</span>
-			{#if note.share}
+			<span class="title">{title}</span>
+			{#if share}
 				<span class="sync" class:sync-error={sessionState === 'offline'}>
 					{sessionState === 'live'
 						? 'live'
@@ -350,7 +438,7 @@
 			<button
 				class="icon"
 				aria-label="Export note"
-				title="Export as markdown file"
+				title="Export current note as markdown file"
 				onclick={exportNote}
 			>
 				<Download size={18} />
@@ -358,7 +446,7 @@
 			<button
 				class="icon"
 				aria-label="Import note"
-				title="Import a markdown file"
+				title="Import a markdown file as a new note"
 				onclick={() => fileInput?.click()}
 			>
 				<Upload size={18} />
@@ -372,12 +460,20 @@
 			/>
 			<button
 				class="icon"
-				aria-label="Share note"
-				title="Share this note"
+				aria-label="Share session"
+				title="Share this session"
 				disabled={sharing}
-				onclick={share}
+				onclick={shareSession}
 			>
-				{#if note.share}<RefreshCw size={18} />{:else}<Link2 size={18} />{/if}
+				{#if share}<RefreshCw size={18} />{:else}<Link2 size={18} />{/if}
+			</button>
+			<button
+				class="icon"
+				aria-label="Start empty session"
+				title="Start an empty session"
+				onclick={startEmptySession}
+			>
+				<FilePlus2 size={18} />
 			</button>
 			<button
 				class="icon"
@@ -390,14 +486,14 @@
 		{/if}
 	</header>
 
-	{#if shareOpen && note.share}
+	{#if shareOpen && share}
 		<div class="sharebar">
-			<input readonly value={viewLink(note.share)} aria-label="Share link" />
-			<button class="text-btn" onclick={copyLink}>
+			<input readonly value={sessionViewLink(share)} aria-label="Share link" />
+			<button class="text-btn" title="Copy link" onclick={copyLink}>
 				<Copy size={15} />
 				{copied ? 'Copied' : 'Copy'}
 			</button>
-			<button class="text-btn" onclick={email}>
+			<button class="text-btn" title="Email link" onclick={email}>
 				<Mail size={15} />
 				Email
 			</button>
@@ -421,45 +517,47 @@
 	{/if}
 
 	<div class="body">
-		{#if !data.shared}
-			<aside class:open={sidebarOpen}>
+		<aside class:open={sidebarOpen || Boolean(data.shared)}>
+			{#if canWrite}
 				<button class="new" onclick={newNote} title="Create a new note">
 					<Plus size={15} />
 					New note
 				</button>
-				<ul>
-					{#each notes as n (n.id)}
-						<li class:active={n.id === note.id}>
-							<a href={resolve(`/n/${n.id}`)} onclick={() => (sidebarOpen = false)}
-								>{noteTitle(n.content)}</a
-							>
+			{/if}
+			<ul>
+				{#each notes as n (n.id)}
+					<li class:active={n.id === noteId}>
+						<a
+							href={resolve(`/s/${docId()}?n=${n.id}`)}
+							onclick={(e) => {
+								e.preventDefault();
+								selectNote(n.id);
+							}}>{noteTitle(n.content)}</a
+						>
+						{#if canWrite}
 							<button
 								class="delete"
 								aria-label="Delete note"
 								title="Delete note"
-								onclick={() => removeNote(n.id)}
+								onclick={() => removeNoteById(n.id)}
 							>
 								<Trash2 size={14} />
 							</button>
-						</li>
-					{/each}
-				</ul>
-			</aside>
-		{/if}
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</aside>
 
 		<main>
-			{#if data.shared}
-				{#if sharedYtext}
-					<Editor ytext={sharedYtext} editable={data.shared.owner} />
-				{/if}
-			{:else if preview}
+			{#if preview}
 				<article class="preview">
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized with DOMPurify above -->
 					{@html rendered}
 				</article>
-			{:else if note.id && ytext}
-				{#key note.id}
-					<Editor bind:this={editor} {ytext} />
+			{:else if noteId && ytext}
+				{#key noteId}
+					<Editor bind:this={editor} {ytext} editable={canWrite} />
 				{/key}
 			{/if}
 		</main>

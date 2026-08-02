@@ -27,7 +27,7 @@ test('import creates a note from a markdown file', async ({ page }) => {
 		buffer: Buffer.from('# Imported Title\n\nimported body')
 	});
 
-	await expect(page).toHaveURL(/\/n\/[\w-]+/);
+	await expect(page).toHaveURL(/\/s\/[\w-]+\?n=[\w-]+/);
 	await expect.poll(() => editorText(page)).toBe('# Imported Title\n\nimported body');
 	await expect(page.locator('header .title')).toHaveText('Imported Title');
 });
