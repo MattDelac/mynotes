@@ -2,12 +2,15 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
-	import { fetchSharedContent, SHARED_POLL_INTERVAL_MS } from '$lib/shared';
+	import { parseShareFragment } from '$lib/shared';
+	import { RoomSession, type SessionState } from '$lib/collab';
+	import { encryptBytes, exportKey, generateKey, importKey } from '$lib/crypto';
+	import { pushBlob, pushSnapshot } from '$lib/api';
 	import { listNotes, saveNote, deleteNote, createNote, noteTitle, type Note } from '$lib/db';
 	import { destroyNoteDoc, getNoteDoc, migrateLegacyContent, setDocContent } from '$lib/docs';
-	import type * as Y from 'yjs';
+	import * as Y from 'yjs';
 	import { debounce } from '$lib/debounce';
-	import { mailtoLink, shareNote, syncShared, viewLink } from '$lib/share';
+	import { mailtoLink, viewLink } from '$lib/share';
 	import {
 		availableEngines,
 		createEngine,
@@ -111,38 +114,46 @@
 		notes = await listNotes();
 	}, 400);
 
-	let syncState = $state<'idle' | 'pending' | 'syncing' | 'synced' | 'error'>('idle');
+	let sessionState = $state<SessionState | 'idle'>('idle');
+	let session: RoomSession | null = null;
+	let sharedYtext = $state<Y.Text | null>(null);
 
-	const syncRemote = debounce(async () => {
-		if (!note.share) return;
-		syncState = 'syncing';
-		try {
-			await syncShared(note);
-			syncState = 'synced';
-		} catch {
-			syncState = 'error';
-		}
-	}, 5000);
-
-	let sharedContent = $state('');
-
-	const rendered = $derived(renderMarkdown(data.shared ? sharedContent : note.content));
+	const rendered = $derived(renderMarkdown(note.content));
 
 	$effect(() => {
 		if (!data.shared) return;
-		sharedContent = data.shared.content;
 		const remoteId = data.shared.remoteId;
-		const timer = setInterval(async () => {
+		let session: RoomSession | null = null;
+		let cancelled = false;
+		void (async () => {
+			const fragment = parseShareFragment(location.hash);
+			if (!fragment) return;
+			const ydoc = new Y.Doc();
+			session = new RoomSession({
+				ydoc,
+				roomId: remoteId,
+				key: await importKey(fragment.key),
+				editToken: fragment.editToken,
+				onState: (state) => (sessionState = state)
+			});
 			try {
-				const fresh = await fetchSharedContent(remoteId, location.hash);
-				if (fresh.content !== sharedContent) {
-					sharedContent = fresh.content;
-				}
+				await session.start();
 			} catch {
-				// keep showing the last known content on transient failures
+				sessionState = 'offline';
+				return;
 			}
-		}, SHARED_POLL_INTERVAL_MS);
-		return () => clearInterval(timer);
+			if (cancelled) {
+				session.stop();
+				ydoc.destroy();
+				return;
+			}
+			sharedYtext = ydoc.getText('content');
+		})();
+		return () => {
+			cancelled = true;
+			session?.stop();
+			sharedYtext = null;
+		};
 	});
 
 	$effect(() => {
@@ -155,7 +166,7 @@
 		ytext = null;
 		preview = false;
 		shareOpen = false;
-		syncState = data.note.share ? 'synced' : 'idle';
+		sessionState = 'idle';
 		const id = data.note.id;
 		const legacy = data.note.content;
 		let observer: (() => void) | null = null;
@@ -169,19 +180,38 @@
 			note.content = doc.ytext.toString();
 			observer = () => {
 				note.content = doc.ytext.toString();
-				if (note.share) syncState = 'pending';
 				persist();
-				syncRemote();
 			};
 			doc.ytext.observe(observer);
+			if (data.note?.share) {
+				startSession(doc.ydoc, data.note.share);
+			}
 		})();
 		return () => {
 			cancelled = true;
+			session?.stop();
+			session = null;
 			if (observer) {
 				getNoteDoc(id).then((doc) => doc.ytext.unobserve(observer!));
 			}
 		};
 	});
+
+	async function startSession(ydoc: Y.Doc, share: NonNullable<Note['share']>) {
+		session?.stop();
+		session = new RoomSession({
+			ydoc,
+			roomId: share.remoteId,
+			key: await importKey(share.key),
+			editToken: share.editToken,
+			onState: (state) => (sessionState = state)
+		});
+		try {
+			await session.start();
+		} catch {
+			sessionState = 'offline';
+		}
+	}
 
 	async function newNote() {
 		const fresh = createNote();
@@ -205,19 +235,27 @@
 	}
 
 	async function share() {
-		if (!note.share) {
-			const ok = confirm(
-				'Sharing your note will store it encrypted on the server. Anyone with the link can read it. Confirm?'
-			);
-			if (!ok) return;
+		if (note.share) {
+			shareOpen = true;
+			return;
 		}
+		const ok = confirm(
+			'Sharing your note will store it encrypted on the server. Anyone with the link can read it. Confirm?'
+		);
+		if (!ok) return;
 		sharing = true;
 		shareError = '';
 		try {
-			note.share = await shareNote(note);
+			const cryptoKey = await generateKey();
+			const encoded = await exportKey(cryptoKey);
+			const doc = await getNoteDoc(note.id);
+			const snapshot = await encryptBytes(cryptoKey, Y.encodeStateAsUpdate(doc.ydoc));
+			const { id, edit_token } = await pushBlob(snapshot);
+			await pushSnapshot(id, edit_token, snapshot);
+			note.share = { remoteId: id, key: encoded, editToken: edit_token };
 			await saveNote(note);
 			shareOpen = true;
-			syncState = 'synced';
+			startSession(doc.ydoc, note.share);
 		} catch (e) {
 			shareError = e instanceof Error ? e.message : 'share failed';
 		} finally {
@@ -246,22 +284,23 @@
 <div class="shell">
 	<header>
 		{#if data.shared}
-			<span class="title">Shared note (read-only)</span>
+			<span class="title">Shared note{data.shared.owner ? '' : ' (read-only)'}</span>
+			<span class="sync" class:sync-error={sessionState === 'offline'}>
+				{sessionState === 'live'
+					? 'live'
+					: sessionState === 'connecting'
+						? 'connecting…'
+						: 'offline'}
+			</span>
 		{:else}
 			<span class="title">{noteTitle(note.content)}</span>
 			{#if note.share}
-				<span
-					class="sync"
-					class:sync-error={syncState === 'error'}
-					title={syncState === 'error' ? 'sync failed' : 'shared'}
-				>
-					{syncState === 'syncing'
-						? 'syncing…'
-						: syncState === 'pending'
-							? 'pending…'
-							: syncState === 'error'
-								? 'sync failed'
-								: 'shared ✓'}
+				<span class="sync" class:sync-error={sessionState === 'offline'}>
+					{sessionState === 'live'
+						? 'live'
+						: sessionState === 'connecting'
+							? 'connecting…'
+							: 'offline'}
 				</span>
 			{/if}
 			{#if engines.length > 0}
@@ -365,7 +404,11 @@
 		{/if}
 
 		<main>
-			{#if data.shared || preview}
+			{#if data.shared}
+				{#if sharedYtext}
+					<Editor ytext={sharedYtext} editable={data.shared.owner} />
+				{/if}
+			{:else if preview}
 				<article class="preview">
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized with DOMPurify above -->
 					{@html rendered}

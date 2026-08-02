@@ -31,12 +31,12 @@ export async function importKey(encoded: string): Promise<CryptoKey> {
 	]);
 }
 
-export async function encrypt(key: CryptoKey, plaintext: string): Promise<Uint8Array> {
+export async function encryptBytes(key: CryptoKey, data: Uint8Array): Promise<Uint8Array> {
 	const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 	const ciphertext = await crypto.subtle.encrypt(
 		{ name: 'AES-GCM', iv },
 		key,
-		new TextEncoder().encode(plaintext)
+		data as BufferSource
 	);
 	const blob = new Uint8Array(IV_LENGTH + ciphertext.byteLength);
 	blob.set(iv, 0);
@@ -44,7 +44,7 @@ export async function encrypt(key: CryptoKey, plaintext: string): Promise<Uint8A
 	return blob;
 }
 
-export async function decrypt(key: CryptoKey, blob: Uint8Array): Promise<string> {
+export async function decryptBytes(key: CryptoKey, blob: Uint8Array): Promise<Uint8Array> {
 	const iv = blob.slice(0, IV_LENGTH);
 	const ciphertext = blob.slice(IV_LENGTH);
 	const plaintext = await crypto.subtle.decrypt(
@@ -52,5 +52,13 @@ export async function decrypt(key: CryptoKey, blob: Uint8Array): Promise<string>
 		key,
 		ciphertext as BufferSource
 	);
-	return new TextDecoder().decode(plaintext);
+	return new Uint8Array(plaintext);
+}
+
+export async function encrypt(key: CryptoKey, plaintext: string): Promise<Uint8Array> {
+	return encryptBytes(key, new TextEncoder().encode(plaintext));
+}
+
+export async function decrypt(key: CryptoKey, blob: Uint8Array): Promise<string> {
+	return new TextDecoder().decode(await decryptBytes(key, blob));
 }

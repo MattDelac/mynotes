@@ -1,7 +1,5 @@
 import { base } from '$app/paths';
-import { encrypt, exportKey, generateKey, importKey } from './crypto';
-import { pushBlob, updateBlob } from './api';
-import type { Note, ShareInfo } from './db';
+import type { ShareInfo } from './db';
 
 export function viewLink(share: ShareInfo): string {
 	return `${location.origin}${base}/n/${share.remoteId}#${share.key}`;
@@ -9,27 +7,6 @@ export function viewLink(share: ShareInfo): string {
 
 export function ownerLink(share: ShareInfo): string {
 	return `${location.origin}${base}/n/${share.remoteId}#${share.key}:${share.editToken}`;
-}
-
-export async function shareNote(note: Note): Promise<ShareInfo> {
-	if (note.share) {
-		const key = await importKey(note.share.key);
-		const blob = await encrypt(key, note.content);
-		await updateBlob(note.share.remoteId, note.share.editToken, blob);
-		return note.share;
-	}
-	const key = await generateKey();
-	const encoded = await exportKey(key);
-	const blob = await encrypt(key, note.content);
-	const { id, edit_token } = await pushBlob(blob);
-	return { remoteId: id, key: encoded, editToken: edit_token };
-}
-
-export async function syncShared(note: Note): Promise<void> {
-	if (!note.share) return;
-	const key = await importKey(note.share.key);
-	const blob = await encrypt(key, note.content);
-	await updateBlob(note.share.remoteId, note.share.editToken, blob);
 }
 
 export function mailtoLink(title: string, link: string): string {

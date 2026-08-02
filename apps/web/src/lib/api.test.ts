@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { fetchBlob, pushBlob, updateBlob } from './api';
+import { fetchRoomUpdates, pushBlob, pushSnapshot } from './api';
 
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -19,24 +19,29 @@ describe('api', () => {
 		expect(result).toEqual({ id: 'abc', edit_token: 'tok' });
 	});
 
-	it('fetches a blob as bytes', async () => {
+	it('fetches room updates and decodes base64url blobs', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn().mockResolvedValue(new Response(new Uint8Array([9, 8, 7]), { status: 200 }))
+			vi
+				.fn()
+				.mockResolvedValue(
+					new Response(JSON.stringify({ updates: [{ seq: 3, blob: 'AQID' }] }), { status: 200 })
+				)
 		);
-		expect(await fetchBlob('abc')).toEqual(new Uint8Array([9, 8, 7]));
+		const rows = await fetchRoomUpdates('room1');
+		expect(rows).toEqual([{ seq: 3, blob: new Uint8Array([1, 2, 3]) }]);
 	});
 
-	it('sends the edit token on update', async () => {
+	it('sends the edit token on snapshot', async () => {
 		const mock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
 		vi.stubGlobal('fetch', mock);
-		await updateBlob('abc', 'tok', new Uint8Array([1]));
+		await pushSnapshot('room1', 'tok', new Uint8Array([1]));
 		const [, init] = mock.mock.calls[0] as [string, RequestInit];
 		expect((init.headers as Record<string, string>)['x-edit-token']).toBe('tok');
 	});
 
 	it('throws on non-ok responses', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
-		await expect(fetchBlob('missing')).rejects.toThrow('404');
+		await expect(fetchRoomUpdates('missing')).rejects.toThrow('404');
 	});
 });

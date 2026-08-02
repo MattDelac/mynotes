@@ -1,4 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function shareCurrentNote(page: Page): Promise<string> {
+	await page.getByRole('button', { name: 'Share note' }).click();
+	const linkInput = page.locator('.sharebar input');
+	await expect(linkInput).toBeVisible({ timeout: 10_000 });
+	return linkInput.inputValue();
+}
 
 test('dismissing the share confirmation aborts sharing', async ({ page }) => {
 	page.on('dialog', (dialog) => dialog.dismiss());
@@ -19,64 +26,99 @@ test('share creates an encrypted link that decrypts in a fresh browser', async (
 	await page.getByRole('textbox', { name: 'Note' }).fill('# Secret plans\n\nencrypted body');
 	await page.waitForTimeout(700);
 
-	await page.getByRole('button', { name: 'Share note' }).click();
-	const linkInput = page.locator('.sharebar input');
-	await expect(linkInput).toBeVisible({ timeout: 10_000 });
-	const link = await linkInput.inputValue();
+	const link = await shareCurrentNote(page);
 	expect(link).toMatch(/\/n\/[\w-]+#[\w-]+$/);
 
 	const context = await browser.newContext();
 	const viewer = await context.newPage();
 	await viewer.goto(link);
 	await expect(viewer.locator('header .title')).toHaveText('Shared note (read-only)');
-	await expect(viewer.locator('.preview')).toContainText('Secret plans');
-	await expect(viewer.locator('.preview')).toContainText('encrypted body');
+	await expect(viewer.locator('.cm-content')).toContainText('Secret plans', { timeout: 10_000 });
+	await expect(viewer.locator('.cm-content')).toContainText('encrypted body');
 	await context.close();
 });
 
-test('edits auto-sync to the shared link within seconds', async ({ page, browser }) => {
+test('view-only link does not allow editing', async ({ page, browser }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');
-	const editor = page.getByRole('textbox', { name: 'Note' });
-	await editor.fill('version one');
+	await page.getByRole('textbox', { name: 'Note' }).fill('locked content');
 	await page.waitForTimeout(700);
 
-	await page.getByRole('button', { name: 'Share note' }).click();
-	const linkInput = page.locator('.sharebar input');
-	await expect(linkInput).toBeVisible({ timeout: 10_000 });
-	const link = await linkInput.inputValue();
-
-	await page.getByRole('button', { name: 'Close share panel' }).click();
-	await editor.fill('version two');
-	await expect(page.locator('header .sync')).toHaveText('shared ✓', { timeout: 15_000 });
+	const link = await shareCurrentNote(page);
 
 	const context = await browser.newContext();
 	const viewer = await context.newPage();
 	await viewer.goto(link);
-	await expect(viewer.locator('.preview')).toContainText('version two');
+	await expect(viewer.locator('.cm-content')).toContainText('locked content', {
+		timeout: 10_000
+	});
+	expect(await viewer.locator('.cm-content').getAttribute('contenteditable')).toBe('false');
 	await context.close();
 });
 
-test('an open shared view pulls new content automatically', async ({ page, browser }) => {
+test('owner edits appear live in an open shared view', async ({ page, browser }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
 	await editor.fill('live v1');
 	await page.waitForTimeout(700);
 
-	await page.getByRole('button', { name: 'Share note' }).click();
-	const linkInput = page.locator('.sharebar input');
-	await expect(linkInput).toBeVisible({ timeout: 10_000 });
-	const link = await linkInput.inputValue();
-	await page.getByRole('button', { name: 'Close share panel' }).click();
+	const link = await shareCurrentNote(page);
+	await expect(page.locator('header .sync')).toHaveText('live', { timeout: 10_000 });
 
 	const context = await browser.newContext();
 	const viewer = await context.newPage();
 	await viewer.goto(link);
-	await expect(viewer.locator('.preview')).toContainText('live v1');
+	await expect(viewer.locator('.cm-content')).toContainText('live v1', { timeout: 10_000 });
 
 	await editor.fill('live v2');
-	await expect(page.locator('header .sync')).toHaveText('shared ✓', { timeout: 15_000 });
-	await expect(viewer.locator('.preview')).toContainText('live v2', { timeout: 20_000 });
+	await expect(viewer.locator('.cm-content')).toContainText('live v2', { timeout: 10_000 });
+	await context.close();
+});
+
+test('collaborator with edit token edits and both sides converge', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('from owner');
+	await page.waitForTimeout(700);
+
+	const viewLinkValue = await shareCurrentNote(page);
+	await expect(page.locator('header .sync')).toHaveText('live', { timeout: 10_000 });
+
+	const shareInfo = await page.evaluate(async () => {
+		const req = indexedDB.open('mynotes');
+		const db = await new Promise<IDBDatabase>((res) => (req.onsuccess = () => res(req.result)));
+		const tx = db.transaction('notes').objectStore('notes').getAll();
+		const notes = await new Promise<{ share?: { key: string; editToken: string } }[]>(
+			(res) => (tx.onsuccess = () => res(tx.result))
+		);
+		return notes[0].share;
+	});
+	const ownerLinkValue = `${viewLinkValue}:${shareInfo?.editToken}`;
+
+	const context = await browser.newContext();
+	const collaborator = await context.newPage();
+	await collaborator.goto(ownerLinkValue);
+	await expect(collaborator.locator('header .title')).toHaveText('Shared note', {
+		timeout: 10_000
+	});
+	await expect(collaborator.locator('.cm-content')).toContainText('from owner', {
+		timeout: 10_000
+	});
+
+	const collaboratorEditor = collaborator.locator('.cm-content');
+	expect(await collaboratorEditor.getAttribute('contenteditable')).toBe('true');
+	await collaboratorEditor.click();
+	await collaborator.keyboard.press('End');
+	await collaborator.keyboard.type(' + collab');
+
+	await expect(collaboratorEditor).toContainText('+ collab');
+	await expect(page.locator('.cm-content')).toContainText('+ collab', { timeout: 10_000 });
+
+	await editor.click();
+	await page.keyboard.press('End');
+	await page.keyboard.type(' + owner2');
+	await expect(collaboratorEditor).toContainText('+ owner2', { timeout: 10_000 });
 	await context.close();
 });

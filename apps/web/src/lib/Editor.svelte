@@ -9,7 +9,7 @@
 	import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 	import { classHighlighter, tags } from '@lezer/highlight';
 
-	let { ytext }: { ytext: Y.Text } = $props();
+	let { ytext, editable = true }: { ytext: Y.Text; editable?: boolean } = $props();
 
 	let container = $state<HTMLDivElement | null>(null);
 	let view: EditorView | null = null;
@@ -53,6 +53,7 @@
 				syntaxHighlighting(classHighlighter),
 				cmPlaceholder('Start typing…'),
 				EditorView.lineWrapping,
+				EditorView.editable.of(editable),
 				EditorView.contentAttributes.of({ 'aria-label': 'Note' }),
 				yCollab(ytext, null, { undoManager }),
 				EditorView.theme({
