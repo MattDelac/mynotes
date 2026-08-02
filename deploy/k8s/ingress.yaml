@@ -4,6 +4,8 @@ metadata:
   name: mynotes-api
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
+    # Optional ingress-level rate limiting — apply middleware-ratelimit.yaml first:
+    # traefik.ingress.kubernetes.io/router.middlewares: default-mynotes-ratelimit@kubernetescrd
 spec:
   rules:
     - host: api.mynotes.example.com

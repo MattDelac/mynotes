@@ -29,6 +29,34 @@ Environment variables:
 | `LITESTREAM_ACCESS_KEY_ID`  | unset                | S3 access key                                |
 | `LITESTREAM_SECRET_ACCESS_KEY` | unset             | S3 secret key                                |
 
+Abuse protection (all optional, sane defaults):
+
+| Variable                 | Default | Description                                                     |
+| ------------------------ | ------- | --------------------------------------------------------------- |
+| `MAX_BLOB_SIZE`          | `65536` | Max bytes per Yjs update / WS message                            |
+| `MAX_SNAPSHOT_SIZE`      | `2097152` | Max request body / snapshot size (413 above)                   |
+| `MAX_ROOM_BYTES`         | `10485760` | Max total bytes of updates per room; excess updates dropped   |
+| `MAX_ROOM_UPDATES`       | `5000`  | Max update rows per room (backstop to client-side compaction)    |
+| `TTL_DAYS`               | `90`    | Inactive shared rooms are deleted after this many days; `0` disables |
+| `CLEANUP_INTERVAL_SECS`  | `3600`  | How often the TTL cleanup task runs                              |
+| `RATE_CREATE_PER_MIN`    | `10`    | Per-IP `POST /notes` limit (429 + `Retry-After` above)           |
+| `RATE_WRITE_PER_MIN`     | `30`    | Per-IP snapshot/PUT limit                                        |
+| `RATE_READ_PER_MIN`      | `120`   | Per-IP read limit (`GET` note/updates)                           |
+| `RATE_WS_PER_MIN`        | `20`    | Per-IP WebSocket upgrade attempts                                |
+| `MAX_WS_PER_IP`          | `10`    | Max concurrent WebSocket connections per IP                      |
+| `MAX_ROOM_SUBSCRIBERS`   | `32`    | Max concurrent WebSocket subscribers per room                    |
+| `CREATE_TOKEN`           | unset   | If set, `POST /notes` requires a matching `x-create-token` header |
+| `TRUST_PROXY_HEADERS`    | `true`  | Use `X-Forwarded-For` for client IPs (set `false` without a proxy) |
+
+"Activity" for TTL means any room write (update, snapshot). Viewing does not extend a room's
+life; a room with live collaborators never expires.
+
+**Abuse runbook**: if your public instance gets spammed, set `CREATE_TOKEN=<long random string>`
+and restart — new room creation stops immediately; existing rooms keep syncing. To reclaim
+storage, lower `TTL_DAYS` temporarily. Optionally apply `deploy/k8s/middleware-ratelimit.yaml`
+and uncomment the middleware annotation in `ingress.yaml` for ingress-level limiting on top of
+the app-level limits.
+
 ### From source
 
 ```sh
@@ -76,3 +104,6 @@ repository variable (Settings → Secrets and variables → Actions → Variable
   WebSocket upgrades (nginx ingress does by default).
 - There are no accounts: possession of a note's edit token allows writing to its room. Edit
   tokens are UUIDs transmitted only via the `x-edit-token` header or the first WS message.
+- Rate limiting keys on client IP. Behind an ingress/proxy keep `TRUST_PROXY_HEADERS=true` and
+  make sure your proxy sets `X-Forwarded-For` (Traefik and nginx ingress do); clients can spoof
+  the header only if requests can reach the pod directly, which ingress prevents.

@@ -57,6 +57,13 @@ cargo fmt --check
 ```
 
 Env vars: `DATABASE_URL` (default `sqlite:mynotes.db`), `BIND_ADDR` (default `0.0.0.0:3000`).
+Abuse-protection env vars (`api/src/config.rs`, all with defaults): `MAX_BLOB_SIZE` (64KB),
+`MAX_SNAPSHOT_SIZE` (2MB), `MAX_ROOM_BYTES` (10MB), `MAX_ROOM_UPDATES` (5000), `TTL_DAYS` (90,
+0 disables — background task deletes inactive rooms), `CLEANUP_INTERVAL_SECS` (3600),
+`RATE_CREATE_PER_MIN` (10), `RATE_WRITE_PER_MIN` (30), `RATE_READ_PER_MIN` (120),
+`RATE_WS_PER_MIN` (20) — per-IP token buckets, 429 + `Retry-After`; `MAX_WS_PER_IP` (10),
+`MAX_ROOM_SUBSCRIBERS` (32), `CREATE_TOKEN` (if set, `POST /notes` requires `x-create-token`),
+`TRUST_PROXY_HEADERS` (true — rate limiting keys on `X-Forwarded-For`).
 
 ## API contract (zero-knowledge — payloads are opaque ciphertext bytes)
 
