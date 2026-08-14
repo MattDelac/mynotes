@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mynotes-web
+  namespace: mynotes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mynotes-web
+  template:
+    metadata:
+      labels:
+        app: mynotes-web
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: mynotes-web
+          image: ghcr.io/mattdelac/mynotes-web:latest
+          ports:
+            - containerPort: 80
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 10m
+            limits:
+              memory: 64Mi
+              cpu: 100m

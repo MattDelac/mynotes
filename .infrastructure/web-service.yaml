@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mynotes-web
+  namespace: mynotes
+spec:
+  selector:
+    app: mynotes-web
+  ports:
+    - port: 80
+      targetPort: 80

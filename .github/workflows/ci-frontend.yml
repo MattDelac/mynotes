@@ -10,49 +10,89 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/web
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: DeterminateSystems/flakehub-cache-action@v3
 
-      - uses: actions/setup-node@v4
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(nix develop --command pnpm store path | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
         with:
-          node-version: 22
-          cache: pnpm
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
 
-      - run: pnpm install --frozen-lockfile
-        working-directory: .
+      - name: Install dependencies
+        run: nix develop --command pnpm install --frozen-lockfile
 
-      - run: pnpm lint
-      - run: pnpm check
-      - run: pnpm test
-      - run: pnpm build
+      - name: Lint
+        run: nix develop --command pnpm lint
+        working-directory: apps/web
+
+      - name: Type check
+        run: nix develop --command pnpm check
+        working-directory: apps/web
+
+      - name: Unit tests
+        run: nix develop --command pnpm test
+        working-directory: apps/web
+
+      - name: Build
+        run: nix develop --command pnpm build
+        working-directory: apps/web
 
   e2e:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: DeterminateSystems/flakehub-cache-action@v3
 
-      - uses: actions/setup-node@v4
+      - name: Cache cargo build
+        uses: actions/cache@v4
         with:
-          node-version: 22
-          cache: pnpm
+          path: |
+            api/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('api/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(nix develop --command pnpm store path | tail -n 1)" >> "$GITHUB_OUTPUT"
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: nix develop --command pnpm install --frozen-lockfile
 
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: nix develop --command npx playwright install chromium
         working-directory: apps/web
 
-      - run: pnpm exec playwright test
+      - name: Run e2e tests
+        run: nix develop --command pnpm exec playwright test
         working-directory: apps/web
         env:
           CI: "true"

@@ -1,15 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-	testDir: './e2e',
-	testIgnore: '**/screenshots.spec.ts',
-	timeout: 30_000,
-	fullyParallel: true,
+	testMatch: /screenshots\.spec\.ts/,
+	timeout: 60_000,
+	fullyParallel: false,
 	retries: 0,
 	reporter: 'list',
 	use: {
 		baseURL: 'http://localhost:4173',
-		trace: 'retain-on-failure'
+		trace: 'off',
+		video: 'off',
+		screenshot: 'off'
 	},
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 	webServer: [
@@ -23,7 +24,7 @@ export default defineConfig({
 			command: 'cargo run --manifest-path ../../api/Cargo.toml',
 			url: 'http://localhost:3000/healthz',
 			reuseExistingServer: !process.env.CI,
-			timeout: 300_000,
+			timeout: 120_000,
 			env: { DATABASE_URL: 'sqlite:/tmp/mynotes-e2e.db' }
 		}
 	]

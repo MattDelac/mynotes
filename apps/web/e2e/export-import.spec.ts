@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { editorText } from './helpers';
+import { editorText, openMenu } from './helpers';
 
 test('export downloads a markdown file', async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('textbox', { name: 'Note' }).fill('# Export Me\n\nfile body');
 	await page.waitForTimeout(700);
 
+	await openMenu(page);
 	page.once('dialog', (dialog) => dialog.accept());
 	const [download] = await Promise.all([
 		page.waitForEvent('download'),
@@ -17,6 +18,7 @@ test('export downloads a markdown file', async ({ page }) => {
 test('import creates a note from a markdown file', async ({ page }) => {
 	await page.goto('/');
 
+	await openMenu(page);
 	const [chooser] = await Promise.all([
 		page.waitForEvent('filechooser'),
 		page.getByRole('button', { name: 'Import note' }).click()
