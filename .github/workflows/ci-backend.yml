@@ -7,24 +7,41 @@ on:
   pull_request:
     paths: ["api/**", ".github/workflows/ci-backend.yml"]
 
-env:
-  SQLX_OFFLINE: "true"
-
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: DeterminateSystems/flakehub-cache-action@v3
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
         with:
-          components: rustfmt, clippy
+          path: |
+            api/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('api/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: nix develop --command cargo fmt --check
+        working-directory: api
 
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - name: Lint
+        run: nix develop --command cargo clippy --all-targets -- -D warnings
+        working-directory: api
+        env:
+          SQLX_OFFLINE: "true"
+
+      - name: Run tests
+        run: nix develop --command cargo test
+        working-directory: api
+        env:
+          SQLX_OFFLINE: "true"

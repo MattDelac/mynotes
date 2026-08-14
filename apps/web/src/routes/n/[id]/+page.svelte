@@ -19,23 +19,12 @@
 	} from '$lib/voice/engine';
 	import type { VoiceEngine, VoiceEngineKind } from '$lib/voice/types';
 	import { downloadNote } from '$lib/export';
+	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
-	import {
-		Copy,
-		Download,
-		Eye,
-		Link2,
-		Mail,
-		Menu,
-		Mic,
-		Pencil,
-		Plus,
-		RefreshCw,
-		Square,
-		Trash2,
-		Upload,
-		X
-	} from 'lucide-svelte';
+	import AppHeader from '$lib/components/AppHeader.svelte';
+	import NoteList from '$lib/components/NoteList.svelte';
+	import SharePanel from '$lib/components/SharePanel.svelte';
+	import ToastStack from '$lib/components/ToastStack.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -46,7 +35,6 @@
 	let preview = $state(false);
 	let sidebarOpen = $state(false);
 	let shareOpen = $state(false);
-	let sharing = $state(false);
 	let shareError = $state('');
 	let copied = $state(false);
 	let editor = $state<Editor | null>(null);
@@ -57,6 +45,34 @@
 	let voiceStatus = $state('');
 	const engines = availableEngines();
 	let engineKind = $state<VoiceEngineKind | null>(loadEngineChoice() ?? engines[0]?.kind ?? null);
+
+	let sessionState = $state<SessionState | 'idle'>('idle');
+	let session: RoomSession | null = null;
+	let sharedYtext = $state<Y.Text | null>(null);
+
+	const rendered = $derived(renderMarkdown(note.content));
+	const headerTitle = $derived(
+		data.shared ? `Shared note${data.shared.owner ? '' : ' (read-only)'}` : noteTitle(note.content)
+	);
+	const showSync = $derived(Boolean(note.share));
+
+	$effect(() => {
+		if (shareError) {
+			showToast('danger', shareError);
+		}
+	});
+
+	$effect(() => {
+		if (voiceError) {
+			showToast('danger', `Dictation: ${voiceError}`);
+		}
+	});
+
+	$effect(() => {
+		if (voiceStatus) {
+			showToast('info', voiceStatus, 3000);
+		}
+	});
 
 	$effect(() => {
 		if (!engineKind) return;
@@ -115,12 +131,6 @@
 		await saveNote(note);
 		notes = await listNotes();
 	}, 400);
-
-	let sessionState = $state<SessionState | 'idle'>('idle');
-	let session: RoomSession | null = null;
-	let sharedYtext = $state<Y.Text | null>(null);
-
-	const rendered = $derived(renderMarkdown(note.content));
 
 	$effect(() => {
 		if (!data.shared) return;
@@ -221,7 +231,7 @@
 		await goto(resolve(`/n/${fresh.id}`));
 	}
 
-	async function removeNote(id: string) {
+	async function removeNoteById(id: string) {
 		await deleteNote(id);
 		await destroyNoteDoc(id);
 		notes = await listNotes();
@@ -245,7 +255,6 @@
 			'Sharing your note will store it encrypted on the server. Anyone with the link can read it. Confirm?'
 		);
 		if (!ok) return;
-		sharing = true;
 		shareError = '';
 		try {
 			const cryptoKey = await generateKey();
@@ -260,8 +269,6 @@
 			startSession(doc.ydoc, note.share);
 		} catch (e) {
 			shareError = e instanceof Error ? e.message : 'share failed';
-		} finally {
-			sharing = false;
 		}
 	}
 
@@ -281,189 +288,90 @@
 			location.href = mailtoLink(noteTitle(note.content), viewLink(note.share));
 		}
 	}
+
+	function handleMenuAction(action: string) {
+		if (action === 'dictation') toggleDictation();
+		else if (action === 'export') exportNote();
+		else if (action === 'import') fileInput?.click();
+	}
 </script>
 
 <div class="shell">
-	<header>
-		{#if data.shared}
-			<span class="title">Shared note{data.shared.owner ? '' : ' (read-only)'}</span>
-			<span class="sync" class:sync-error={sessionState === 'offline'}>
-				{sessionState === 'live'
-					? 'live'
-					: sessionState === 'connecting'
-						? 'connecting…'
-						: 'offline'}
-			</span>
-		{:else}
-			<button
-				class="icon menu-btn"
-				aria-label="Toggle note list"
-				title="Notes"
-				onclick={() => (sidebarOpen = !sidebarOpen)}
-			>
-				<Menu size={18} />
-			</button>
-			<span class="title">{noteTitle(note.content)}</span>
-			{#if note.share}
-				<span class="sync" class:sync-error={sessionState === 'offline'}>
-					{sessionState === 'live'
-						? 'live'
-						: sessionState === 'connecting'
-							? 'connecting…'
-							: 'offline'}
-				</span>
-			{/if}
-			{#if engines.length > 0}
-				<button
-					class="icon"
-					class:recording={dictating}
-					aria-label="Toggle dictation"
-					title={voiceError || voiceStatus || 'Dictate'}
-					disabled={!dictation}
-					onclick={toggleDictation}
-				>
-					{#if dictating}<Square size={18} />{:else}<Mic size={18} />{/if}
-				</button>
-				{#if engines.length > 1}
-					<select
-						class="engine"
-						aria-label="Speech engine"
-						title="Speech recognition engine"
-						value={engineKind}
-						onchange={(e) => chooseEngine(e.currentTarget.value as VoiceEngineKind)}
-					>
-						{#each engines as engine (engine.kind)}
-							<option value={engine.kind}>{engine.label}</option>
-						{/each}
-					</select>
-				{/if}
-			{:else}
-				<button
-					class="icon"
-					aria-label="Dictation unavailable"
-					title="Dictation needs Chrome/Edge/Safari (Web Speech) or a WebGPU browser (on-device)"
-					disabled
-				>
-					<Mic size={18} />
-				</button>
-			{/if}
-			<button
-				class="icon"
-				aria-label="Export note"
-				title="Export as markdown file"
-				onclick={exportNote}
-			>
-				<Download size={18} />
-			</button>
-			<button
-				class="icon"
-				aria-label="Import note"
-				title="Import a markdown file"
-				onclick={() => fileInput?.click()}
-			>
-				<Upload size={18} />
-			</button>
-			<input
-				bind:this={fileInput}
-				type="file"
-				accept=".md,.markdown,.txt,text/markdown,text/plain"
-				hidden
-				onchange={importFile}
-			/>
-			<button
-				class="icon"
-				aria-label="Share note"
-				title="Share this note"
-				disabled={sharing}
-				onclick={share}
-			>
-				{#if note.share}<RefreshCw size={18} />{:else}<Link2 size={18} />{/if}
-			</button>
-			<button
-				class="icon"
-				aria-label="Toggle preview"
-				title="Toggle markdown preview"
-				onclick={() => (preview = !preview)}
-			>
-				{#if preview}<Pencil size={18} />{:else}<Eye size={18} />{/if}
-			</button>
-		{/if}
-	</header>
+	<AppHeader
+		title={headerTitle}
+		sharedMode={Boolean(data.shared)}
+		readOnly={data.shared ? !data.shared.owner : false}
+		{showSync}
+		{sessionState}
+		hasEngines={engines.length > 0}
+		{engines}
+		{engineKind}
+		{dictating}
+		onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
+		onShare={data.shared ? undefined : share}
+		onTogglePreview={() => (preview = !preview)}
+		{preview}
+		onMenuAction={handleMenuAction}
+		onEngineChange={(k) => chooseEngine(k as VoiceEngineKind)}
+		onToggleDictation={toggleDictation}
+		showNewSession={false}
+	/>
+
+	{#if !data.shared}
+		<NoteList
+			{notes}
+			activeNoteId={note.id}
+			canWrite={true}
+			onSelectNote={(id) => goto(resolve(`/n/${id}`))}
+			onNewNote={newNote}
+			onDeleteNote={removeNoteById}
+			{noteTitle}
+			mobileOpen={sidebarOpen}
+		/>
+	{/if}
 
 	{#if shareOpen && note.share}
-		<div class="sharebar">
-			<input readonly value={viewLink(note.share)} aria-label="Share link" />
-			<button class="text-btn" onclick={copyLink}>
-				<Copy size={15} />
-				{copied ? 'Copied' : 'Copy'}
-			</button>
-			<button class="text-btn" onclick={email}>
-				<Mail size={15} />
-				Email
-			</button>
-			<button
-				class="icon"
-				aria-label="Close share panel"
-				title="Close share panel"
-				onclick={() => (shareOpen = false)}
-			>
-				<X size={16} />
-			</button>
-		</div>
-	{/if}
-	{#if shareError}
-		<div class="error">{shareError}</div>
-	{/if}
-	{#if voiceError}
-		<div class="error">Dictation: {voiceError}</div>
-	{:else if voiceStatus}
-		<div class="status">{voiceStatus}</div>
+		<SharePanel
+			shareLink={viewLink(note.share)}
+			shareKind="view"
+			onKindChange={() => {}}
+			onCopy={copyLink}
+			onEmail={() => email()}
+			onClose={() => (shareOpen = false)}
+			{copied}
+			showKindSelect={false}
+		/>
 	{/if}
 
-	<div class="body">
-		{#if !data.shared}
-			<aside class:open={sidebarOpen}>
-				<button class="new" onclick={newNote} title="Create a new note">
-					<Plus size={15} />
-					New note
-				</button>
-				<ul>
-					{#each notes as n (n.id)}
-						<li class:active={n.id === note.id}>
-							<a href={resolve(`/n/${n.id}`)} onclick={() => (sidebarOpen = false)}
-								>{noteTitle(n.content)}</a
-							>
-							<button
-								class="delete"
-								aria-label="Delete note"
-								title="Delete note"
-								onclick={() => removeNote(n.id)}
-							>
-								<Trash2 size={14} />
-							</button>
-						</li>
-					{/each}
-				</ul>
-			</aside>
-		{/if}
+	<input
+		bind:this={fileInput}
+		type="file"
+		accept=".md,.markdown,.txt,text/markdown,text/plain"
+		hidden
+		onchange={importFile}
+	/>
 
-		<main>
-			{#if data.shared}
-				{#if sharedYtext}
-					<Editor ytext={sharedYtext} editable={data.shared.owner} />
-				{/if}
-			{:else if preview}
-				<article class="preview">
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized with DOMPurify above -->
-					{@html rendered}
-				</article>
-			{:else if note.id && ytext}
-				{#key note.id}
-					<Editor bind:this={editor} {ytext} />
-				{/key}
+	<main>
+		{#if data.shared}
+			{#if sharedYtext}
+				<Editor ytext={sharedYtext} editable={data.shared.owner} />
 			{/if}
-		</main>
-	</div>
+		{:else if preview}
+			<article
+				class="preview"
+				style="max-width: var(--content-width); margin: 0 auto; padding: var(--space-4) var(--space-3);"
+			>
+				<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized with DOMPurify above -->
+				{@html rendered}
+			</article>
+		{:else if note.id && ytext}
+			{#key note.id}
+				<Editor bind:this={editor} {ytext} />
+			{/key}
+		{/if}
+	</main>
+
+	<ToastStack />
 </div>
 
 <style>
@@ -472,222 +380,10 @@
 		flex-direction: column;
 		height: 100dvh;
 	}
-	header {
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
-		padding: 0.5rem 1rem;
-		border-bottom: 1px solid var(--border);
-	}
-	.title {
-		flex: 1;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-weight: 600;
-		font-size: 0.95rem;
-		padding-left: 0.25rem;
-	}
-	.icon {
-		display: grid;
-		place-items: center;
-		width: 2rem;
-		height: 2rem;
-		border: none;
-		border-radius: var(--radius);
-		background: none;
-		color: var(--fg-muted);
-		cursor: pointer;
-		transition:
-			background 0.12s ease,
-			color 0.12s ease;
-	}
-	.icon:hover {
-		background: var(--bg-hover);
-		color: var(--fg);
-	}
-	.icon:disabled {
-		opacity: 0.4;
-		cursor: default;
-	}
-	.icon.recording {
-		color: var(--danger);
-	}
-	.sharebar {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 1rem;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-subtle);
-	}
-	.sharebar input {
-		flex: 1;
-		min-width: 0;
-		font-size: 0.85rem;
-		padding: 0.4rem 0.6rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--bg);
-	}
-	.text-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--bg);
-		color: var(--fg);
-		font-size: 0.85rem;
-		padding: 0.4rem 0.7rem;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.text-btn:hover {
-		background: var(--bg-hover);
-	}
-	.error {
-		padding: 0.5rem 1rem;
-		background: var(--danger-soft);
-		color: var(--danger);
-		font-size: 0.85rem;
-	}
-	.status {
-		padding: 0.5rem 1rem;
-		background: var(--info-soft);
-		color: var(--fg-muted);
-		font-size: 0.85rem;
-	}
-	.engine {
-		font-size: 0.8rem;
-		max-width: 9rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--bg);
-		padding: 0.25rem 0.4rem;
-	}
-	.sync {
-		font-size: 0.75rem;
-		color: var(--success);
-		white-space: nowrap;
-		padding: 0 0.25rem;
-	}
-	.sync.sync-error {
-		color: var(--danger);
-	}
-	.body {
-		display: flex;
-		flex: 1;
-		min-height: 0;
-	}
-	aside {
-		width: 15rem;
-		border-right: 1px solid var(--border);
-		background: var(--bg-subtle);
-		overflow-y: auto;
-		padding: 0.75rem 0.5rem;
-	}
-	.new {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.35rem;
-		width: 100%;
-		padding: 0.45rem;
-		margin-bottom: 0.5rem;
-		cursor: pointer;
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--bg);
-		font-size: 0.85rem;
-	}
-	.new:hover {
-		background: var(--bg-hover);
-	}
-	ul {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-	}
-	li {
-		display: flex;
-		align-items: center;
-		border-radius: var(--radius);
-	}
-	li:hover {
-		background: var(--bg-hover);
-	}
-	li.active {
-		background: var(--bg-active);
-	}
-	li a {
-		flex: 1;
-		display: block;
-		padding: 0.45rem 0.6rem;
-		color: inherit;
-		text-decoration: none;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: 0.9rem;
-	}
-	.delete {
-		display: grid;
-		place-items: center;
-		width: 1.6rem;
-		height: 1.6rem;
-		margin-right: 0.25rem;
-		border: none;
-		border-radius: var(--radius);
-		background: none;
-		cursor: pointer;
-		color: var(--fg-muted);
-		opacity: 0;
-		transition: opacity 0.12s ease;
-	}
-	li:hover .delete,
-	.delete:focus-visible {
-		opacity: 1;
-	}
-	.delete:hover {
-		color: var(--danger);
-		background: var(--bg-active);
-	}
 	main {
 		flex: 1;
 		min-width: 0;
 		display: flex;
-	}
-	.preview {
-		flex: 1;
-		overflow-y: auto;
-		width: 100%;
-		max-width: calc(var(--content-width) + 2rem);
-		margin: 0 auto;
-		padding: 1.5rem 1rem;
-	}
-	@media (min-width: 641px) {
-		.menu-btn {
-			display: none;
-		}
-	}
-	@media (max-width: 640px) {
-		aside {
-			display: none;
-			position: absolute;
-			top: 0;
-			bottom: 0;
-			left: 0;
-			z-index: 10;
-			width: 14rem;
-			background: var(--bg);
-			box-shadow: var(--shadow);
-		}
-		aside.open {
-			display: block;
-		}
-		.body {
-			position: relative;
-		}
+		min-height: 0;
 	}
 </style>

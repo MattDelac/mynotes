@@ -17,9 +17,27 @@
 	let view: EditorView | null = null;
 
 	const markdownStyle = HighlightStyle.define([
-		{ tag: tags.heading1, fontSize: '1.7em', fontWeight: '700', lineHeight: '1.3' },
-		{ tag: tags.heading2, fontSize: '1.45em', fontWeight: '700', lineHeight: '1.3' },
-		{ tag: tags.heading3, fontSize: '1.25em', fontWeight: '600', lineHeight: '1.3' },
+		{
+			tag: tags.heading1,
+			fontSize: '1.7em',
+			fontWeight: '700',
+			lineHeight: '1.3',
+			fontFamily: 'var(--font-serif)'
+		},
+		{
+			tag: tags.heading2,
+			fontSize: '1.45em',
+			fontWeight: '700',
+			lineHeight: '1.3',
+			fontFamily: 'var(--font-serif)'
+		},
+		{
+			tag: tags.heading3,
+			fontSize: '1.25em',
+			fontWeight: '600',
+			lineHeight: '1.3',
+			fontFamily: 'var(--font-serif)'
+		},
 		{ tag: tags.heading4, fontSize: '1.1em', fontWeight: '600' },
 		{ tag: tags.strong, fontWeight: '700' },
 		{ tag: tags.emphasis, fontStyle: 'italic' },
@@ -96,9 +114,9 @@
 		display: flex;
 		flex-direction: column;
 		width: 100%;
-		max-width: calc(var(--content-width) + 2rem);
+		max-width: var(--content-width);
 		margin: 0 auto;
-		padding: 0 1rem;
+		padding: 0 var(--space-3);
 	}
 	.editor :global(.cm-editor) {
 		flex: 1;

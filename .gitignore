@@ -11,3 +11,4 @@ target/
 *.db-shm
 .DS_Store
 test-results/
+.direnv/

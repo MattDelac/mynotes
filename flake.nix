@@ -24,17 +24,24 @@
             sqlx-cli
 
             nodejs_22
-            corepack_22
 
             docker
             kubectl
             kubernetes-helm
 
             actionlint
+
+            gcc
+            pkg-config
+            openssl
+            chromium
           ];
 
           shellHook = ''
-            corepack enable 2>/dev/null || true
+            mkdir -p "$HOME/.local/bin"
+            export PATH="$HOME/.local/bin:$PATH"
+            corepack enable --install-directory "$HOME/.local/bin"
+            export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${pkgs.chromium}/bin/chromium
             echo "mynotes dev shell — rust $(rustc --version | cut -d' ' -f2), node $(node --version)"
           '';
         };
