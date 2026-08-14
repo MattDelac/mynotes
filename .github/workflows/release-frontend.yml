@@ -44,11 +44,14 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: apps/web
+          context: .
+          file: apps/web/Dockerfile
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PUBLIC_API_URL=${{ vars.PUBLIC_API_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
