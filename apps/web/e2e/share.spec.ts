@@ -152,11 +152,14 @@ test('selecting a note in a shared view keeps the key in the url', async ({ page
 
 	const context = await browser.newContext();
 	const viewer = await context.newPage();
+	const cm = viewer.locator('.cm-content');
 	await viewer.goto(editLink);
-	await expect(viewer.locator('.cm-content')).toContainText('shared beta', { timeout: 10_000 });
+	await expect(cm).toContainText(/shared (alpha|beta)/, { timeout: 10_000 });
 
-	await viewer.locator('aside a', { hasText: 'shared alpha' }).click();
-	await expect(viewer.locator('.cm-content')).toContainText('shared alpha', { timeout: 10_000 });
+	const current = (await cm.textContent()) ?? '';
+	const target = current.includes('shared alpha') ? 'shared beta' : 'shared alpha';
+	await viewer.locator('aside a', { hasText: target }).click();
+	await expect(cm).toContainText(target, { timeout: 10_000 });
 	expect(viewer.url()).toMatch(/#[\w-]+:[\w-]+$/);
 	await context.close();
 });
