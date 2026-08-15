@@ -33,6 +33,10 @@ jobs:
       - name: Install dependencies
         run: nix develop --command pnpm install --frozen-lockfile
 
+      - name: Install Playwright browsers
+        run: nix develop --command npx playwright install chromium
+        working-directory: apps/web
+
       - name: Generate screenshots
         run: nix develop --command pnpm exec playwright test --config screenshots.playwright.config.ts
         working-directory: apps/web
