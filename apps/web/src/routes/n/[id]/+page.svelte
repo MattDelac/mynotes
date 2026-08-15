@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
-	import { parseShareFragment } from '$lib/shared';
+	import { forgetShareKey } from '$lib/shared';
 	import { RoomSession, type SessionState } from '$lib/collab';
 	import { encryptBytes, exportKey, generateKey, importKey } from '$lib/crypto';
 	import { pushBlob, pushSnapshot } from '$lib/api';
@@ -138,14 +138,13 @@
 		let session: RoomSession | null = null;
 		let cancelled = false;
 		void (async () => {
-			const fragment = parseShareFragment(location.hash);
-			if (!fragment) return;
+			const shared = data.shared;
 			const ydoc = new Y.Doc();
 			session = new RoomSession({
 				ydoc,
 				roomId: remoteId,
-				key: await importKey(fragment.key),
-				editToken: fragment.editToken,
+				key: await importKey(shared.key),
+				editToken: shared.editToken,
 				onState: (state) => (sessionState = state)
 			});
 			try {
@@ -294,6 +293,15 @@
 		else if (action === 'export') exportNote();
 		else if (action === 'import') fileInput?.click();
 	}
+
+	async function leaveSharedNote() {
+		if (!data.shared) return;
+		if (!confirm('Leave this note? The decryption key stored on this device will be removed.')) {
+			return;
+		}
+		forgetShareKey(data.shared.remoteId);
+		await goto(resolve('/'));
+	}
 </script>
 
 <div class="shell">
@@ -309,6 +317,7 @@
 		{dictating}
 		onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
 		onShare={data.shared ? undefined : share}
+		onLeave={data.shared ? leaveSharedNote : undefined}
 		onTogglePreview={() => (preview = !preview)}
 		{preview}
 		onMenuAction={handleMenuAction}

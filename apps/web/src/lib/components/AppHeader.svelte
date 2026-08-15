@@ -5,6 +5,7 @@
 		Eye,
 		FilePlus2,
 		Link2,
+		LogOut,
 		Mic,
 		Pencil,
 		RefreshCw,
@@ -24,6 +25,7 @@
 		dictating?: boolean;
 		onToggleSidebar?: () => void;
 		onShare?: () => void;
+		onLeave?: () => void;
 		onTogglePreview?: () => void;
 		onMenuAction?: (action: string) => void;
 		onEngineChange?: (kind: string) => void;
@@ -44,6 +46,7 @@
 		dictating = false,
 		onToggleSidebar,
 		onShare,
+		onLeave,
 		onTogglePreview,
 		onMenuAction,
 		onEngineChange,
@@ -229,6 +232,17 @@
 				</div>
 			{/if}
 		</div>
+	{/if}
+
+	{#if onLeave}
+		<button
+			class="icon"
+			aria-label="Leave session"
+			title="Leave this session"
+			onclick={() => onLeave?.()}
+		>
+			<LogOut size={18} />
+		</button>
 	{/if}
 </header>
 
