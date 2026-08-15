@@ -1,0 +1,43 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: cicd-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  frontend:
+    name: Frontend
+    uses: ./.github/workflows/_ci-frontend.yml
+
+  backend:
+    name: Backend
+    uses: ./.github/workflows/_ci-backend.yml
+
+  e2e:
+    name: E2E
+    uses: ./.github/workflows/_e2e.yml
+
+  screenshots:
+    name: Screenshots
+    uses: ./.github/workflows/_ci-screenshots.yml
+
+  release-frontend:
+    name: Release Frontend
+    needs: [frontend, backend, e2e]
+    uses: ./.github/workflows/_release-frontend.yml
+    secrets: inherit
+
+  release-backend:
+    name: Release Backend
+    needs: [frontend, backend, e2e]
+    uses: ./.github/workflows/_release-backend.yml
+    secrets: inherit

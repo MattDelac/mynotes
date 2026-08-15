@@ -1,24 +1,17 @@
-name: Build, push and deploy frontend
+name: Release Backend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      [
-        "apps/web/**",
-        "pnpm-*.yaml",
-        "package.json",
-        ".github/workflows/release-frontend.yml",
-      ]
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
+  id-token: write
   packages: write
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: ghcr.io/mattdelac/mynotes-web
+  IMAGE: ghcr.io/mattdelac/mynotes-api
 
 jobs:
   docker:
@@ -44,23 +37,18 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/web/Dockerfile
+          context: api
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            PUBLIC_API_URL=${{ vars.PUBLIC_API_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   deploy:
     needs: docker
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -82,8 +70,8 @@ jobs:
             echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
             chmod 600 ~/.kube/config
             SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
-            kubectl set image deployment/mynotes-web mynotes-web=${IMAGE}:sha-${SHA} -n mynotes
-            kubectl rollout status deployment/mynotes-web -n mynotes --timeout=120s
+            kubectl set image deployment/mynotes-api mynotes-api=${IMAGE}:sha-${SHA} -n mynotes
+            kubectl rollout status deployment/mynotes-api -n mynotes --timeout=180s
           '
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
