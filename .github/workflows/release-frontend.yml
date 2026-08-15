@@ -82,10 +82,10 @@ jobs:
             echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
             chmod 600 ~/.kube/config
             SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
-            kubectl set image deployment/mynotes-web mynotes-web=ghcr.io/${REPO_OWNER}/mynotes-web:sha-${SHA} -n mynotes
+            kubectl set image deployment/mynotes-web mynotes-web=${IMAGE}:sha-${SHA} -n mynotes
             kubectl rollout status deployment/mynotes-web -n mynotes --timeout=120s
           '
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-          REPO_OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ env.IMAGE }}
           GITHUB_SHA: ${{ github.sha }}

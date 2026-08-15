@@ -19,9 +19,12 @@ spec:
         - name: mynotes-web
           image: ghcr.io/mattdelac/mynotes-web:latest
           ports:
-            - containerPort: 80
+            - containerPort: 8080
           securityContext:
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
           resources:

@@ -17,10 +17,10 @@ Share links carry the AES-GCM key in the URL fragment. Routes: `/s/{sessionId}` 
 | `apps/web/`          | SvelteKit 2 + Svelte 5 frontend, TypeScript strict, static adapter |
 | `api/`               | Rust backend: Axum 0.8 + sqlx (SQLite), zero-knowledge blob store |
 | `api/migrations/`    | SQL migrations, embedded at compile time via `sqlx::migrate!`     |
-| `api/Dockerfile`     | Multi-stage build; distroless runtime; Litestream sidecar binary  |
+| `api/Dockerfile`     | Multi-stage build; distroless nonroot runtime; Litestream sidecar binary  |
 | `api/litestream.yml` | SQLite replication config (Hetzner Object Storage, S3-compatible) |
 | `.infrastructure/`   | k3s manifests (Deployment, Service, PVC, Ingress) — applied manually |
-| `.github/workflows/` | CI: `ci-frontend`, `ci-backend`; CD: `deploy-pages`, `release-backend` |
+| `.github/workflows/` | CI: `ci-frontend`, `ci-backend`; CD: `release-frontend`, `release-backend` |
 | `docs/PLAN.md`       | Product spec and milestone roadmap                                |
 
 ## Local development
@@ -106,21 +106,26 @@ presence/awareness yet.
 ## CI/CD
 
 - `ci-frontend.yml` / `ci-backend.yml`: run on PRs and main, path-filtered.
-- `deploy-pages.yml`: builds `apps/web` with `BASE_PATH=/<repo-name>` and deploys to GitHub Pages.
-- `release-backend.yml`: builds `api/Dockerfile` (linux/arm64), pushes
+- `release-frontend.yml`: builds `apps/web/Dockerfile` (linux/arm64, nginx-unprivileged on 8080),
+  pushes `ghcr.io/mattdelac/mynotes-web:sha-<short>` and `:latest`, then deploys to the k3s
+  cluster via Tailscale (`kubectl set image`). Runs on main when `apps/web/**`, lockfiles, or the
+  workflow change.
+- `release-backend.yml`: builds `api/Dockerfile` (linux/arm64, distroless nonroot), pushes
   `ghcr.io/mattdelac/mynotes-api:sha-<short>` and `:latest`, then deploys to the k3s cluster via
-  Tailscale (`kubectl set image`).
+  Tailscale (`kubectl set image`). Runs on main when `api/**` or the workflow change.
 
 ## Deployment
 
-- Frontend: GitHub Pages (static, SPA fallback); `PUBLIC_API_URL=https://api-notes.mdelacour.com`
-  repo variable.
-- Backend: personal k3s cluster (`production-master1`), manifests in `.infrastructure/`
-  (namespace `mynotes`, host `api-notes.mdelacour.com`), applied manually. Cluster-level wiring
-  (namespace, network policies, ghcr pull-secret reflection) lives in the separate
-  `infrastructure` repo. SQLite on a PVC; Litestream replicates the WAL to Hetzner Object
+- Frontend + backend: personal k3s cluster (`production-master1`), manifests in `.infrastructure/`
+  (namespace `mynotes`, hosts `notes.mdelacour.com` / `api-notes.mdelacour.com`), applied
+  manually via `kubectl apply -f .infrastructure`. Cluster-level wiring (namespace, network
+  policies, ghcr pull-secret reflection) lives in the separate `infrastructure` repo. Both
+  containers run PodSecurity-restricted-compliant: non-root user, all capabilities dropped.
+- Frontend build: `PUBLIC_API_URL=https://api-notes.mdelacour.com` repo variable (build arg);
+  served by nginx-unprivileged (uid 101, port 8080).
+- Backend: SQLite on a PVC (fsGroup 65532); Litestream replicates the WAL to Hetzner Object
   Storage once `.infrastructure/litestream-secret.yaml` (from the example) is applied. CD:
-  `release-backend.yml` sets the image on every push to main.
+  `release-*.yml` set the image on every push to main.
 
 ## Before finishing any task
 

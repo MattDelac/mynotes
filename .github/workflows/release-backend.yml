@@ -9,6 +9,10 @@ permissions:
   packages: write
   contents: read
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/mattdelac/mynotes-api
+
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -26,7 +30,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ghcr.io/${{ github.repository_owner }}/mynotes-api
+          images: ${{ env.IMAGE }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=raw,value=latest
@@ -68,10 +72,10 @@ jobs:
             echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
             chmod 600 ~/.kube/config
             SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
-            kubectl set image deployment/mynotes-api mynotes-api=ghcr.io/${REPO_OWNER}/mynotes-api:sha-${SHA} -n mynotes
+            kubectl set image deployment/mynotes-api mynotes-api=${IMAGE}:sha-${SHA} -n mynotes
             kubectl rollout status deployment/mynotes-api -n mynotes --timeout=180s
           '
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-          REPO_OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ env.IMAGE }}
           GITHUB_SHA: ${{ github.sha }}
