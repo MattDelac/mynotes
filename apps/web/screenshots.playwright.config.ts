@@ -24,7 +24,7 @@ export default defineConfig({
 			command: 'cargo run --manifest-path ../../api/Cargo.toml',
 			url: 'http://localhost:3000/healthz',
 			reuseExistingServer: !process.env.CI,
-			timeout: 120_000,
+			timeout: 300_000,
 			env: { DATABASE_URL: 'sqlite:/tmp/mynotes-e2e.db' }
 		}
 	]
