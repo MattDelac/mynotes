@@ -18,6 +18,8 @@ spec:
     spec:
       imagePullSecrets:
         - name: ghcr-pull-secret
+      securityContext:
+        fsGroup: 65532
       containers:
         - name: mynotes-api
           image: ghcr.io/mattdelac/mynotes-api:latest
@@ -57,7 +59,10 @@ spec:
                   key: secret-access-key
                   optional: true
           securityContext:
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
           resources:

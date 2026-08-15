@@ -9,8 +9,8 @@ RUN corepack enable && pnpm install --frozen-lockfile
 COPY apps/web/ ./apps/web/
 RUN pnpm --filter web build
 
-# Stage 2: Serve
-FROM nginx:1.29-alpine
+# Stage 2: Serve (unprivileged nginx — runs as uid 101, listens on 8080)
+FROM nginxinc/nginx-unprivileged:1.29-alpine
 COPY --from=build /app/apps/web/build /usr/share/nginx/html
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+EXPOSE 8080
