@@ -20,7 +20,7 @@ Share links carry the AES-GCM key in the URL fragment. Routes: `/s/{sessionId}` 
 | `api/Dockerfile`     | Multi-stage build; distroless nonroot runtime; Litestream sidecar binary  |
 | `api/litestream.yml` | SQLite replication config (Hetzner Object Storage, S3-compatible) |
 | `.infrastructure/`   | k3s manifests (Deployment, Service, PVC, Ingress) — applied manually |
-| `.github/workflows/` | CI: `ci-frontend`, `ci-backend`; CD: `release-frontend`, `release-backend` |
+| `.github/workflows/` | Entrypoints `pull_request.yml` (PR) / `cicd.yml` (main); reusable `_*.yml` |
 | `docs/PLAN.md`       | Product spec and milestone roadmap                                |
 
 ## Local development
@@ -105,14 +105,24 @@ presence/awareness yet.
 
 ## CI/CD
 
-- `ci-frontend.yml` / `ci-backend.yml`: run on PRs and main, path-filtered.
-- `release-frontend.yml`: builds `apps/web/Dockerfile` (linux/arm64, nginx-unprivileged on 8080),
-  pushes `ghcr.io/mattdelac/mynotes-web:sha-<short>` and `:latest`, then deploys to the k3s
-  cluster via Tailscale (`kubectl set image`). Runs on main when `apps/web/**`, lockfiles, or the
-  workflow change.
-- `release-backend.yml`: builds `api/Dockerfile` (linux/arm64, distroless nonroot), pushes
-  `ghcr.io/mattdelac/mynotes-api:sha-<short>` and `:latest`, then deploys to the k3s cluster via
-  Tailscale (`kubectl set image`). Runs on main when `api/**` or the workflow change.
+Two entrypoints orchestrate the reusable `_*.yml` workflows (each also manually dispatchable via
+`workflow_dispatch`). No path filters — all legs run on every trigger, in parallel.
+
+- `pull_request.yml`: 4 parallel legs — Frontend, Backend, E2E, Screenshots. Concurrency group
+  `pr-<ref>`, cancels superseded runs.
+- `cicd.yml` (push to main): the same 4 legs, then Release Frontend + Release Backend, each gated
+  on Frontend + Backend + E2E (Screenshots gates PR merge only, not deploys). Concurrency group
+  `cicd-main` (no cancel) serializes deploys.
+- `_ci-frontend.yml`: lint → type check → unit tests → build (`apps/web`).
+- `_ci-backend.yml`: fmt → clippy → tests (`api`).
+- `_e2e.yml`: Playwright e2e (boots preview + Rust backend on :3000).
+- `_ci-screenshots.yml`: regenerates UI screenshots and fails if they differ from the committed
+  ones (keeps `apps/screenshots/` current; `screenshots.yml` regenerates and opens a PR instead).
+- `_release-frontend.yml`: builds `apps/web/Dockerfile` (linux/arm64 on a native arm64 runner,
+  nginx-unprivileged on 8080), pushes `ghcr.io/mattdelac/mynotes-web:sha-<short>` and `:latest`.
+  The deploy job (Tailscale + `kubectl set image`) runs only when `github.ref` is `refs/heads/main`.
+- `_release-backend.yml`: same for `api/Dockerfile` (distroless nonroot) and
+  `ghcr.io/mattdelac/mynotes-api`.
 
 ## Deployment
 

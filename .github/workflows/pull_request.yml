@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend
+    uses: ./.github/workflows/_ci-frontend.yml
+
+  backend:
+    name: Backend
+    uses: ./.github/workflows/_ci-backend.yml
+
+  e2e:
+    name: E2E
+    uses: ./.github/workflows/_e2e.yml
+
+  screenshots:
+    name: Screenshots
+    uses: ./.github/workflows/_ci-screenshots.yml

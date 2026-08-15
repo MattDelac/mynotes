@@ -1,18 +1,15 @@
 name: CI Backend
 
 on:
-  push:
-    branches: [main]
-    paths: ["api/**", ".github/workflows/ci-backend.yml"]
-  pull_request:
-    paths: ["api/**", ".github/workflows/ci-backend.yml"]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
 

@@ -1,22 +1,33 @@
-name: Screenshots
+name: CI Screenshots
 
 on:
-  workflow_dispatch: {}
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  generate:
+  check:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
           lfs: true
-          ref: ${{ github.head_ref || github.ref_name }}
 
       - uses: DeterminateSystems/determinate-nix-action@v3
       - uses: DeterminateSystems/flakehub-cache-action@v3
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('api/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
 
       - name: Get pnpm store path
         id: pnpm-store
@@ -33,24 +44,17 @@ jobs:
       - name: Install dependencies
         run: nix develop --command pnpm install --frozen-lockfile
 
+      - name: Install Playwright browsers
+        run: nix develop --command npx playwright install chromium
+        working-directory: apps/web
+
       - name: Generate screenshots
         run: nix develop --command pnpm exec playwright test --config screenshots.playwright.config.ts
         working-directory: apps/web
         env:
           CI: "true"
 
-      - run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
+      - name: Verify screenshots are up to date
+        run: |
           git add apps/screenshots/
-          git diff --cached --quiet || git commit -m "chore: regenerate UI screenshots"
-          git push
-
-      - uses: peter-evans/create-pull-request@v6
-        with:
-          branch: chore/screenshots
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: 'chore: regenerate UI screenshots'
-          title: 'chore: regenerate UI screenshots'
-          body: 'Automated screenshot regeneration. Triggered manually via workflow_dispatch.'
-          delete-branch: true
+          git diff --cached --exit-code apps/screenshots/
