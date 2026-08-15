@@ -56,5 +56,5 @@ jobs:
 
       - name: Verify screenshots are up to date
         run: |
-          git add screenshots/
-          git diff --cached --exit-code screenshots/
+          git add apps/screenshots/
+          git diff --cached --exit-code apps/screenshots/

@@ -117,7 +117,7 @@ Two entrypoints orchestrate the reusable `_*.yml` workflows (each also manually 
 - `_ci-backend.yml`: fmt → clippy → tests (`api`).
 - `_e2e.yml`: Playwright e2e (boots preview + Rust backend on :3000).
 - `_ci-screenshots.yml`: regenerates UI screenshots and fails if they differ from the committed
-  ones (keeps `screenshots/` current; `screenshots.yml` regenerates and opens a PR instead).
+  ones (keeps `apps/screenshots/` current; `screenshots.yml` regenerates and opens a PR instead).
 - `_release-frontend.yml`: builds `apps/web/Dockerfile` (linux/arm64 on a native arm64 runner,
   nginx-unprivileged on 8080), pushes `ghcr.io/mattdelac/mynotes-web:sha-<short>` and `:latest`.
   The deploy job (Tailscale + `kubectl set image`) runs only when `github.ref` is `refs/heads/main`.
