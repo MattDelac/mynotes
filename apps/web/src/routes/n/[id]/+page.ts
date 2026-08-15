@@ -2,7 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { browser } from '$app/environment';
 import { getNote, type Note } from '$lib/db';
 import { migrateToSessions } from '$lib/sessions';
-import { parseShareFragment } from '$lib/shared';
+import { cachedShareKey, parseShareFragment, rememberShareKey } from '$lib/shared';
 import type { PageLoad } from './$types';
 
 export const prerender = false;
@@ -10,6 +10,8 @@ export const prerender = false;
 export interface SharedView {
 	remoteId: string;
 	owner: boolean;
+	key: string;
+	editToken?: string;
 }
 
 export const load: PageLoad = async ({ params }) => {
@@ -24,9 +26,21 @@ export const load: PageLoad = async ({ params }) => {
 	if (local) {
 		return { note: local, shared: null };
 	}
-	const fragment = parseShareFragment(browser ? location.hash : '');
-	if (!fragment) {
-		error(404, 'note not found or invalid key');
+	const credentials = parseShareFragment(browser ? location.hash : '') ?? cachedShareKey(params.id);
+	if (!credentials) {
+		error(
+			404,
+			'This link is invalid, or the decryption key is no longer available on this device.'
+		);
 	}
-	return { note: null, shared: { remoteId: params.id, owner: Boolean(fragment.editToken) } };
+	rememberShareKey(params.id, credentials);
+	return {
+		note: null,
+		shared: {
+			remoteId: params.id,
+			owner: Boolean(credentials.editToken),
+			key: credentials.key,
+			editToken: credentials.editToken
+		}
+	};
 };

@@ -110,6 +110,82 @@ test.skip('notes created after sharing appear in the viewer sidebar', async ({ p
 	await context.close();
 });
 
+test('shared session survives reload without the url fragment', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('persisted key content');
+	await page.waitForTimeout(700);
+
+	const link = await shareCurrentSession(page);
+	const bareLink = link.split('#')[0];
+
+	const context = await browser.newContext();
+	const viewer = await context.newPage();
+	await viewer.goto(link);
+	await expect(viewer.locator('.cm-content')).toContainText('persisted key content', {
+		timeout: 10_000
+	});
+
+	await viewer.goto(bareLink);
+	await expect(viewer.locator('.cm-content')).toContainText('persisted key content', {
+		timeout: 10_000
+	});
+	await context.close();
+});
+
+test('selecting a note in a shared view keeps the key in the url', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('shared alpha');
+	await page.waitForTimeout(700);
+
+	await page.locator('.hover-zone').hover();
+	await page.waitForTimeout(400);
+	await page.getByRole('button', { name: 'New note' }).click();
+	await page.getByRole('textbox', { name: 'Note' }).fill('shared beta');
+	await page.waitForTimeout(700);
+
+	await shareCurrentSession(page);
+	await page.locator('select[aria-label="Link type"]').selectOption('edit');
+	const editLink = await page.locator('input[aria-label="Share link"]').inputValue();
+	expect(editLink).toMatch(/\/s\/[\w-]+#[\w-]+:[\w-]+$/);
+
+	const context = await browser.newContext();
+	const viewer = await context.newPage();
+	await viewer.goto(editLink);
+	await expect(viewer.locator('.cm-content')).toContainText('shared beta', { timeout: 10_000 });
+
+	await viewer.locator('aside a', { hasText: 'shared alpha' }).click();
+	await expect(viewer.locator('.cm-content')).toContainText('shared alpha', { timeout: 10_000 });
+	expect(viewer.url()).toMatch(/#[\w-]+:[\w-]+$/);
+	await context.close();
+});
+
+test('leaving a shared session forgets the cached key', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('session to leave');
+	await page.waitForTimeout(700);
+
+	const link = await shareCurrentSession(page);
+	const bareLink = link.split('#')[0];
+
+	const context = await browser.newContext();
+	const viewer = await context.newPage();
+	viewer.on('dialog', (dialog) => dialog.accept());
+	await viewer.goto(link);
+	await expect(viewer.locator('.cm-content')).toContainText('session to leave', {
+		timeout: 10_000
+	});
+
+	await viewer.getByRole('button', { name: 'Leave session' }).click();
+	await expect(viewer).toHaveURL(/\/s\/[\w-]+/, { timeout: 10_000 });
+
+	await viewer.goto(bareLink);
+	await expect(viewer.locator('.message')).toContainText('decryption key', { timeout: 10_000 });
+	await context.close();
+});
+
 test('copying the edit link requires no confirmation', async ({ page }) => {
 	await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 	page.on('dialog', (dialog) => dialog.accept());

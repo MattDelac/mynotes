@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
-	import { parseShareFragment } from '$lib/shared';
+	import { forgetShareKey } from '$lib/shared';
 	import { RoomSession, type SessionState } from '$lib/collab';
 	import { encryptBytes, exportKey, generateKey, importKey } from '$lib/crypto';
 	import { pushBlob, pushSnapshot } from '$lib/api';
@@ -20,6 +20,7 @@
 	import {
 		addNote,
 		currentNoteId,
+		destroySessionDoc,
 		getSessionDoc,
 		rememberCurrentNote,
 		removeNote,
@@ -156,6 +157,17 @@
 		return data.sessionId ?? data.shared?.remoteId ?? '';
 	}
 
+	async function leaveSharedSession() {
+		if (!data.shared) return;
+		if (!confirm('Leave this session? The decryption key stored on this device will be removed.')) {
+			return;
+		}
+		const remoteId = data.shared.remoteId;
+		forgetShareKey(remoteId);
+		await destroySessionDoc(remoteId);
+		await goto(resolve('/'));
+	}
+
 	async function syncMetadata() {
 		const doc = sessionDoc;
 		if (!doc) return;
@@ -204,7 +216,7 @@
 		const sessionKey = docId();
 		if (data.sessionId) rememberCurrentNote(sessionKey, id);
 		openNote(id);
-		history.replaceState(null, '', `${resolve(`/s/${sessionKey}`)}?n=${id}`);
+		history.replaceState(null, '', `${resolve(`/s/${sessionKey}`)}?n=${id}${location.hash}`);
 	}
 
 	async function startCollab(ydoc: Y.Doc, info: ShareInfo) {
@@ -266,15 +278,14 @@
 		let boundDoc: SessionDoc | null = null;
 		let mapObserver: (() => void) | null = null;
 		void (async () => {
-			const fragment = parseShareFragment(location.hash);
-			if (!fragment) return;
+			const shared = data.shared;
 			const doc = await getSessionDoc(remoteId);
 			if (cancelled) return;
 			const room = new RoomSession({
 				ydoc: doc.ydoc,
 				roomId: remoteId,
-				key: await importKey(fragment.key),
-				editToken: fragment.editToken,
+				key: await importKey(shared.key),
+				editToken: shared.editToken,
 				onState: (state) => (sessionState = state)
 			});
 			collab = room;
@@ -404,6 +415,7 @@
 		{dictating}
 		onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
 		onShare={shareSession}
+		onLeave={data.shared ? leaveSharedSession : undefined}
 		onTogglePreview={() => (preview = !preview)}
 		{preview}
 		onMenuAction={handleMenuAction}

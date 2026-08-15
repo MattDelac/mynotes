@@ -220,3 +220,24 @@ test('screenshot: mobile editor', async () => {
 	await screenshot(page, 'mobile-editor');
 	await context.close();
 });
+
+// --- ERROR state ---
+test('screenshot: error 404 light', async () => {
+	const context = await createContext(browser, { colorScheme: 'light' });
+	const page = await context.newPage();
+	page.on('dialog', (d) => void d.accept());
+	await page.goto('/s/nonexistent-session');
+	await expect(page.locator('.message')).toBeVisible({ timeout: 15000 });
+	await screenshot(page, 'light-404');
+	await context.close();
+});
+
+test('screenshot: error 404 dark', async () => {
+	const context = await createContext(browser, { colorScheme: 'dark' });
+	const page = await context.newPage();
+	page.on('dialog', (d) => void d.accept());
+	await page.goto('/s/nonexistent-session');
+	await expect(page.locator('.message')).toBeVisible({ timeout: 15000 });
+	await screenshot(page, 'dark-404');
+	await context.close();
+});
