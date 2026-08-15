@@ -220,17 +220,3 @@ test('screenshot: mobile editor', async () => {
 	await screenshot(page, 'mobile-editor');
 	await context.close();
 });
-
-test('screenshot: mobile drawer', async () => {
-	const context = await createContext(browser, {
-		colorScheme: 'light',
-		viewport: MOBILE_VIEWPORT
-	});
-	const page = await context.newPage();
-	page.on('dialog', (d) => void d.accept());
-	await seedNote(page);
-	await page.locator('button[aria-label="Toggle note list"]').click();
-	await page.waitForTimeout(500);
-	await screenshot(page, 'mobile-drawer');
-	await context.close();
-});

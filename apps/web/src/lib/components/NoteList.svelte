@@ -243,14 +243,7 @@
 			display: none;
 		}
 		.sidebar {
-			position: absolute;
-			width: 14rem;
 			display: none;
-			transition: none;
-		}
-		.sidebar.open {
-			display: block;
-			box-shadow: var(--shadow);
 		}
 	}
 </style>
