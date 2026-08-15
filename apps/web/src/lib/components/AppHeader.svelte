@@ -5,7 +5,6 @@
 		Eye,
 		FilePlus2,
 		Link2,
-		Menu,
 		Mic,
 		Pencil,
 		RefreshCw,
@@ -98,17 +97,6 @@
 </script>
 
 <header>
-	{#if !readOnly && onToggleSidebar}
-		<button
-			class="icon menu-btn"
-			aria-label="Toggle note list"
-			title="Notes"
-			onclick={() => onToggleSidebar?.()}
-		>
-			<Menu size={18} />
-		</button>
-	{/if}
-
 	<span class="title">{title}</span>
 
 	{#if showSync}
@@ -355,15 +343,5 @@
 		position: fixed;
 		inset: 0;
 		z-index: 25;
-	}
-	@media (min-width: 641px) {
-		.menu-btn {
-			display: none;
-		}
-	}
-	@media (max-width: 640px) {
-		.menu-btn {
-			display: grid;
-		}
 	}
 </style>

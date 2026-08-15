@@ -89,12 +89,11 @@ test('preview preserves single line breaks like the editor does', async ({ page 
 	expect(breaks).toBe(1);
 });
 
-test('sidebar is hidden by default on mobile and toggled by the menu button', async ({ page }) => {
+test('sidebar is not available on mobile', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/');
 	await expect(page.locator('aside')).toBeHidden();
-	await page.getByRole('button', { name: 'Toggle note list' }).click();
-	await expect(page.locator('aside')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Toggle note list' })).toHaveCount(0);
 });
 
 test('sidebar shows the updated note title', async ({ page }) => {
