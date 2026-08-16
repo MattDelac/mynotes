@@ -46,7 +46,7 @@ jobs:
       - uses: peter-evans/create-pull-request@v6
         with:
           branch: chore/screenshots
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_TOKEN}}
           commit-message: 'chore: regenerate UI screenshots'
           title: 'chore: regenerate UI screenshots'
           body: 'Automated screenshot regeneration. Triggered manually via workflow_dispatch.'
