@@ -89,11 +89,56 @@ test('preview preserves single line breaks like the editor does', async ({ page 
 	expect(breaks).toBe(1);
 });
 
-test('sidebar is not available on mobile', async ({ page }) => {
+test('note list toggle button is hidden on desktop', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.getByRole('button', { name: 'Note list' })).toBeHidden();
+});
+
+test('mobile: note list drawer opens from the header and switches notes', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/');
-	await expect(page.locator('aside')).toBeHidden();
-	await expect(page.getByRole('button', { name: 'Toggle note list' })).toHaveCount(0);
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('mobile first note');
+	await page.waitForTimeout(700);
+
+	const toggle = page.getByRole('button', { name: 'Note list' });
+	await expect(toggle).toBeVisible();
+
+	const aside = page.locator('aside');
+	await expect(aside).not.toHaveClass(/open/);
+
+	await toggle.click();
+	await expect(aside).toHaveClass(/open/);
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+	await expect(page.locator('aside a')).toHaveText('mobile first note');
+
+	await page.locator('aside a').first().click();
+	await expect(aside).not.toHaveClass(/open/);
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+	await expect(page).toHaveURL(/\?n=[\w-]+/);
+});
+
+test('mobile: drawer creates a new note and deletes one', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('keep me');
+	await page.waitForTimeout(700);
+
+	const toggle = page.getByRole('button', { name: 'Note list' });
+	await toggle.click();
+	await page.getByRole('button', { name: 'New note' }).click();
+	await expect(page).toHaveURL(/\?n=[\w-]+/);
+	await expect(page.locator('aside')).not.toHaveClass(/open/);
+
+	await toggle.click();
+	await expect(page.locator('aside a')).toHaveCount(2);
+
+	const doomed = page.locator('aside li', { hasText: 'Untitled' });
+	await doomed.hover();
+	await doomed.getByRole('button', { name: 'Delete note' }).click();
+	await expect(page.locator('aside a')).toHaveCount(1);
+	await expect(page.locator('aside a')).toHaveText('keep me');
 });
 
 test('sidebar shows the updated note title', async ({ page }) => {

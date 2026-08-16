@@ -39,6 +39,31 @@ test('share creates an encrypted link that decrypts in a fresh browser', async (
 	await context.close();
 });
 
+test('shared session on mobile lists notes from the drawer', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('shared mobile note');
+	await page.waitForTimeout(700);
+	const link = await shareCurrentSession(page);
+
+	const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+	const viewer = await context.newPage();
+	await viewer.goto(link);
+	await expect(viewer.locator('.cm-content')).toContainText('shared mobile note', {
+		timeout: 10_000
+	});
+
+	const toggle = viewer.getByRole('button', { name: 'Note list' });
+	await expect(toggle).toBeVisible();
+	await expect(viewer.locator('aside')).not.toHaveClass(/open/);
+
+	await toggle.click();
+	await expect(viewer.locator('aside')).toHaveClass(/open/);
+	await expect(viewer.locator('aside a')).toHaveText('shared mobile note');
+	await expect(viewer.getByRole('button', { name: 'New note' })).toHaveCount(0);
+	await context.close();
+});
+
 test('view-only link does not allow editing', async ({ page, browser }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');
