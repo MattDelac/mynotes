@@ -221,6 +221,21 @@ test('screenshot: mobile editor', async () => {
 	await context.close();
 });
 
+test('screenshot: mobile drawer', async () => {
+	const context = await createContext(browser, {
+		colorScheme: 'light',
+		viewport: MOBILE_VIEWPORT
+	});
+	const page = await context.newPage();
+	page.on('dialog', (d) => void d.accept());
+	await seedNote(page);
+	await page.keyboard.press('Escape');
+	await page.getByRole('button', { name: 'Note list' }).click();
+	await page.waitForTimeout(400);
+	await screenshot(page, 'mobile-drawer');
+	await context.close();
+});
+
 // --- ERROR state ---
 test('screenshot: error 404 light', async () => {
 	const context = await createContext(browser, { colorScheme: 'light' });

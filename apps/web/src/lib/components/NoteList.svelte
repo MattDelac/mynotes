@@ -99,9 +99,14 @@
 	aria-hidden="true"
 ></div>
 
+{#if isOpen || mobileOpen}
+	<div class="backdrop" role="presentation"></div>
+{/if}
+
 <aside
 	class="sidebar"
 	class:open={isOpen || mobileOpen}
+	inert={!(isOpen || mobileOpen)}
 	bind:this={sidebarEl}
 	onmouseleave={handleSidebarMouseLeave}
 >
@@ -164,6 +169,9 @@
 		background: var(--bg);
 		z-index: 15;
 		transition: width 0.15s ease;
+	}
+	.backdrop {
+		display: none;
 	}
 	.sidebar.open {
 		width: 14rem;
@@ -242,8 +250,23 @@
 		.hover-zone {
 			display: none;
 		}
+		.backdrop {
+			display: block;
+			position: fixed;
+			inset: var(--header-h) 0 0 0;
+			background: rgb(0 0 0 / 0.25);
+			z-index: 30;
+		}
 		.sidebar {
-			display: none;
+			width: min(14rem, 85vw);
+			transform: translateX(-102%);
+			transition: transform 0.2s ease;
+			z-index: 40;
+		}
+		.sidebar.open {
+			width: min(14rem, 85vw);
+			transform: none;
+			overflow-y: auto;
 		}
 	}
 </style>

@@ -55,6 +55,7 @@
 	let share = $state<ShareInfo | null>(null);
 	let preview = $state(false);
 	let sidebarOpen = $state(false);
+	let isMobile = $state(window.matchMedia('(max-width: 640px)').matches);
 	let shareOpen = $state(false);
 	let shareError = $state('');
 	let copied = $state(false);
@@ -81,6 +82,13 @@
 		share ? (shareKind === 'edit' ? sessionOwnerLink(share) : sessionViewLink(share)) : ''
 	);
 	const showSync = $derived(Boolean(share || data.shared));
+
+	$effect(() => {
+		const mq = window.matchMedia('(max-width: 640px)');
+		const onChange = () => (isMobile = mq.matches);
+		mq.addEventListener('change', onChange);
+		return () => mq.removeEventListener('change', onChange);
+	});
 
 	$effect(() => {
 		if (shareError) {
@@ -413,6 +421,7 @@
 		{engines}
 		{engineKind}
 		{dictating}
+		{sidebarOpen}
 		onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
 		onShare={shareSession}
 		onLeave={data.shared ? leaveSharedSession : undefined}
@@ -432,7 +441,7 @@
 		onNewNote={newNote}
 		onDeleteNote={removeNoteById}
 		{noteTitle}
-		mobileOpen={sidebarOpen || Boolean(data.shared)}
+		mobileOpen={sidebarOpen || (Boolean(data.shared) && !isMobile)}
 	/>
 
 	{#if shareOpen && share}

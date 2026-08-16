@@ -5,6 +5,7 @@
 		Eye,
 		FilePlus2,
 		Link2,
+		List,
 		LogOut,
 		Mic,
 		Pencil,
@@ -32,6 +33,7 @@
 		onToggleDictation?: () => void;
 		showNewSession?: boolean;
 		preview?: boolean;
+		sidebarOpen?: boolean;
 	}
 
 	let {
@@ -52,7 +54,8 @@
 		onEngineChange,
 		onToggleDictation,
 		showNewSession = false,
-		preview = false
+		preview = false,
+		sidebarOpen = false
 	}: Props = $props();
 
 	let menuOpen = $state(false);
@@ -100,6 +103,17 @@
 </script>
 
 <header>
+	{#if onToggleSidebar}
+		<button
+			class="icon toggle-notes"
+			aria-label="Note list"
+			aria-expanded={sidebarOpen}
+			title="Note list"
+			onclick={() => onToggleSidebar?.()}
+		>
+			<List size={18} />
+		</button>
+	{/if}
 	<span class="title">{title}</span>
 
 	{#if showSync}
@@ -296,6 +310,14 @@
 	.icon:disabled {
 		opacity: 0.4;
 		cursor: default;
+	}
+	.toggle-notes {
+		display: none;
+	}
+	@media (max-width: 640px) {
+		.toggle-notes {
+			display: grid;
+		}
 	}
 	.sync {
 		display: flex;
