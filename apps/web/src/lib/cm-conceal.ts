@@ -27,7 +27,7 @@ function activeLines(state: EditorState): Set<number> {
 	return lines;
 }
 
-function isInsideFencedCode(state: EditorState, pos: number): boolean {
+export function isInsideFencedCode(state: EditorState, pos: number): boolean {
 	const node = syntaxTree(state).resolveInner(pos, -1);
 	let current: typeof node | null = node;
 	while (current) {
