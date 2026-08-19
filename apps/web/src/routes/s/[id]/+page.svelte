@@ -384,6 +384,7 @@
 		onDeleteNote={removeNoteById}
 		{noteTitle}
 		mobileOpen={sidebarOpen || (Boolean(data.shared) && !isMobile)}
+		onCloseRequest={() => (sidebarOpen = false)}
 	/>
 
 	{#if shareOpen && share}

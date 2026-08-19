@@ -11,6 +11,7 @@
 		onDeleteNote: (id: string) => void;
 		noteTitle: (content: string) => string;
 		mobileOpen?: boolean;
+		onCloseRequest?: () => void;
 	}
 
 	let {
@@ -21,7 +22,8 @@
 		onNewNote,
 		onDeleteNote,
 		noteTitle,
-		mobileOpen = false
+		mobileOpen = false,
+		onCloseRequest
 	}: Props = $props();
 
 	let isOpen = $state(false);
@@ -68,6 +70,7 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			close();
+			onCloseRequest?.();
 		}
 	}
 
@@ -100,7 +103,14 @@
 ></div>
 
 {#if isOpen || mobileOpen}
-	<div class="backdrop" role="presentation"></div>
+	<div
+		class="backdrop"
+		role="presentation"
+		onclick={() => {
+			close();
+			onCloseRequest?.();
+		}}
+	></div>
 {/if}
 
 <aside
