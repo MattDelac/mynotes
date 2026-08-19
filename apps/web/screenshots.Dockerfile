@@ -5,7 +5,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 	PATH=/usr/local/cargo/bin:$PATH
 
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates curl libsqlite3-dev \
+	&& apt-get install -y --no-install-recommends ca-certificates curl gcc libsqlite3-dev \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
