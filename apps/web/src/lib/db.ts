@@ -15,7 +15,7 @@ export interface Note {
 	share?: ShareInfo;
 }
 
-export interface Session {
+interface Session {
 	id: string;
 	createdAt: number;
 	updatedAt: number;
@@ -103,11 +103,6 @@ export async function getSession(id: string): Promise<Session | undefined> {
 export async function saveSession(session: Session): Promise<void> {
 	const database = await db();
 	await database.put('sessions', JSON.parse(JSON.stringify(session)) as Session);
-}
-
-export async function deleteSession(id: string): Promise<void> {
-	const database = await db();
-	await database.delete('sessions', id);
 }
 
 export function createSession(): Session {

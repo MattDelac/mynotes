@@ -41,7 +41,6 @@
 		"@codemirror/view": "^6.43.7",
 		"@lezer/common": "^1.5.2",
 		"@lezer/highlight": "^1.2.3",
-		"codemirror": "^6.0.2",
 		"dompurify": "^3.4.12",
 		"idb": "^8.0.3",
 		"lucide-svelte": "^1.0.1",

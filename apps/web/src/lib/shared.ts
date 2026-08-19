@@ -1,6 +1,6 @@
 const SHARE_KEY_PREFIX = 'mynotes-share-key-';
 
-export interface ShareCredentials {
+interface ShareCredentials {
 	key: string;
 	editToken?: string;
 }

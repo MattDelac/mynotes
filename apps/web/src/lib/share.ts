@@ -5,10 +5,6 @@ export function viewLink(share: ShareInfo): string {
 	return `${location.origin}${base}/n/${share.remoteId}#${share.key}`;
 }
 
-export function ownerLink(share: ShareInfo): string {
-	return `${location.origin}${base}/n/${share.remoteId}#${share.key}:${share.editToken}`;
-}
-
 export function sessionViewLink(share: ShareInfo): string {
 	return `${location.origin}${base}/s/${share.remoteId}#${share.key}`;
 }
