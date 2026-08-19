@@ -270,6 +270,7 @@
 			onDeleteNote={removeNoteById}
 			{noteTitle}
 			mobileOpen={sidebarOpen}
+			onCloseRequest={() => (sidebarOpen = false)}
 		/>
 	{/if}
 

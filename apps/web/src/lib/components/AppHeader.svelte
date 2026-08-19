@@ -281,14 +281,6 @@
 		opacity: 0.4;
 		cursor: default;
 	}
-	.toggle-notes {
-		display: none;
-	}
-	@media (max-width: 640px) {
-		.toggle-notes {
-			display: grid;
-		}
-	}
 	.sync {
 		display: flex;
 		align-items: center;

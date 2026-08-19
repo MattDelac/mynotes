@@ -89,9 +89,39 @@ test('preview preserves single line breaks like the editor does', async ({ page 
 	expect(breaks).toBe(1);
 });
 
-test('note list toggle button is hidden on desktop', async ({ page }) => {
+test('desktop: note list toggle button opens the list and switches notes', async ({ page }) => {
 	await page.goto('/');
-	await expect(page.getByRole('button', { name: 'Note list' })).toBeHidden();
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('desktop alpha');
+	await page.waitForTimeout(700);
+
+	const toggle = page.getByRole('button', { name: 'Note list' });
+	await expect(toggle).toBeVisible();
+
+	const aside = page.locator('aside');
+	await expect(aside).not.toHaveClass(/open/);
+
+	await toggle.click();
+	await expect(aside).toHaveClass(/open/);
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+	await page.getByRole('button', { name: 'New note' }).click();
+	await editor.fill('desktop beta');
+	await page.waitForTimeout(700);
+	await expect(aside).not.toHaveClass(/open/);
+
+	await toggle.click();
+	await expect(aside).toHaveClass(/open/);
+	await expect(page.locator('aside a')).toHaveCount(2);
+
+	await page.keyboard.press('Escape');
+	await expect(aside).not.toHaveClass(/open/);
+
+	await toggle.click();
+	await page.locator('aside a', { hasText: 'desktop alpha' }).click();
+	await expect(aside).not.toHaveClass(/open/);
+	await expect.poll(() => editorText(page)).toBe('desktop alpha');
+	await expect(page).toHaveURL(/\?n=[\w-]+/);
 });
 
 test('mobile: note list drawer opens from the header and switches notes', async ({ page }) => {
