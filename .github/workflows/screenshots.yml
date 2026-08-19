@@ -16,44 +16,20 @@ jobs:
           lfs: true
           ref: ${{ github.head_ref || github.ref_name }}
 
-      - uses: DeterminateSystems/determinate-nix-action@v3
-      - uses: DeterminateSystems/flakehub-cache-action@v3
-
-      - name: Cache cargo build
+      - name: Cache pnpm store and cargo target
         uses: actions/cache@v4
         with:
           path: |
-            api/target
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-${{ runner.os }}-${{ hashFiles('api/Cargo.lock') }}
+            ${{ runner.temp }}/screenshots-cache/pnpm-store
+            ${{ runner.temp }}/screenshots-cache/target
+          key: screenshots-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'api/Cargo.lock', 'apps/web/screenshots.Dockerfile') }}
           restore-keys: |
-            cargo-${{ runner.os }}-
-
-      - name: Get pnpm store path
-        id: pnpm-store
-        run: echo "path=$(nix develop --command pnpm store path | tail -n 1)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: nix develop --command pnpm install --frozen-lockfile
-
-      - name: Install Playwright browsers
-        run: nix develop --command npx playwright install chromium
-        working-directory: apps/web
+            screenshots-${{ runner.os }}-
 
       - name: Generate screenshots
-        run: nix develop --command pnpm exec playwright test --config screenshots.playwright.config.ts
-        working-directory: apps/web
         env:
-          CI: "true"
+          SCREENSHOTS_CACHE: ${{ runner.temp }}/screenshots-cache
+        run: bash scripts/screenshots.sh
 
       - uses: peter-evans/create-pull-request@v6
         with:

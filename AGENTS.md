@@ -43,7 +43,8 @@ pnpm check              # svelte-check (type checking)
 pnpm lint               # prettier --check + eslint
 pnpm format             # prettier --write
 pnpm test               # vitest run
-pnpm exec playwright test   # e2e (builds the app, boots preview + the rust backend on :3000)
+pnpm screenshots        # regenerate UI screenshots in the pinned docker container (byte-identical to CI; needs docker)
+pnpm screenshots:host   # run the same e2e suite on the host instead (rendering may differ from CI)
 ```
 
 ### Backend (`api`)

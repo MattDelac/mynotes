@@ -11,7 +11,8 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"test": "vitest run",
-		"screenshots": "playwright test --config screenshots.playwright.config.ts"
+		"screenshots": "bash ../../scripts/screenshots.sh",
+		"screenshots:host": "playwright test --config screenshots.playwright.config.ts"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.62.1",
