@@ -28,6 +28,8 @@ const FIXTURE_MD = [
 
 const DESKTOP_VIEWPORT = { width: 1440, height: 900 };
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
+const DEMO_SHARE_LINK =
+	'https://notes.mdelacour.com/s/5f2a9c1e-7d3b-4a6e-9c8f-1b2d3e4f5a6b#k9xLm2vQ8wR4tN7pJ3hF6sD1cA5eB8gUoYzW3rT';
 
 async function createContext(
 	browser: Browser,
@@ -37,7 +39,8 @@ async function createContext(
 		colorScheme: options.colorScheme ?? 'light',
 		viewport: options.viewport ?? DESKTOP_VIEWPORT,
 		deviceScaleFactor: 1,
-		locale: 'en-US'
+		locale: 'en-US',
+		reducedMotion: 'reduce'
 	});
 }
 
@@ -51,10 +54,26 @@ async function seedNote(page: Page): Promise<void> {
 }
 
 async function screenshot(page: Page, name: string): Promise<void> {
+	await page.evaluate(() => document.fonts.ready);
 	await page.waitForTimeout(400);
 	fs.mkdirSync(screenshotsDir, { recursive: true });
 	const filePath = path.join(screenshotsDir, `${name}.png`);
-	await page.screenshot({ path: filePath, type: 'png', fullPage: false });
+	await page.screenshot({
+		path: filePath,
+		type: 'png',
+		fullPage: false,
+		animations: 'disabled',
+		caret: 'hide'
+	});
+}
+
+async function openSharePanel(page: Page): Promise<void> {
+	await page.locator('button[aria-label="Share session"]').click();
+	const linkInput = page.locator('input[aria-label="Share link"]');
+	await expect(linkInput).toBeVisible({ timeout: 15000 });
+	await linkInput.evaluate((el, value) => {
+		el.value = value;
+	}, DEMO_SHARE_LINK);
 }
 
 let browser: Browser;
@@ -115,10 +134,7 @@ test('screenshot: share light', async () => {
 	const page = await context.newPage();
 	page.on('dialog', (d) => void d.accept());
 	await seedNote(page);
-	await page.locator('button[aria-label="Share session"]').click();
-	await page.waitForTimeout(1000);
-	const linkInput = page.locator('input[aria-label="Share link"]');
-	await expect(linkInput).toBeVisible({ timeout: 15000 });
+	await openSharePanel(page);
 	await screenshot(page, 'light-share');
 	await context.close();
 });
@@ -128,10 +144,7 @@ test('screenshot: share dark', async () => {
 	const page = await context.newPage();
 	page.on('dialog', (d) => void d.accept());
 	await seedNote(page);
-	await page.locator('button[aria-label="Share session"]').click();
-	await page.waitForTimeout(1000);
-	const linkInput = page.locator('input[aria-label="Share link"]');
-	await expect(linkInput).toBeVisible({ timeout: 15000 });
+	await openSharePanel(page);
 	await screenshot(page, 'dark-share');
 	await context.close();
 });
