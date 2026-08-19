@@ -8,7 +8,7 @@ export function wsBaseUrl(): string {
 	return baseUrl().replace(/^http/, 'ws');
 }
 
-export interface CreateResult {
+interface CreateResult {
 	id: string;
 	edit_token: string;
 }

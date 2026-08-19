@@ -62,7 +62,7 @@ export async function destroySessionDoc(sessionId: string): Promise<void> {
 	ydoc.destroy();
 }
 
-export function lastSessionId(): string | null {
+function lastSessionId(): string | null {
 	return localStorage.getItem(LAST_SESSION_KEY);
 }
 

@@ -8,7 +8,7 @@ const REMOTE_ORIGIN = 'collab-remote';
 const COMPACTION_THRESHOLD = 500;
 const MAX_BACKOFF_MS = 10_000;
 
-export interface RoomSessionOptions {
+interface RoomSessionOptions {
 	ydoc: Y.Doc;
 	roomId: string;
 	key: CryptoKey;

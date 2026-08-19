@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 
-export interface NoteDoc {
+interface NoteDoc {
 	ydoc: Y.Doc;
 	ytext: Y.Text;
 	provider: IndexeddbPersistence;

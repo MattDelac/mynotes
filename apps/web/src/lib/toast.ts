@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 
-export type ToastKind = 'danger' | 'info' | 'success';
+type ToastKind = 'danger' | 'info' | 'success';
 export interface Toast {
 	id: string;
 	kind: ToastKind;
