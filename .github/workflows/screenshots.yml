@@ -19,6 +19,17 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3
       - uses: DeterminateSystems/flakehub-cache-action@v3
 
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('api/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
       - name: Get pnpm store path
         id: pnpm-store
         run: echo "path=$(nix develop --command pnpm store path | tail -n 1)" >> "$GITHUB_OUTPUT"
