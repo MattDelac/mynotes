@@ -96,7 +96,7 @@ presence/awareness yet.
   per-note Yjs docs — only for frozen pre-session shares), `crypto.ts` (AES-GCM, base64url),
   `api.ts` (relay client), `collab.ts` (RoomSession — encrypted Yjs-over-WS sync), `share.ts`
   (link building), `shared.ts` (share fragment parsing), `cm-conceal.ts` (Typora-style markdown
-  mark concealment), `voice/` (dictation engines), `export.ts` (.md download), `Editor.svelte`
+  mark concealment), `export.ts` (.md download), `Editor.svelte`
   (CodeMirror 6 + yCollab binding). Routes: `s/[id]` (session page), `n/[id]` (frozen legacy
   per-note shares, redirects local notes to their session).
 - Svelte 5 runes (`$state`, `$derived`), tabs for indentation (Prettier config), no comments

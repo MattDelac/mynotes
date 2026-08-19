@@ -11,13 +11,6 @@
 	import * as Y from 'yjs';
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, viewLink } from '$lib/share';
-	import {
-		availableEngines,
-		createEngine,
-		loadEngineChoice,
-		saveEngineChoice
-	} from '$lib/voice/engine';
-	import type { VoiceEngine, VoiceEngineKind } from '$lib/voice/types';
 	import { downloadNote } from '$lib/export';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
@@ -39,13 +32,6 @@
 	let copied = $state(false);
 	let editor = $state<Editor | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
-	let dictation = $state<VoiceEngine | null>(null);
-	let dictating = $state(false);
-	let voiceError = $state('');
-	let voiceStatus = $state('');
-	const engines = availableEngines();
-	let engineKind = $state<VoiceEngineKind | null>(loadEngineChoice() ?? engines[0]?.kind ?? null);
-
 	let sessionState = $state<SessionState | 'idle'>('idle');
 	let session: RoomSession | null = null;
 	let sharedYtext = $state<Y.Text | null>(null);
@@ -61,51 +47,6 @@
 			showToast('danger', shareError);
 		}
 	});
-
-	$effect(() => {
-		if (voiceError) {
-			showToast('danger', `Dictation: ${voiceError}`);
-		}
-	});
-
-	$effect(() => {
-		if (voiceStatus) {
-			showToast('info', voiceStatus, 3000);
-		}
-	});
-
-	$effect(() => {
-		if (!engineKind) return;
-		dictation = createEngine(engineKind, {
-			onText: insertAtCursor,
-			onError: (message) => (voiceError = message),
-			onActiveChange: (active) => {
-				dictating = active;
-				if (active) voiceError = '';
-			},
-			onProgress: (message) => (voiceStatus = message)
-		});
-	});
-
-	function insertAtCursor(text: string) {
-		editor?.insertAtCursor(text);
-	}
-
-	function toggleDictation() {
-		if (!dictation) return;
-		if (dictating) {
-			dictation.stop();
-		} else {
-			voiceStatus = '';
-			dictation.start();
-		}
-	}
-
-	function chooseEngine(kind: VoiceEngineKind) {
-		dictation?.stop();
-		saveEngineChoice(kind);
-		engineKind = kind;
-	}
 
 	function exportNote() {
 		const ok = confirm('This will export an unencrypted copy of the note. Continue?');
@@ -289,8 +230,7 @@
 	}
 
 	function handleMenuAction(action: string) {
-		if (action === 'dictation') toggleDictation();
-		else if (action === 'export') exportNote();
+		if (action === 'export') exportNote();
 		else if (action === 'import') fileInput?.click();
 	}
 
@@ -311,18 +251,12 @@
 		readOnly={data.shared ? !data.shared.owner : false}
 		{showSync}
 		{sessionState}
-		hasEngines={engines.length > 0}
-		{engines}
-		{engineKind}
-		{dictating}
 		onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
 		onShare={data.shared ? undefined : share}
 		onLeave={data.shared ? leaveSharedNote : undefined}
 		onTogglePreview={() => (preview = !preview)}
 		{preview}
 		onMenuAction={handleMenuAction}
-		onEngineChange={(k) => chooseEngine(k as VoiceEngineKind)}
-		onToggleDictation={toggleDictation}
 		showNewSession={false}
 	/>
 

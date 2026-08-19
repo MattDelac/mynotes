@@ -7,10 +7,8 @@
 		Link2,
 		List,
 		LogOut,
-		Mic,
 		Pencil,
 		RefreshCw,
-		Square,
 		Upload
 	} from 'lucide-svelte';
 
@@ -20,17 +18,11 @@
 		readOnly?: boolean;
 		showSync?: boolean;
 		sessionState?: 'idle' | 'live' | 'connecting' | 'offline';
-		hasEngines?: boolean;
-		engines?: { kind: string; label: string }[];
-		engineKind?: string | null;
-		dictating?: boolean;
 		onToggleSidebar?: () => void;
 		onShare?: () => void;
 		onLeave?: () => void;
 		onTogglePreview?: () => void;
 		onMenuAction?: (action: string) => void;
-		onEngineChange?: (kind: string) => void;
-		onToggleDictation?: () => void;
 		showNewSession?: boolean;
 		preview?: boolean;
 		sidebarOpen?: boolean;
@@ -42,17 +34,11 @@
 		readOnly = false,
 		showSync = false,
 		sessionState = 'idle',
-		hasEngines = false,
-		engines = [],
-		engineKind = null,
-		dictating = false,
 		onToggleSidebar,
 		onShare,
 		onLeave,
 		onTogglePreview,
 		onMenuAction,
-		onEngineChange,
-		onToggleDictation,
 		showNewSession = false,
 		preview = false,
 		sidebarOpen = false
@@ -176,38 +162,6 @@
 
 			{#if menuOpen}
 				<div class="dropdown-menu">
-					{#if hasEngines}
-						<button
-							class="menu-item"
-							onclick={() => {
-								onToggleDictation?.();
-								closeMenu();
-							}}
-							aria-label="Toggle dictation"
-						>
-							{#if dictating}
-								<Square size={15} />
-							{:else}
-								<Mic size={15} />
-							{/if}
-							<span>{dictating ? 'Stop dictation' : 'Dictate'}</span>
-							{#if (engines?.length ?? 0) > 1}
-								<select
-									class="engine-select"
-									aria-label="Speech engine"
-									value={engineKind ?? ''}
-									onchange={(e) => {
-										onEngineChange?.(e.currentTarget.value);
-									}}
-									onclick={(e) => e.stopPropagation()}
-								>
-									{#each engines as engine (engine.kind)}
-										<option value={engine.kind}>{engine.label}</option>
-									{/each}
-								</select>
-							{/if}
-						</button>
-					{/if}
 					<button
 						class="menu-item"
 						onclick={() => {
@@ -365,15 +319,6 @@
 	}
 	.menu-item:hover {
 		background: var(--bg-hover);
-	}
-	.engine-select {
-		font-size: 0.75rem;
-		margin-left: auto;
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--bg);
-		padding: 0.15rem 0.3rem;
-		flex-shrink: 0;
 	}
 	.backdrop {
 		position: fixed;
