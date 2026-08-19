@@ -24,8 +24,6 @@ Local-first, end-to-end encrypted, fully open source. Share via encrypted link.
 - Local persistence: IndexedDB via `idb` + y-indexeddb (Yjs documents), autosave
 - Crypto: Web Crypto API, AES-GCM-256. Key gen → encrypt → export key to URL
   fragment
-- Voice input: Web Speech API dictation by default, optional on-device Whisper
-  (WebGPU) engine; transcript appended at cursor
 - PWA manifest for "add to home screen" on mobile
 
 ### Session model
@@ -87,15 +85,15 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 - Abuse posture: nothing is sent from our server; it's the user's own mail
   client. No relay to protect, no rate limits needed.
 
-### Voice input
-
-- Web Speech API dictation by default; optional on-device Whisper (WebGPU) via
-  transformers.js for fully offline speech recognition
-- Transcript appended at cursor
-
 ### Removed: AI chat
 
 A BYOK AI sidecar chat was built in M4 and later removed — the project stays
+focused on notes + collaboration.
+
+### Removed: Voice input
+
+Voice dictation (Web Speech API plus optional on-device Whisper via
+transformers.js) shipped in M5 and was later removed — the project stays
 focused on notes + collaboration.
 
 ## Roadmap
@@ -106,7 +104,7 @@ focused on notes + collaboration.
 | **M2**    | Local notes: markdown editor + IndexedDB autosave, note list       |
 | **M3**    | Share: crypto module, blob API, share/view links, mailto-with-link flow |
 | **M4**    | AI chat: BYOK panel (later removed)                                 |
-| **M5**    | Voice + Export: Web Speech API dictation, plaintext export-to-disk |
+| **M5**    | Voice + Export: Web Speech API dictation (later removed), plaintext export-to-disk |
 | **M6**    | Polish: PWA, mobile UX, self-host docs, MIT license                |
 
 ## Explicitly Out of Scope (v1)
