@@ -141,6 +141,38 @@ test('mobile: drawer creates a new note and deletes one', async ({ page }) => {
 	await expect(page.locator('aside a')).toHaveText('keep me');
 });
 
+test('mobile: current note can be deleted from the more menu', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('keep me');
+	await page.waitForTimeout(700);
+
+	const toggle = page.getByRole('button', { name: 'Note list' });
+	await toggle.click();
+	await page.getByRole('button', { name: 'New note' }).click();
+	await expect(page).toHaveURL(/\?n=[\w-]+/);
+	await expect(page.locator('aside')).not.toHaveClass(/open/);
+
+	await openMenu(page);
+	const deleteItem = page.locator('.dropdown-menu').getByRole('button', { name: 'Delete note' });
+	await expect(deleteItem).toBeVisible();
+	await deleteItem.click();
+
+	await expect.poll(() => editorText(page)).toBe('keep me');
+	await toggle.click();
+	await expect(page.locator('aside a')).toHaveCount(1);
+	await expect(page.locator('aside a')).toHaveText('keep me');
+});
+
+test('desktop: more menu does not offer delete note', async ({ page }) => {
+	await page.goto('/');
+	await openMenu(page);
+	await expect(
+		page.locator('.dropdown-menu').getByRole('button', { name: 'Delete note' })
+	).toHaveCount(0);
+});
+
 test('sidebar shows the updated note title', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });

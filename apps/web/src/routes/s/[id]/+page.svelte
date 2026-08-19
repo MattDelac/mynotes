@@ -293,6 +293,11 @@
 		}
 	}
 
+	async function deleteCurrentNote() {
+		if (!noteId) return;
+		await removeNoteById(noteId);
+	}
+
 	async function startEmptySession() {
 		const fresh = createSession();
 		await saveSession(fresh);
@@ -348,6 +353,7 @@
 		if (action === 'export') exportNote();
 		else if (action === 'import') fileInput?.click();
 		else if (action === 'newSession') startEmptySession();
+		else if (action === 'deleteNote') void deleteCurrentNote();
 	}
 </script>
 
@@ -366,6 +372,7 @@
 		{preview}
 		onMenuAction={handleMenuAction}
 		showNewSession={!data.shared}
+		showDeleteNote={isMobile}
 	/>
 
 	<NoteList

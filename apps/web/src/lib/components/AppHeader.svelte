@@ -9,6 +9,7 @@
 		LogOut,
 		Pencil,
 		RefreshCw,
+		Trash2,
 		Upload
 	} from 'lucide-svelte';
 
@@ -24,6 +25,7 @@
 		onTogglePreview?: () => void;
 		onMenuAction?: (action: string) => void;
 		showNewSession?: boolean;
+		showDeleteNote?: boolean;
 		preview?: boolean;
 		sidebarOpen?: boolean;
 	}
@@ -40,6 +42,7 @@
 		onTogglePreview,
 		onMenuAction,
 		showNewSession = false,
+		showDeleteNote = false,
 		preview = false,
 		sidebarOpen = false
 	}: Props = $props();
@@ -195,6 +198,19 @@
 						>
 							<FilePlus2 size={15} />
 							<span>New session</span>
+						</button>
+					{/if}
+					{#if showDeleteNote}
+						<button
+							class="menu-item"
+							onclick={() => {
+								onMenuAction('deleteNote');
+								closeMenu();
+							}}
+							aria-label="Delete note"
+						>
+							<Trash2 size={15} />
+							<span>Delete note</span>
 						</button>
 					{/if}
 				</div>
