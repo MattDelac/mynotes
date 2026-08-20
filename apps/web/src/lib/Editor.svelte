@@ -9,6 +9,7 @@
 	import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 	import { classHighlighter, tags } from '@lezer/highlight';
 	import { concealMarks } from './cm-conceal';
+	import { titleLines } from './cm-title';
 	import { clickableLinks } from './cm-links';
 	import { indentKeymap } from './cm-indent';
 	import { inputRulesKeymap } from './cm-input-rules';
@@ -81,6 +82,8 @@
 				syntaxHighlighting(markdownStyle),
 				syntaxHighlighting(classHighlighter),
 				concealMarks,
+				titleLines,
+				EditorView.decorations.of((view) => view.state.field(titleLines)),
 				clickableLinks,
 				cmPlaceholder('Start typing…'),
 				EditorView.lineWrapping,
@@ -89,6 +92,12 @@
 				yCollab(ytext, null, { undoManager }),
 				EditorView.theme({
 					'&': { height: '100%', fontSize: '1.05rem', backgroundColor: 'transparent' },
+					'.cm-note-title': {
+						fontSize: '1.7em',
+						fontWeight: '700',
+						lineHeight: '1.3',
+						fontFamily: 'var(--font-serif)'
+					},
 					'.cm-content': {
 						padding: '1.5rem 0',
 						fontFamily: 'inherit',

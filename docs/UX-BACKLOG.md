@@ -31,6 +31,8 @@ What already works well (do not regress):
 - Cmd/Ctrl+click opens links in edit mode (`cm-links.ts`)
 - Long-press (~500 ms) on a link in edit mode opens it in a new tab on touch devices
   (`cm-links.ts`), with haptic feedback and no caret movement (see item 5)
+- Title treatment: a plain (non-heading) first line renders with h1 styling in both
+  editor (`cm-title.ts`) and preview (`p.note-title`), display-only (see item 6)
 - Preview toggle (`marked` + DOMPurify, `gfm: true, breaks: true`)
 - Sidebar (hover zone desktop / drawer mobile), note switch, new/delete, share, export/import
 - Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar
@@ -147,18 +149,32 @@ What already works well (do not regress):
   synthetic touches cannot trigger; the test instead pins that the tap is left
   unhandled (not consumed, nothing opened).
 
-### 6. Title treatment: first line displays as a title without requiring `# `
+### 6. DONE (2026-08-20): Title treatment — first line displays as a title without `# `
 
-- Evidence: `noteTitle()` (db.ts:58) already treats the first line as the title in the
-  header/sidebar (stripping `#`). But in the editor and preview, a first line without
-  `# ` renders as plain body text, so users must type `# ` to get title treatment.
-- Scope (display-only; the stored markdown is never modified): editor — style the
-  first non-empty line as a title (larger, serif) when it is not already a heading;
-  preview — render that line with h1-equivalent styling (wrap the first paragraph in a
-  class during `renderMarkdown`, do not emit a real `h1`). Export stays byte-identical.
-- done-when: e2e — a note starting `Meeting Notes` (no `#`) shows title styling in
-  editor and preview; a note starting `# Title` is unchanged; exported `.md` is
-  byte-identical to the stored content; screenshots regenerated.
+- Evidence: new `src/lib/cm-title.ts` — `titleDecorationSet(state)` (pure) + `titleLines`
+  StateField: finds the first non-empty line, walks top-level syntax nodes, and adds a
+  `Decoration.line` with class `cm-note-title` **only when the block is a plain
+  `Paragraph`** (ATX/setext headings, lists, fences, quotes, and tables are skipped —
+  node names verified: `ATXHeading1`, `SetextHeading1`, `BulletList`, `FencedCode`,
+  `Blockquote`, `Table`). Wired in `Editor.svelte` with `EditorView.decorations.of(view
+  => view.state.field(titleLines))` and an h1-matching theme rule (1.7em/700/serif/1.3).
+  Preview: `markdown.ts` splits into `titleWrappedHtml` (lexer → first non-`space`
+  non-empty top-level `paragraph` token → `marked.parser` subset with `<p>` replaced by
+  `<p class="note-title">`) + `renderMarkdown` (DOMPurify). `.preview p.note-title` in
+  `app.css` mirrors the h1 metrics. 14 unit tests (`cm-title.test.ts`), 9 unit tests
+  (`markdown.test.ts`), 6 e2e tests (`e2e/title.spec.ts`: editor class + 28.56px/700
+  computed style, ATX and setext left alone, preview wrap + computed style, heading
+  preview unchanged, and byte-identical export of a `#`-less note). Full suite: 132
+  unit + 61 e2e passed.
+- Scope notes: editor styles only the first non-empty line while the preview styles the
+  whole first paragraph (both per the original scope) — a multi-line first paragraph
+  therefore reads slightly differently across the two views; the fix is a blank line
+  between title and body, which is also what the sidebar title (`noteTitle`) assumes.
+  Display-only: stored markdown, exports, and the zero-knowledge flow are untouched
+  (export byte-identity locked by e2e).
+- Screenshots: none regenerated — the committed fixture starts with `# Focus Mode`
+  (an ATX heading), which is excluded from title treatment, so no PNG can change
+  (docker still unavailable in this env, see Parked).
 
 ### 7. Keyboard shortcut for new note
 
@@ -204,6 +220,33 @@ What already works well (do not regress):
 
 ## Parked (noticed, not yet scoped)
 
+- **CM6 decoration wiring (iteration 7):** a `StateField<DecorationSet>` is NOT
+  auto-applied by the view — the view only reads the `EditorView.decorations` facet.
+  You must add `EditorView.decorations.of(fn)` where `fn` is called with the **view**,
+  not the state (`(view) => view.state.field(myField)` — a `(state) =>` signature
+  crashes the editor with `d.field is not a function` at init). ViewPlugins with a
+  `decorations:` spec (like `concealMarks`) are the other way in.
+- **CM6 tree timing (iteration 7):** `syntaxTree(state)` does NOT force a parse — it
+  returns the language state's current tree (possibly `Tree.empty`). Small docs parse
+  synchronously inside the same transaction (`LanguageState.apply` runs a 20 ms
+  `Work.Apply` budget), so a StateField recomputing on `docChanged` sees a complete
+  tree; for docs large enough for background parsing, prefer a ViewPlugin that
+  reacts to tree updates.
+- **RangeSet/RangeCursor (iteration 7):** `RangeSet.iter()` cursors start pointing AT
+  the first range (not ES6-iterator semantics) and expose `value` (`null` at the end),
+  `from`, `to` — there is no `done` property and no `Symbol.iterator`.
+- **marked v18 lexer (iteration 7):** blank lines (incl. leading ones) emit top-level
+  `space` tokens — "first block" logic must skip them (a leading blank line renders as
+  no HTML). `marked.parser(tokens)` accepts a token subset, and parser output ends
+  with a trailing `\n`.
+- **DOMPurify under vitest (iteration 7):** the module is inert in node, so a
+  module-level `DOMPurify.addHook` throws at import time in unit tests; guard with
+  `DOMPurify.isSupported` (behavior-neutral: the app sets `ssr = false`, so the
+  browser always supports it).
+- **Seed-idea input rules (iteration 7):** the seed's `# ` → heading / `> ` → quote
+  input rules look mostly redundant — lezer live-styles `# `/`>` prefixes as they're
+  typed, and `markdownKeymap` already continues quotes/lists on Enter. No separate
+   backlog item created; revisit only if real typing friction is observed.
 - **CM6 touch mechanics (iteration 6):** `domEventHandlers` listeners attach to
   `.cm-content` and are added with `{ passive: !handlers[type].handlers.length }` —
   registering any handler for an event type makes it non-passive, so `preventDefault`
