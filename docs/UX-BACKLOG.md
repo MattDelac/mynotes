@@ -45,17 +45,26 @@ What already works well (do not regress):
 - For item 9: Tab/Shift+Tab on table rows is deliberately a no-op for now; slice (a)
   (cell navigation) will define the behavior that replaces it.
 
-### 2. Preview tables: borders, padding, horizontal overflow scroll
+### 2. DONE (2026-08-20): Preview tables: borders, padding, horizontal overflow scroll
 
-- Evidence: `app.css` has **no** `.preview table/th/td` rules. Computed th/td padding is
-  1px (UA default) with no borders — tables render borderless and cramped, even though
-  the app actively encourages tables (Enter keymap in `cm-table.ts`).
-- Scope: CSS only in `app.css` — `.preview table { display: block; overflow-x: auto;
-  max-width: 100%; border-collapse: collapse }`, th/td with 1px `var(--border)` borders
-  and ~0.4em 0.8em padding. Keep it minimal (no zebra striping).
-- done-when: e2e — `article td` computed padding ≥ 6px and 1px border; a 10-column
-  table does not overflow the page viewport on mobile (scrolls within the table);
-  screenshots regenerated.
+- Evidence: `app.css` now has `.preview table { display: block; overflow-x: auto;
+  max-width: 100%; border-collapse: collapse }` + 1px `var(--border)` borders and
+  0.4em/0.8em padding on th/td, plus `.preview { min-width: 0 }` (see note below).
+  Two new e2e tests in `e2e/tables.spec.ts`: cell metrics (padding ≥ 6px, 1px solid
+  border on th and td) and a 10-column table on a 390px viewport (table
+  `overflow-x: auto`, `scrollWidth > clientWidth`, table box and `body.scrollWidth`
+  both ≤ 390px). Full e2e suite 39 passed.
+- Note: `min-width: 0` on `.preview` was required — `main` is a flex container and the
+  article's default `min-width: auto` let the wide table stretch the article past the
+  viewport, defeating `max-width: 100%` (classic flexbox min-content trap).
+- Follow-up (needs a docker-capable env): add a small table to the `screenshots.spec.ts`
+  fixture and regenerate with `pnpm screenshots` so the styling is visible in the
+  committed PNGs. Not done in-iteration: docker cannot run containers in the gnhf
+  worktree env (runc cgroup-BPF "operation not permitted"), and host-rendered PNGs
+  differ byte-for-byte from the committed docker ones (all 16 differ even with an
+  unchanged fixture — font environment), so committing them would break the CI
+  screenshots leg. Current committed PNGs remain valid: the fixture has no tables and
+  the new CSS cannot affect table-less content.
 
 ### 3. Editor renders `~~strikethrough~~` (preview/editor fidelity)
 
@@ -148,6 +157,14 @@ What already works well (do not regress):
 - done-when: removed; `pnpm check` green.
 
 ## Parked (noticed, not yet scoped)
+
+- Screenshot regeneration is impossible in the gnhf container env: docker cannot start
+  containers (runc `bpf_prog_query(BPF_CGROUP_DEVICE): operation not permitted`), and
+  `pnpm screenshots:host` output is not byte-identical to the committed docker PNGs
+  (all 16 differ even with an unchanged fixture — font environment differs). For
+  visible-UI items, verify with e2e computed-style/behavior assertions and leave the
+  committed PNGs untouched unless they would actually change (e.g. fixture gains the
+  new element); regenerate only from a docker-capable machine.
 
 - `defaultKeymap` (and `markdownKeymap`) ship no Tab binding — `@codemirror/commands`
   exports an unused `indentWithTab` helper, but its generic `indentMore`/`indentLess`
