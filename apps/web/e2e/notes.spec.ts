@@ -10,6 +10,49 @@ test('home redirects to a session and typing updates the title bar', async ({ pa
 	await expect(page.locator('header .title')).toHaveText('Shopping List');
 });
 
+test('editor is auto-focused on load so typing starts immediately', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.waitFor({ state: 'visible' });
+	await expect
+		.poll(() =>
+			page.evaluate(() => document.activeElement === document.querySelector('.cm-content'))
+		)
+		.toBe(true);
+});
+
+test('editor regains focus after switching notes', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('alpha note');
+	await page.waitForTimeout(700);
+
+	await page.getByRole('button', { name: 'Note list' }).click();
+	await page.getByRole('button', { name: 'New note' }).click();
+
+	await expect
+		.poll(() =>
+			page.evaluate(() => document.activeElement === document.querySelector('.cm-content'))
+		)
+		.toBe(true);
+});
+
+test('editor is not auto-focused on touch devices', async ({ browser }) => {
+	const context = await browser.newContext({
+		hasTouch: true,
+		viewport: { width: 390, height: 844 }
+	});
+	const page = await context.newPage();
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.waitFor({ state: 'visible' });
+	await page.waitForTimeout(300);
+	expect(
+		await page.evaluate(() => document.activeElement === document.querySelector('.cm-content'))
+	).toBe(false);
+	await context.close();
+});
+
 test('editor renders markdown headings as styled text', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });

@@ -98,6 +98,9 @@
 			]
 		});
 		view = new EditorView({ state, parent: container });
+		if (editable && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+			view.focus();
+		}
 		return () => {
 			undoManager.destroy();
 			view?.destroy();
