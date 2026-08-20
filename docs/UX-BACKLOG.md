@@ -18,6 +18,8 @@ What already works well (do not regress):
 - One blank page, instant start, `Start typing…` placeholder
 - Typora-style mark concealment on inactive lines (`cm-conceal.ts`)
 - Styled headings in the editor (serif, size scale)
+- `~~strikethrough~~` in the editor: concealed tildes on inactive lines, line-through
+  on the text (grammar support comes from transitive `@lezer/markdown`, see item 3)
 - List continuation on Enter (bullets, ordered auto-numbering, blockquotes) via
   `markdownKeymap` in `@codemirror/lang-markdown` (`markdown()` adds it by default);
   Backspace on an empty item dedents/removes the marker
@@ -66,18 +68,28 @@ What already works well (do not regress):
   screenshots leg. Current committed PNGs remain valid: the fixture has no tables and
   the new CSS cannot affect table-less content.
 
-### 3. Editor renders `~~strikethrough~~` (preview/editor fidelity)
+### 3. DONE (2026-08-20): Editor renders `~~strikethrough~~` (preview/editor fidelity)
 
-- Evidence: the lezer grammar bundled in `@codemirror/lang-markdown` 6.5.1 has no
-  `StrikethroughMark` (grep of the dist = 0 matches). `~~gone~~` shows raw marks with
-  `tok-meta` and no styling in the editor, while the preview (marked GFM) renders
-  strikethrough. `cm-conceal.ts` already lists `StrikethroughMark`, but the parser
-  never emits it.
-- Scope: small ViewPlugin (or extension of `cm-conceal.ts`) adding a `Decoration.mark`
-  (line-through) plus concealment for `~~…~~` spans in non-code contexts.
-- done-when: unit test for the decorations; e2e — `~~gone~~` shows line-through when
-  the cursor is on another line and reveals raw `~~gone~~` when clicked; screenshots
-  regenerated.
+- **Audit correction:** the iteration-1 premise was wrong. `@codemirror/lang-markdown`
+  6.5.1's GFM grammar **does** parse `~~gone~~` as `Strikethrough` +
+  `StrikethroughMark` — but the grammar lives in the transitive dep
+  `@lezer/markdown@1.7.2`, not in `lang-markdown`'s own dist, so the original
+  dist-grep (0 matches) missed it. The app already wires everything up:
+  `StrikethroughMark` is in `cm-conceal.ts`'s concealed set, the grammar tags the
+  inner text `tags.strikethrough`, and `Editor.svelte`'s HighlightStyle styles that
+  tag with `line-through`.
+- Evidence: no code change needed — behavior verified and regression-locked with
+  4 e2e tests (`e2e/strikethrough.spec.ts`: raw marks on the active line; concealed
+  tildes + computed `text-decoration-line: line-through` on an inactive line; click
+  reveals raw marks with the document unchanged; preview renders `<del>` with
+  line-through) and 3 unit tests (`src/lib/cm-conceal.test.ts` pins the grammar
+  premise: `Strikethrough`/`StrikethroughMark` emitted for `~~…~~`, not for `~x~` or
+  unclosed runs). Full suite: 86 unit + 43 e2e passed.
+- Screenshots: none regenerated — the committed fixtures contain no strikethrough so
+  the PNGs cannot change (and docker is unavailable in this env, see Parked).
+- Adjacent observation (parked): lezer's GFM also parses single-`~` as `Subscript`
+  (muted mark style in editor) while the marked preview renders `~x~` literally —
+  cosmetic mismatch only, no action.
 
 ### 4. Input rules: code-fence auto-close and link `[]()` auto-pair
 
@@ -158,6 +170,12 @@ What already works well (do not regress):
 
 ## Parked (noticed, not yet scoped)
 
+- **Audit gotcha (iteration 3):** `@codemirror/lang-markdown`'s dist does not
+  contain the GFM node names (Strikethrough, Subscript, …) — they come from the
+  transitive `@lezer/markdown` package. Grep the whole `node_modules/.pnpm` tree
+  (or parse a probe document and print tree node names) before concluding a
+  markdown construct is unparsed; the iteration-1 "no StrikethroughMark" finding
+  was such a false negative.
 - Screenshot regeneration is impossible in the gnhf container env: docker cannot start
   containers (runc `bpf_prog_query(BPF_CGROUP_DEVICE): operation not permitted`), and
   `pnpm screenshots:host` output is not byte-identical to the committed docker PNGs
