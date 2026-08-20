@@ -57,3 +57,42 @@ test('Ctrl+Alt+N is a no-op in a read-only shared session', async ({ page, brows
 	await expect(viewer.locator('aside a')).toHaveCount(1);
 	await context.close();
 });
+
+test('Ctrl+Alt+P toggles markdown preview on and off', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('Hello world');
+	await page.waitForTimeout(700);
+
+	const preview = page.locator('article.preview');
+	await expect(editor).toBeVisible();
+	await expect(preview).toHaveCount(0);
+
+	await page.keyboard.press('Control+Alt+p');
+	await expect(preview).toBeVisible();
+	await expect(editor).toHaveCount(0);
+
+	await page.keyboard.press('Control+Alt+p');
+	await expect(editor).toBeVisible();
+	await expect(preview).toHaveCount(0);
+});
+
+test('Ctrl+Alt+P is a no-op in a read-only shared session', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('shared preview note');
+	await page.waitForTimeout(700);
+	const link = await shareCurrentSession(page);
+
+	const context = await browser.newContext();
+	const viewer = await context.newPage();
+	await viewer.goto(link);
+	await expect(viewer.locator('.cm-content')).toContainText('shared preview note', {
+		timeout: 10_000
+	});
+
+	await viewer.keyboard.press('Control+Alt+p');
+	await viewer.waitForTimeout(700);
+	await expect(viewer.locator('article.preview')).toHaveCount(0);
+	await context.close();
+});

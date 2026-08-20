@@ -35,9 +35,9 @@ What already works well (do not regress):
   editor (`cm-title.ts`) and preview (`p.note-title`), display-only (see item 6)
 - Preview toggle (`marked` + DOMPurify, `gfm: true, breaks: true`)
 - Sidebar (hover zone desktop / drawer mobile), note switch, new/delete, share, export/import
-- Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar, Mod+Alt+N new note
-  (see items 7 and 12 — Mod+Alt+N was chosen because the original Mod-Shift+N
-  proposal is a browser-reserved chord)
+- Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar, Mod+Alt+N new note,
+  Mod+Alt+P preview toggle (see items 7, 8 and 12 — the Alt chords were chosen because
+  the original Mod-Shift+N / Mod-Shift-P proposals are browser-reserved chords)
 - 720px content width; mobile line length ~358px (comfortable)
 
 ## Backlog
@@ -202,10 +202,24 @@ What already works well (do not regress):
   the shortcut is a no-op there. Screenshots unchanged — a keydown handler has
   no visual effect and the fixtures never press the new chord.
 
-### 8. Keyboard shortcut for the preview toggle
+### 8. DONE (2026-08-20): Keyboard shortcut for the preview toggle (Mod+Alt+P)
 
-- Scope: bind Mod-Shift-P to toggle preview in `AppHeader.svelte`.
-- done-when: e2e — the shortcut toggles between editor and preview.
+- Evidence: `AppHeader.svelte`'s document-level keydown now maps Mod+Alt+P to
+  `onTogglePreview?.()`, gated on `!readOnly` to mirror the preview button's visibility
+  (the button only renders when `!readOnly && onTogglePreview`). 2 e2e tests
+  (`e2e/shortcuts.spec.ts`): the shortcut toggles between editor and preview and back,
+  and it is a no-op in a read-only shared session (locks the guard). Full suite green:
+  132 unit + 66 e2e passed (5 pre-existing skips).
+- **Key change from the original scope (Mod-Shift-P):** Mod-Shift-P is a
+  browser-reserved chord — on Chrome (Windows/Linux) Ctrl+Shift+P is "open a new tab
+  and start a web search," consumed by the browser before the page, so it would be a
+  dead binding on the primary desktop platform. Same class of bug as item 7's
+  Mod-Shift+N and item 12's Mod+N. Mod+Alt+P (Ctrl+Alt+P / Cmd+Option+P) is not
+  reserved in any major browser. Matching detail mirrors the new-note handler: on Mac,
+  Option alters `e.key`, so it matches `e.code === 'KeyP'`; elsewhere it matches
+  `e.key.toLowerCase() === 'p'` so AltGr character typing never triggers it.
+- Screenshots: none regenerated — a keydown handler has no visual effect and the
+  fixtures never press the new chord (docker still unavailable in this env, see Parked).
 
 ### 9. Extend the table keymap: cell navigation, deletion, alignment
 
@@ -251,6 +265,22 @@ What already works well (do not regress):
 
 ## Parked (noticed, not yet scoped)
 
+- **e2e suite is flaky on a 24-core box with a reused/stale API (iteration 9):** the
+  local machine has 24 cores, so Playwright defaults to 12 concurrent workers; ~16 tests
+  share a session (each a `POST /notes` + `PUT` snapshot + WS, some opening a 2nd viewer
+  context) and together they exceed the API's per-IP abuse limits (`RATE_CREATE_PER_MIN=10`,
+  `MAX_WS_PER_IP=10`), so a random share test 429s and its share link/viewer never appears
+  (a 10s timeout). Two compounding traps made this look like a real regression: (a)
+  `reuseExistingServer: !CI` means the API process — and its in-memory rate-limit buckets —
+  persists across `npx playwright test` invocations, so back-to-back runs fail more as the
+  buckets stay drained; (b) manually starting a preview/API that then lingers makes `vite
+  preview` pick a different port ("Port 4173 is in use… 4174") while Playwright still waits
+  on 4173, so editor-only tests hang at the 30s test timeout. **Recipe for a green local run:**
+  kill any stale `mynotes-api` / `vite preview` procs and confirm ports 3000/4173 are free,
+  then run `npx playwright test --config playwright.config.ts --workers=2` (Playwright starts
+  fresh servers). Verified 3× green this way (66 passed). CI is unaffected — GitHub runners
+  have few cores → few workers → low concurrency. Not committed as a config change (kept the
+  diff to the feature); revisit if a future iteration needs a stable default.
 - **CDP key dispatch bypasses browser accelerator handling (iteration 8):** in
   headless Playwright Chromium every chord reaches the page — Ctrl+N and
   Ctrl+Shift+N (both reserved in real browsers) as well as Ctrl+Alt+N. So e2e
