@@ -35,7 +35,9 @@ What already works well (do not regress):
   editor (`cm-title.ts`) and preview (`p.note-title`), display-only (see item 6)
 - Preview toggle (`marked` + DOMPurify, `gfm: true, breaks: true`)
 - Sidebar (hover zone desktop / drawer mobile), note switch, new/delete, share, export/import
-- Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar
+- Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar, Mod+Alt+N new note
+  (see items 7 and 12 — Mod+Alt+N was chosen because the original Mod-Shift+N
+  proposal is a browser-reserved chord)
 - 720px content width; mobile line length ~358px (comfortable)
 
 ## Backlog
@@ -176,14 +178,29 @@ What already works well (do not regress):
   (an ATX heading), which is excluded from title treatment, so no PNG can change
   (docker still unavailable in this env, see Parked).
 
-### 7. Keyboard shortcut for new note
+### 7. DONE (2026-08-20): Keyboard shortcut for new note (Mod+Alt+N)
 
-- Evidence: Mod+N = new **session** (`AppHeader.svelte`), Mod+E = export, Mod+O =
-  sidebar — but creating a **note** (the common action) has no shortcut and is
-  sidebar/drawer-only.
-- Scope: bind Mod-Shift+N to "new note in current session" in `AppHeader.svelte`
-  (keep Mod+N as-is).
-- done-when: e2e — Mod-Shift-N creates and opens a new note in the current session.
+- Evidence: `AppHeader.svelte`'s document-level keydown now maps Mod+Alt+N to
+  `onMenuAction('newNote')` (checked before the Mod+N branch), and `s/[id]`
+  handles `newNote` behind the `canWrite` guard. 3 e2e tests
+  (`e2e/shortcuts.spec.ts`): the shortcut creates and opens a new note in the
+  same session (typed into the fresh note, sidebar lists both), Ctrl+N still
+  starts a new session, and the shortcut is a no-op in a read-only shared
+  session. Full suite: 132 unit + 64 e2e passed (5 pre-existing skips).
+- **Key change from the original scope (Mod-Shift+N):** Mod-Shift+N is a
+  browser-reserved chord (new private/incognito window on Chrome/Firefox/
+  Safari) — the browser consumes it before the page, so no web app can bind
+  it. The e2e suite cannot detect this: CDP key dispatch bypasses the browser
+  accelerator layer (probed: Ctrl+N, Ctrl+Shift+N and Ctrl+Alt+N all reach
+  the page in headless). Mod+Alt+N is not reserved in any major browser.
+  Matching detail: on Mac, Option turns `n` into a different `e.key` (e.g.
+  `∩`), so the handler matches `e.code === 'KeyN'` there; elsewhere it matches
+  `e.key.toLowerCase() === 'n'` so AltGr (Ctrl+Alt) character typing on
+  European layouts never triggers it. See item 12 for the pre-existing Mod+N
+  binding, which has the same reserved-chord problem.
+- Scope notes: the frozen legacy `n/[id]` page does not handle `newNote`, so
+  the shortcut is a no-op there. Screenshots unchanged — a keydown handler has
+  no visual effect and the fixtures never press the new chord.
 
 ### 8. Keyboard shortcut for the preview toggle
 
@@ -218,7 +235,41 @@ What already works well (do not regress):
   anywhere (grep over `src/`).
 - done-when: removed; `pnpm check` green.
 
+### 12. Follow-up: Mod+N (new session) is likely a dead binding in real browsers
+
+- Evidence: the app's Mod+N new-session shortcut (`AppHeader.svelte`) works in
+  e2e (CDP key dispatch delivers Ctrl+N to the page in headless — probed in
+  iteration 8), but Ctrl/Cmd+N is a browser-reserved "new window" chord on
+  Chrome/Firefox/Safari: in a real browser the browser consumes it before the
+  page, so the shortcut likely never fires for real users. Same class of bug as
+  the item-7 Mod-Shift+N proposal.
+- Scope: rebind new-session to an unreserved chord (candidate: Mod+Alt+S) in
+  `AppHeader.svelte`, update the e2e shortcut test, keep the menu entry.
+- done-when: e2e passes with the new chord and the old chord is no longer
+  bound. (Real-browser verification of the old chord is not possible from this
+  loop — the choice is based on the browsers' reserved-shortcut lists.)
+
 ## Parked (noticed, not yet scoped)
+
+- **CDP key dispatch bypasses browser accelerator handling (iteration 8):** in
+  headless Playwright Chromium every chord reaches the page — Ctrl+N and
+  Ctrl+Shift+N (both reserved in real browsers) as well as Ctrl+Alt+N. So e2e
+  shortcut tests prove the page handler fires, never that the chord is
+  reachable in a real browser. Pick shortcut chords from the unreserved set
+  (avoid Ctrl/Cmd+N, Ctrl/Cmd+Shift+N, Ctrl+T, Ctrl+W, Ctrl+Shift+T, Ctrl+Q,
+  F5, Ctrl+R, Ctrl+P, Ctrl+Shift+I, …) and verify the final choice by hand in
+  a real browser.
+- **`editorText` helper quirk (iteration 8):** on an empty note the `.cm-line`
+  `textContent` contains the "Start typing…" placeholder (CM6 renders the
+  placeholder inside the line), so `editorText(page)` is not `''` for an empty
+  document — assert emptiness by typing into the note or by targeting
+  `.cm-placeholder` instead.
+- **SvelteKit `goto()` URL timing (iteration 8):** client-side navigation
+  updates the URL only after the navigation completes (~300 ms observed,
+  includes an IndexedDB write in this app), so shortcut/navigation e2e tests
+  must `expect.poll` the URL rather than reading `page.url()` right after the
+  keypress (a weak `toHaveURL(/\/s\/[\w-]+/)` assertion passes on the *old*
+  URL and masks the race).
 
 - **CM6 decoration wiring (iteration 7):** a `StateField<DecorationSet>` is NOT
   auto-applied by the view — the view only reads the `EditorView.decorations` facet.

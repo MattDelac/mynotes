@@ -352,6 +352,7 @@
 	function handleMenuAction(action: string) {
 		if (action === 'export') exportNote();
 		else if (action === 'import') fileInput?.click();
+		else if (action === 'newNote' && canWrite) void newNote();
 		else if (action === 'newSession') startEmptySession();
 		else if (action === 'deleteNote') void deleteCurrentNote();
 	}

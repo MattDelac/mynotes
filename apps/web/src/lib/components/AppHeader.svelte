@@ -65,7 +65,11 @@
 		}
 		const isMac = navigator.platform.startsWith('Mac');
 		const mod = isMac ? e.metaKey : e.ctrlKey;
-		if (mod && e.key === 'n') {
+		const isNewNote = e.altKey && (isMac ? e.code === 'KeyN' : e.key.toLowerCase() === 'n');
+		if (mod && isNewNote) {
+			e.preventDefault();
+			onMenuAction?.('newNote');
+		} else if (mod && e.key === 'n') {
 			e.preventDefault();
 			onMenuAction?.('newSession');
 		} else if (mod && e.key === 'e') {
