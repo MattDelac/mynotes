@@ -28,3 +28,25 @@ describe('strikethrough grammar support (concealment premise)', () => {
 		expect(nodeNames('~~gone')).not.toContain('Strikethrough');
 	});
 });
+
+describe('fence mark structure (concealment premise)', () => {
+	function parentChain(doc: string, pos: number): string[] {
+		const names: string[] = [];
+		const first = markdownLanguage.parser.parse(doc).resolveInner(pos, 1);
+		let node: typeof first | null = first;
+		while (node) {
+			names.push(node.name);
+			node = node.parent;
+		}
+		return names;
+	}
+
+	it('fence delimiter marks resolve inside their FencedCode node', () => {
+		expect(parentChain('```\ncode\n```', 0)).toEqual(['CodeMark', 'FencedCode', 'Document']);
+		expect(parentChain('```\ncode\n```', 9)).toEqual(['CodeMark', 'FencedCode', 'Document']);
+	});
+
+	it('inline code marks resolve inside an InlineCode node, not a FencedCode', () => {
+		expect(parentChain('a `x` b', 2)).toEqual(['CodeMark', 'InlineCode', 'Paragraph', 'Document']);
+	});
+});

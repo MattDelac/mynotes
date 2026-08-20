@@ -11,6 +11,7 @@
 	import { concealMarks } from './cm-conceal';
 	import { clickableLinks } from './cm-links';
 	import { indentKeymap } from './cm-indent';
+	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
 
 	let { ytext, editable = true }: { ytext: Y.Text; editable?: boolean } = $props();
@@ -69,7 +70,13 @@
 		const state = EditorState.create({
 			doc: ytext.toString(),
 			extensions: [
-				keymap.of([...yUndoManagerKeymap, ...indentKeymap, ...tableKeymap, ...defaultKeymap]),
+				keymap.of([
+					...yUndoManagerKeymap,
+					...indentKeymap,
+					...inputRulesKeymap,
+					...tableKeymap,
+					...defaultKeymap
+				]),
 				markdown({ base: markdownLanguage }),
 				syntaxHighlighting(markdownStyle),
 				syntaxHighlighting(classHighlighter),

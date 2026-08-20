@@ -24,6 +24,10 @@ What already works well (do not regress):
   `markdownKeymap` in `@codemirror/lang-markdown` (`markdown()` adds it by default);
   Backspace on an empty item dedents/removes the marker
 - Table Enter keymap (`cm-table.ts`): separator insert, row continuation, empty-row delete
+- Input rules (`cm-input-rules.ts`): Enter after an opening ```/~~~ fence auto-closes it
+  (cursor parked between the fences); `]` after an empty `[` yields `[]()` with the
+  cursor inside; both no-ops inside fenced code
+- Fence delimiter marks stay visible on inactive lines (fixed iteration 5; see item 4)
 - Cmd/Ctrl+click opens links in edit mode (`cm-links.ts`)
 - Preview toggle (`marked` + DOMPurify, `gfm: true, breaks: true`)
 - Sidebar (hover zone desktop / drawer mobile), note switch, new/delete, share, export/import
@@ -91,17 +95,32 @@ What already works well (do not regress):
   (muted mark style in editor) while the marked preview renders `~x~` literally —
   cosmetic mismatch only, no action.
 
-### 4. Input rules: code-fence auto-close and link `[]()` auto-pair
+### 4. DONE (2026-08-20): Input rules: code-fence auto-close and link `[]()` auto-pair
 
-- Evidence: typing ``` and pressing Enter leaves the cursor on a bare empty line — no
-  closing fence (verified). Typing `[]` does not insert `()`. Both are standard in
-  Obsidian/Typora/VSCode and are invisible ergonomics.
-- Scope: `EditorView.inputRules` in `Editor.svelte` (no new dependency). (a) After
-  ``` + Enter, insert a closing ``` with the cursor on the line between (skip if one
-  already follows). (b) Typing `]` immediately after an empty `[` inserts `()` with
-  the cursor inside. Neither fires inside fenced code.
-- done-when: e2e — ``` + Enter yields the cursor between two fences; `[]` yields
-  `[]|()`; both no-ops inside a fenced code block.
+- Evidence: new `src/lib/cm-input-rules.ts` (`inputRulesKeymap`, wired in `Editor.svelte`)
+  + 21 unit tests (`cm-input-rules.test.ts`) + 6 e2e tests (`e2e/input-rules.spec.ts`),
+  all green; full suite 109 unit + 49 e2e passed. ``` + Enter (or `~~~`) yields the cursor
+  between two fences with the info string kept on the opening line only; `]` after an
+  empty `[` yields `[]()` with the cursor between the parens; both no-ops inside fenced
+  code; Enter on an already-closed fence just adds a newline.
+- **Scope correction:** the original plan said `EditorView.inputRules` — that API does
+  not exist in CodeMirror 6 (it is a CM5 concept; no CM6 package exports it, verified in
+  the installed `@codemirror/*` dists and the current reference manual). Implemented as
+  keymap bindings instead (the same mechanism as `closeBracketsKeymap`), which is
+  strictly better: they fire only on real keypresses, never on paste or remote (y-collab)
+  changes. Fence detection uses the syntax tree: the line must parse as a `FencedCode`
+  that starts on that line and has no body yet (so closed blocks, blocks with content,
+  and fence lines inside an outer fence are all correctly skipped).
+- Side fix found while verifying: the opening ``` of a fence block at the top of a note
+  was concealed on inactive lines (closing fence stayed visible) — `cm-conceal.ts`'s
+  CodeMark exception called `isInsideFencedCode`, which resolves with `side: -1` and
+  misses the very first node of the document (resolves to `Document`). Added
+  `isFencedCodeMark` (side `+1` resolve, parent walk) as the exception; 2 unit tests pin
+  the node-structure premise (fence marks live under `FencedCode`, inline code under
+  `InlineCode`).
+- Follow-up (parked, optional): `]`-pairing means writing `[text](url)` requires typing
+  `]` then `(`; if that feels awkward in real use, revisit the pairing direction
+  (VSCode pairs `[` → `[]` instead).
 
 ### 5. Opening links on mobile (touch) in edit mode
 
@@ -170,6 +189,16 @@ What already works well (do not regress):
 
 ## Parked (noticed, not yet scoped)
 
+- **CM6 gotcha (iteration 5):** `Tree.iterate({ enter(node) })` passes a **TreeCursor**,
+  not a SyntaxNode — `node.parent` is a *method* (so `node.parent?.name` is the string
+  `'parent'`, silently wrong). To walk ancestors, use `tree.resolveInner(pos, side)`
+  (returns a real SyntaxNode with a `.parent` property). Also, `resolveInner(pos, -1)`
+  at position 0 resolves to `Document` (nothing precedes it) — use side `+1` when the
+  node starts at the position.
+- **CM6 gotcha (iteration 5):** `inputRules` is CodeMirror 5 — no CM6 package exports it.
+  Input-time behavior belongs in keymap bindings (`key: 'Enter'`, `key: ']'`) or view
+  plugins; a keymap `run` returning true also suppresses the typed character, so the
+  binding must insert it itself (e.g. `]` pairing inserts `]()`, not just `()`).
 - **Audit gotcha (iteration 3):** `@codemirror/lang-markdown`'s dist does not
   contain the GFM node names (Strikethrough, Subscript, …) — they come from the
   transitive `@lezer/markdown` package. Grep the whole `node_modules/.pnpm` tree
