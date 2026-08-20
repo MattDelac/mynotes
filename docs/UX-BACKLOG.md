@@ -30,17 +30,20 @@ What already works well (do not regress):
 
 ## Backlog
 
-### 1. Tab must not drop editor focus; Tab/Shift+Tab indents list items
+### 1. DONE (2026-08-20): Tab/Shift+Tab indents list items; focus never leaves the editor
 
-- Evidence: pressing Tab inside the editor moves focus to `<body>` (verified via
-  Playwright; no Tab binding exists anywhere in `Editor.svelte`). Any list-heavy
-  writing session is interrupted the moment a user hits Tab.
-- Scope: add a Tab/Shift+Tab binding in `Editor.svelte`. Tab indents the current line
-  (preserving list markers; one level = marker kept + 4 spaces, or standard indent on
-  non-list lines); Shift+Tab dedents. Must compose with the table Enter keymap and the
-  `markdownKeymap` continuation.
-- done-when: e2e — type `- x`, press Tab: line indents, focus stays in the editor;
-  Shift+Tab dedents; Tab on a plain line inserts spaces; focus never leaves content.
+- Evidence: new `src/lib/cm-indent.ts` keymap (`indentKeymap`, wired in `Editor.svelte`)
+  + 16 unit tests (`cm-indent.test.ts`) + 5 e2e tests (`e2e/indent.spec.ts`), all green,
+  full e2e suite 37 passed. Tab on `- x` → `  - x` with focus retained; Tab on the second
+  item nests under the first (2-space GFM-safe step); Shift+Tab dedents one level; plain
+  lines get 4 spaces; repeated Tab/Shift+Tab never drops focus to `<body>`.
+- Semantics chosen: list items nest under the previous item (bullet moved to the
+  previous item's content column, always <4 extra so GFM never renders a code block);
+  standalone items cap at 3-space indent (GFM top-level items must start within 3
+  columns); ATX headings and table rows are no-ops (4-space indent would break them in
+  preview); fenced code indents 4 spaces like plain code.
+- For item 9: Tab/Shift+Tab on table rows is deliberately a no-op for now; slice (a)
+  (cell navigation) will define the behavior that replaces it.
 
 ### 2. Preview tables: borders, padding, horizontal overflow scroll
 
@@ -118,7 +121,8 @@ What already works well (do not regress):
 
 ### 9. Extend the table keymap: cell navigation, deletion, alignment
 
-- Depends on item 1 (Tab semantics must exist first).
+- Item 1 is done: Tab/Shift+Tab are live but no-op on table rows (see item 1 note);
+  slice (a) should replace that no-op with cell navigation.
 - Scope slices: (a) Tab inside a table moves to the next cell, creating one at row end;
   (b) Backspace on an empty cell merges with the previous cell; (c) `:---:` alignment
   renders aligned in preview.
@@ -145,6 +149,12 @@ What already works well (do not regress):
 
 ## Parked (noticed, not yet scoped)
 
+- `defaultKeymap` (and `markdownKeymap`) ship no Tab binding — `@codemirror/commands`
+  exports an unused `indentWithTab` helper, but its generic `indentMore`/`indentLess`
+  are code-oriented (tab-size based) and were unsuitable for markdown lists.
+- With `marked` `breaks: true`, a 4-space-indented plain line after a paragraph renders
+  as a lazy continuation with a leading space (`<p>para<br> indented</p>`) — visually
+  harmless, no action.
 - Mobile header icon density: up to 5 icons (list, share, preview, menu, leave) at
   390px — consider moving preview toggle into the menu on mobile.
 - `---` directly under a paragraph line creates a setext h2 (standard markdown footgun;

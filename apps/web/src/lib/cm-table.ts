@@ -23,7 +23,7 @@ export function isSeparatorRow(line: string): boolean {
 	return text.includes('|') && text.includes('-') && /^[\s|:-]+$/.test(text);
 }
 
-function tableAt(state: EditorState, pos: number): { to: number; header: boolean } | null {
+export function tableAt(state: EditorState, pos: number): { to: number; header: boolean } | null {
 	let current: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 0);
 	let header = false;
 	while (current) {
