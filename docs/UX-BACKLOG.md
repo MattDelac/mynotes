@@ -29,6 +29,8 @@ What already works well (do not regress):
   cursor inside; both no-ops inside fenced code
 - Fence delimiter marks stay visible on inactive lines (fixed iteration 5; see item 4)
 - Cmd/Ctrl+click opens links in edit mode (`cm-links.ts`)
+- Long-press (~500 ms) on a link in edit mode opens it in a new tab on touch devices
+  (`cm-links.ts`), with haptic feedback and no caret movement (see item 5)
 - Preview toggle (`marked` + DOMPurify, `gfm: true, breaks: true`)
 - Sidebar (hover zone desktop / drawer mobile), note switch, new/delete, share, export/import
 - Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar
@@ -122,15 +124,28 @@ What already works well (do not regress):
   `]` then `(`; if that feels awkward in real use, revisit the pairing direction
   (VSCode pairs `[` → `[]` instead).
 
-### 5. Opening links on mobile (touch) in edit mode
+### 5. DONE (2026-08-20): Opening links on mobile (touch) in edit mode
 
-- Evidence: `cm-links.ts` requires Meta/Ctrl+click — impossible on a touch device, and
-  there is no long-press handler, so mobile users can only open a link by toggling
-  preview.
-- Scope: add a touch long-press (~500ms) handler in `cm-links.ts` that opens the link
-  under the touch; suppress the follow-up click so the cursor is not moved.
-- done-when: e2e (mobile context) — long-press on a link in edit mode opens it in a
-  new tab; a short tap still just places the cursor.
+- Evidence: `clickableLinks` in `src/lib/cm-links.ts` now owns touch too: a long-press
+  (500 ms) on a link opens it in a new tab (`noopener,noreferrer`) with haptic feedback
+  (`navigator.vibrate`); the press cancels on >10 px finger movement or a second finger;
+  when the press fires, `touchend` is consumed (returns `true` → CM6 prevents the default,
+  so no synthetic mouse events follow and the caret does not move); a follow-up
+  `detail: 0` click within 800 ms / 20 px of a just-opened link is also consumed as
+  defense in depth (some Android browsers fire it anyway). Short taps are untouched —
+  the browser places the caret natively (CM6 deliberately ignores the synthetic
+  mousedown within 2 s of a touch). 6 e2e tests in `e2e/mobile-links.spec.ts` (mobile
+  touch context, dispatched `TouchEvent`s): long-press opens with the right url +
+  `_blank`, short tap opens nothing and is not consumed, long-press does not move the
+  caret and its synthetic click is consumed, non-link text opens nothing, finger
+  movement cancels, a second finger cancels. Full suite: 109 unit + 55 e2e passed
+  (5 pre-existing intentional skips).
+- Screenshots: unchanged — the committed fixtures use `fill()` and no touch interaction,
+  so the handler cannot affect the PNGs.
+- done-when note: "a short tap still just places the cursor" is only half-verifiable in
+  e2e — caret placement on a real tap is browser-native contenteditable behavior, which
+  synthetic touches cannot trigger; the test instead pins that the tap is left
+  unhandled (not consumed, nothing opened).
 
 ### 6. Title treatment: first line displays as a title without requiring `# `
 
@@ -188,6 +203,21 @@ What already works well (do not regress):
 - done-when: removed; `pnpm check` green.
 
 ## Parked (noticed, not yet scoped)
+
+- **CM6 touch mechanics (iteration 6):** `domEventHandlers` listeners attach to
+  `.cm-content` and are added with `{ passive: !handlers[type].handlers.length }` —
+  registering any handler for an event type makes it non-passive, so `preventDefault`
+  works. A handler returning `true` makes CM6 call `event.preventDefault()` itself, and
+  handlers are skipped once `event.defaultPrevented` is set. CM6's own touch handling is
+  observers-only (no interference), and its `mousedown` handler ignores mousedowns within
+  2000 ms of the last touch — cursor placement after a real tap is the browser's native
+  contenteditable selection, not CM6.
+- **Playwright touch synthesis (iteration 6):** no long-press API exists; dispatch
+  `TouchEvent`s with `new Touch({ identifier, target, clientX, … })` built in
+  `page.evaluate` (cast the init `as unknown as TouchEventInit` — `Touch[]` is not
+  assignable to `TouchList` in TS). `element.dispatchEvent` returns `false` when any
+  handler called `preventDefault` — use that return value to assert the
+  consume/suppress contract of touch handlers.
 
 - **CM6 gotcha (iteration 5):** `Tree.iterate({ enter(node) })` passes a **TreeCursor**,
   not a SyntaxNode — `node.parent` is a *method* (so `node.parent?.name` is the string
