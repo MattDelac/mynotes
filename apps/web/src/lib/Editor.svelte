@@ -73,9 +73,9 @@
 			extensions: [
 				keymap.of([
 					...yUndoManagerKeymap,
+					...tableKeymap,
 					...indentKeymap,
 					...inputRulesKeymap,
-					...tableKeymap,
 					...defaultKeymap
 				]),
 				markdown({ base: markdownLanguage }),

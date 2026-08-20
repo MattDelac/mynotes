@@ -1,4 +1,4 @@
-import type { EditorState, TransactionSpec } from '@codemirror/state';
+import type { EditorState, Line, TransactionSpec } from '@codemirror/state';
 import { EditorView, type KeyBinding } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
@@ -43,6 +43,64 @@ function separatorRow(cols: number): string {
 	return '|' + ' --- |'.repeat(cols);
 }
 
+function cellRanges(text: string): [number, number][] {
+	const pipes: number[] = [];
+	for (let i = 0; i < text.length; i++) if (text[i] === '|') pipes.push(i);
+	if (!pipes.length) return [];
+	const ranges: [number, number][] = [];
+	if (text.slice(0, pipes[0]).trim()) ranges.push([0, pipes[0]]);
+	for (let i = 0; i + 1 < pipes.length; i++) ranges.push([pipes[i] + 1, pipes[i + 1]]);
+	const tail = pipes[pipes.length - 1] + 1;
+	if (text.slice(tail).trim()) ranges.push([tail, text.length]);
+	return ranges;
+}
+
+function firstContent(text: string, start: number, end: number): number {
+	for (let i = start; i < end; i++) if (text[i].trim()) return i;
+	return start;
+}
+
+function newRowSpec(state: EditorState, line: Line, text: string, pos: number): TransactionSpec {
+	const cols = cellRanges(text).length;
+	const table = tableAt(state, Math.min(pos, line.to - 1));
+	const prev = line.number > 1 ? state.doc.line(line.number - 1) : null;
+	const prevText = prev ? state.sliceDoc(prev.from, prev.to) : '';
+	const sep = !table && !prevText.trimStart().startsWith('|') ? separatorRow(cols) + '\n' : '';
+	const rowStart = line.to + 1 + sep.length;
+	return {
+		changes: { from: line.to, insert: '\n' + sep + emptyRow(cols) },
+		selection: { anchor: rowStart + 1, head: rowStart + 1 }
+	};
+}
+
+export function tableTab(state: EditorState): TransactionSpec | null {
+	const pos = state.selection.main.head;
+	const line = state.doc.lineAt(pos);
+	const text = state.sliceDoc(line.from, line.to);
+	if (isInsideFencedCode(state, pos)) return null;
+	const ranges = cellRanges(text);
+	if (!ranges.length) return null;
+	const rel = pos - line.from;
+	const next = ranges.find(([start]) => start > rel);
+	if (!next) return newRowSpec(state, line, text, pos);
+	const target = line.from + firstContent(text, next[0], next[1]);
+	return { selection: { anchor: target, head: target } };
+}
+
+export function tableShiftTab(state: EditorState): TransactionSpec | null {
+	const pos = state.selection.main.head;
+	const line = state.doc.lineAt(pos);
+	const text = state.sliceDoc(line.from, line.to);
+	if (isInsideFencedCode(state, pos)) return null;
+	const ranges = cellRanges(text);
+	if (!ranges.length) return null;
+	const rel = pos - line.from;
+	const prev = [...ranges].reverse().find(([, end]) => end <= rel);
+	if (!prev) return null;
+	const target = line.from + firstContent(text, prev[0], prev[1]);
+	return { selection: { anchor: target, head: target } };
+}
+
 export function tableEnter(state: EditorState): TransactionSpec | null {
 	const pos = state.selection.main.head;
 	const line = state.doc.lineAt(pos);
@@ -85,6 +143,28 @@ export const tableKeymap: KeyBinding[] = [
 		run(view) {
 			if (!view.state.facet(EditorView.editable)) return false;
 			const change = tableEnter(view.state);
+			if (!change) return false;
+			view.dispatch(change);
+			return true;
+		}
+	},
+	{
+		key: 'Tab',
+		preventDefault: true,
+		run(view) {
+			if (!view.state.facet(EditorView.editable)) return false;
+			const change = tableTab(view.state);
+			if (!change) return false;
+			view.dispatch(change);
+			return true;
+		}
+	},
+	{
+		key: 'Shift-Tab',
+		preventDefault: true,
+		run(view) {
+			if (!view.state.facet(EditorView.editable)) return false;
+			const change = tableShiftTab(view.state);
 			if (!change) return false;
 			view.dispatch(change);
 			return true;

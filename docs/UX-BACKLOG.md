@@ -24,6 +24,8 @@ What already works well (do not regress):
   `markdownKeymap` in `@codemirror/lang-markdown` (`markdown()` adds it by default);
   Backspace on an empty item dedents/removes the marker
 - Table Enter keymap (`cm-table.ts`): separator insert, row continuation, empty-row delete
+- Table cell navigation (`cm-table.ts`): Tab to the next cell / new row at row end
+  (separator added when needed), Shift+Tab to the previous cell (see item 9)
 - Input rules (`cm-input-rules.ts`): Enter after an opening ```/~~~ fence auto-closes it
   (cursor parked between the fences); `]` after an empty `[` yields `[]()` with the
   cursor inside; both no-ops inside fenced code
@@ -221,15 +223,27 @@ What already works well (do not regress):
 - Screenshots: none regenerated — a keydown handler has no visual effect and the
   fixtures never press the new chord (docker still unavailable in this env, see Parked).
 
-### 9. Extend the table keymap: cell navigation, deletion, alignment
+### 9. DONE (2026-08-20, slice a): Table cell navigation — Tab/Shift+Tab move between cells
 
-- Item 1 is done: Tab/Shift+Tab are live but no-op on table rows (see item 1 note);
-  slice (a) should replace that no-op with cell navigation.
-- Scope slices: (a) Tab inside a table moves to the next cell, creating one at row end;
-  (b) Backspace on an empty cell merges with the previous cell; (c) `:---:` alignment
-  renders aligned in preview.
-- done-when (per slice): e2e for each behavior in `tables.spec.ts`; screenshots
-  regenerated for (c).
+- Evidence: `tableTab`/`tableShiftTab` in `src/lib/cm-table.ts` + Tab/Shift+Tab
+  bindings in `tableKeymap`; `Editor.svelte` now lists `tableKeymap` before
+  `indentKeymap`, so cell navigation owns Tab on pipe rows and everything else
+  (lists, plain lines, fences) falls through to the indent keymap unchanged
+  (16 new unit tests in `cm-table.test.ts`, 6 new e2e tests in `e2e/tables.spec.ts`;
+  full suite green: 148 unit + 72 e2e, 5 pre-existing skips).
+- Behavior: Tab moves the cursor to the first content character of the next cell
+  (a cursor sitting on a pipe goes to the cell after that pipe); in the last cell
+  Tab inserts a new row below, sized to the current row's column count, adding a
+  `| --- |` separator when the row isn't part of a table yet (mirrors the existing
+  Enter behavior, so tabbing out of a lone `| a | b |` row builds a valid GFM table);
+  Shift+Tab moves to the previous cell and is a no-op in the first cell; all of it
+  no-ops inside fenced code and on non-pipe lines.
+- e2e note: after Enter in a header row the cursor lands on the second space of the
+  first cell of the new `|  |  |` row (`rowStart + 2`), so typed text lands there —
+  table e2e expectations must account for the 2-space empty cells.
+- Remaining slices (next iterations, same order): (b) Backspace on an empty cell
+  merges with the previous cell; (c) `:---:` alignment renders aligned in preview
+  (needs screenshot regeneration in a docker-capable env — see Parked).
 
 ### 10. Images: committed design doc first (implementation later)
 

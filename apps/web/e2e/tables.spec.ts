@@ -72,6 +72,75 @@ test('enter outside a table keeps the default newline behavior', async ({ page }
 	await expect.poll(() => editorText(page)).toBe('plain paragraph\nsecond line');
 });
 
+test('tab moves to the next cell', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Tab');
+	await page.keyboard.type('x');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n|  |x  |');
+	await expect(editor).toBeFocused();
+});
+
+test('tab in the last cell creates a new row and lands in its first cell', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Tab');
+	await page.keyboard.press('Tab');
+	await page.keyboard.type('x');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n|  |  |\n|x  |  |');
+	await expect(editor).toBeFocused();
+});
+
+test('tab in the last cell of a lone header row builds a valid table', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Tab');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n|  |  |');
+});
+
+test('shift+tab moves to the previous cell', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Tab');
+	await page.keyboard.press('Shift+Tab');
+	await page.keyboard.type('x');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n|x  |  |');
+	await expect(editor).toBeFocused();
+});
+
+test('shift+tab in the first cell keeps the cursor in place', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Shift+Tab');
+	await page.keyboard.type('x');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n| x |  |');
+	await expect(editor).toBeFocused();
+});
+
+test('tab outside a table still indents', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('plain line');
+	await page.keyboard.press('Tab');
+	await expect.poll(() => editorText(page)).toBe('    plain line');
+	await expect(editor).toBeFocused();
+});
+
 test('preview table cells have borders and comfortable padding', async ({ page }) => {
 	await showPreview(page, TABLE_MD);
 	for (const selector of ['article.preview th', 'article.preview td']) {
