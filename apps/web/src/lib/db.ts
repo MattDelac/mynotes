@@ -22,6 +22,15 @@ interface Session {
 	share?: ShareInfo;
 }
 
+export interface BlobRecord {
+	id: string;
+	data: ArrayBuffer;
+	type: string;
+	width: number;
+	height: number;
+	createdAt: number;
+}
+
 interface NotesDB extends DBSchema {
 	notes: {
 		key: string;
@@ -33,13 +42,17 @@ interface NotesDB extends DBSchema {
 		value: Session;
 		indexes: { 'by-updated': number };
 	};
+	blobs: {
+		key: string;
+		value: BlobRecord;
+	};
 }
 
 let dbPromise: Promise<IDBPDatabase<NotesDB>> | null = null;
 
 function db(): Promise<IDBPDatabase<NotesDB>> {
 	if (!dbPromise) {
-		dbPromise = openDB<NotesDB>('mynotes', 2, {
+		dbPromise = openDB<NotesDB>('mynotes', 3, {
 			upgrade(database, oldVersion) {
 				if (oldVersion < 1) {
 					const store = database.createObjectStore('notes', { keyPath: 'id' });
@@ -48,6 +61,9 @@ function db(): Promise<IDBPDatabase<NotesDB>> {
 				if (oldVersion < 2) {
 					const store = database.createObjectStore('sessions', { keyPath: 'id' });
 					store.createIndex('by-updated', 'updatedAt');
+				}
+				if (oldVersion < 3) {
+					database.createObjectStore('blobs', { keyPath: 'id' });
 				}
 			}
 		});
@@ -108,4 +124,19 @@ export async function saveSession(session: Session): Promise<void> {
 export function createSession(): Session {
 	const now = Date.now();
 	return { id: crypto.randomUUID(), createdAt: now, updatedAt: now };
+}
+
+export async function putBlob(blob: BlobRecord): Promise<void> {
+	const database = await db();
+	await database.put('blobs', blob);
+}
+
+export async function getBlob(id: string): Promise<BlobRecord | undefined> {
+	const database = await db();
+	return database.get('blobs', id);
+}
+
+export async function deleteBlob(id: string): Promise<void> {
+	const database = await db();
+	await database.delete('blobs', id);
 }

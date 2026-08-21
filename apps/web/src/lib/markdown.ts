@@ -3,6 +3,9 @@ import DOMPurify from 'dompurify';
 
 marked.use({ gfm: true, breaks: true });
 
+const ALLOWED_URI_REGEXP =
+	/^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|mynotes):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+
 if (DOMPurify.isSupported) {
 	DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 		if (node.tagName === 'A') {
@@ -31,5 +34,5 @@ export function titleWrappedHtml(content: string): string {
 }
 
 export function renderMarkdown(content: string): string {
-	return DOMPurify.sanitize(titleWrappedHtml(content));
+	return DOMPurify.sanitize(titleWrappedHtml(content), { ALLOWED_URI_REGEXP });
 }

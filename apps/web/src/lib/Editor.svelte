@@ -11,6 +11,7 @@
 	import { concealMarks } from './cm-conceal';
 	import { titleLines } from './cm-title';
 	import { clickableLinks } from './cm-links';
+	import { imagePasteDrop } from './cm-images';
 	import { indentKeymap } from './cm-indent';
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
@@ -85,6 +86,7 @@
 				titleLines,
 				EditorView.decorations.of((view) => view.state.field(titleLines)),
 				clickableLinks,
+				imagePasteDrop,
 				cmPlaceholder('Start typing…'),
 				EditorView.lineWrapping,
 				EditorView.editable.of(editable),

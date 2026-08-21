@@ -80,8 +80,10 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 - Notes can embed images as `![alt](mynotes:<id>)` references; the bytes are
   encrypted with the session key and stored as opaque blobs — the server stays
   zero-knowledge (full design: `docs/IMAGES.md`)
-- Rollout is phased: the server blob API has shipped; client insertion
-  (paste/drag-drop), local rendering, and sharing follow in the UX backlog
+- Rollout is phased: the server blob API and client local insertion
+  (paste/drag-drop) with local preview rendering have shipped; sharing
+  (upload on share, viewer fetch + decrypt) and editor chip rendering
+  follow in the UX backlog
 
 ### Send via email
 

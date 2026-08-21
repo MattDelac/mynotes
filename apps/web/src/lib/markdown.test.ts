@@ -48,6 +48,20 @@ describe('titleWrappedHtml', () => {
 	});
 });
 
+describe('mynotes image refs', () => {
+	it('renders an image ref as an img tag with the mynotes: src intact', () => {
+		const html = titleWrappedHtml('![screenshot](mynotes:123e4567-e89b-42d3-a456-426614174000)');
+		expect(html).toContain(
+			'<img src="mynotes:123e4567-e89b-42d3-a456-426614174000" alt="screenshot">'
+		);
+	});
+
+	it('keeps a mynotes: ref inside a paragraph', () => {
+		const html = titleWrappedHtml('Body with ![x](mynotes:abc-123) inline');
+		expect(html).toContain('src="mynotes:abc-123"');
+	});
+});
+
 describe('table alignment', () => {
 	it('keeps column alignment attributes on th and td', () => {
 		const html = titleWrappedHtml('| L | C | R |\n| :--- | :-: | ---: |\n| 1 | 2 | 3 |');

@@ -163,6 +163,18 @@ select:focus-visible {
 }
 .preview img {
 	max-width: 100%;
+	height: auto;
+}
+.preview .image-missing {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4em;
+	padding: 0.35em 0.8em;
+	background: var(--bg-subtle);
+	border: 1px dashed var(--border);
+	border-radius: var(--radius);
+	color: var(--fg-muted);
+	font-size: 0.85em;
 }
 .preview table {
 	display: block;

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
+	import { resolveLocalImageSrc } from '$lib/images';
 	import { forgetShareKey } from '$lib/shared';
 	import { RoomSession, type SessionState } from '$lib/collab';
 	import { encryptBytes, exportKey, generateKey, importKey } from '$lib/crypto';
@@ -55,6 +56,7 @@
 	let shareKind = $state<'view' | 'edit'>('view');
 	let editor = $state<Editor | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
+	let previewArticle = $state<HTMLElement | null>(null);
 	let sessionState = $state<SessionState | 'idle'>('idle');
 	let collab: RoomSession | null = null;
 	let textObserver: (() => void) | null = null;
@@ -80,6 +82,30 @@
 	$effect(() => {
 		if (shareError) {
 			showToast('danger', shareError);
+		}
+	});
+
+	$effect(() => {
+		if (!preview) return;
+		const html = rendered;
+		const article = previewArticle;
+		if (!html || !article) return;
+		const images = Array.from(article.querySelectorAll<HTMLImageElement>('img[src^="mynotes:"]'));
+		for (const img of images) {
+			const id = (img.getAttribute('src') ?? '').slice('mynotes:'.length);
+			if (!id) continue;
+			void (async () => {
+				const src = await resolveLocalImageSrc(id);
+				if (!article.contains(img)) return;
+				if (src) {
+					img.src = src;
+				} else {
+					const chip = document.createElement('span');
+					chip.className = 'image-missing';
+					chip.textContent = 'Image unavailable';
+					img.replaceWith(chip);
+				}
+			})();
 		}
 	});
 
@@ -411,6 +437,7 @@
 	<main>
 		{#if preview}
 			<article
+				bind:this={previewArticle}
 				class="preview"
 				style="max-width: var(--content-width); margin: 0 auto; padding: var(--space-4) var(--space-3);"
 			>

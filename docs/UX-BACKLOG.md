@@ -38,6 +38,10 @@ What already works well (do not regress):
   (`cm-links.ts`), with haptic feedback and no caret movement (see item 5)
 - Title treatment: a plain (non-heading) first line renders with h1 styling in both
   editor (`cm-title.ts`) and preview (`p.note-title`), display-only (see item 6)
+- Images (local-only sessions): paste/drag-drop an image → stored in the local
+  `blobs` IndexedDB store (plaintext, like note content) → `![alt](mynotes:<uuid>)`
+  inserted on its own line → preview renders it via a data URL; a missing blob
+  renders an "Image unavailable" chip (see item 14)
 - Preview toggle (`marked` + DOMPurify, `gfm: true, breaks: true`)
 - Sidebar (hover zone desktop / drawer mobile), note switch, new/delete, share, export/import
 - Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar, Mod+Alt+N new note,
@@ -304,15 +308,48 @@ What already works well (do not regress):
 - done-when: `cargo fmt --check && cargo clippy -- -D warnings && cargo test` green;
   blob endpoints + TTL sweep verified in tests.
 
-### 14. Images — Phase 2: client local insert + render (local-only sessions)
+### 14. DONE (2026-08-21): Images — Phase 2: client local insert + render (local-only sessions)
 
-- Evidence: scope in `docs/IMAGES.md` §4.2, §7.1, §7.2, §13 (Phase 2).
-- Scope: `db.ts` `blobs` store (schema v3); `lib/images.ts` (downscale,
-  `parseMynotesRefs`, local resolve-to-data-URL); paste + drag-drop insertion; editor
-  `mynotes:` chip decoration; preview DOMPurify `mynotes:` allow + async data-URL pass +
-  placeholder. Unit + e2e (local). Screenshots fixture + regenerate (docker).
-- done-when: `pnpm lint && pnpm check && pnpm test` green; e2e proves a pasted image
-  becomes a `mynotes:` ref and renders in preview.
+- Evidence: `db.ts` schema v3 `blobs` store + `putBlob`/`getBlob`/`deleteBlob`; new
+  `lib/images.ts` (`parseMynotesRefs`, `downscalePlan` — ≤2048 px / ≤512 KB keeps the
+  original bytes, else re-encode WebP 0.8 with PNG fallback, `processImageFile`,
+  `bytesToDataUrl`, `resolveLocalImageSrc` with a module cache, 5 MB client cap
+  matching `MAX_IMAGE_SIZE`); new `cm-images.ts` paste + drag-drop extension (gated on
+  the `EditorView.editable` facet; inserts `![alt](mynotes:<uuid>)` on its own line via
+  a local CM dispatch that yCollab propagates; per-image errors toast without
+  aborting the batch); `markdown.ts` `renderMarkdown` passes an `ALLOWED_URI_REGEXP`
+  with `mynotes:` allowed so the img src survives DOMPurify; `s/[id]/+page.svelte`
+  preview effect resolves `img[src^="mynotes:"]` to local data URLs, swapping missing
+  blobs for an "Image unavailable" chip (`.image-missing`). 17 unit tests
+  (`images.test.ts`), 4 blob-store tests (`db.test.ts`), 2 `mynotes:`-ref tests
+  (`markdown.test.ts`), 7 e2e tests (`e2e/images.spec.ts`: paste → ref + IndexedDB
+  blob count, preview `data:` src with natural 48×24 dimensions, reload persistence
+  via the local blob store, drag-drop, two-image batch (2 blobs, 2 rendered imgs),
+  missing-blob placeholder, text-paste regression). Full suite: 184 unit + 84 e2e
+  passed (5 pre-existing skips). Screenshots unaffected — the committed fixture has
+  no images, and the new CSS/effect are no-ops for it (docker still unavailable,
+  see Parked).
+- Deferred slice (now item 17): the deliberate editor `mynotes:` chip decoration.
+  Until then the existing `cm-conceal` already hides the `LinkMark`/`URL` nodes of an
+  image ref on inactive lines, so a ref reads as its bare alt text there — an
+  acceptable v1 state that item 17 replaces.
+
+### 17. Images — Phase 2b: editor chip decoration for `mynotes:` refs
+
+- Evidence: scope in `docs/IMAGES.md` §7.2 (editor bullet) and §13 (Phase 2); item 14
+  shipped the data path. Grammar premise verified against the installed
+  `@lezer/markdown`: `![alt](url)` parses as an `Image` node whose children are
+  `LinkMark` (`![`, `]`, `(`, `)`) plus `URL` — the same names cm-conceal already
+  conceals, which is why a ref on an inactive line currently shows as bare alt text.
+- Scope: a ViewPlugin (or StateField) that replaces each image ref range with a
+  compact chip widget (small glyph + alt text, falling back to a short id when alt is
+  empty); `Decoration.replace` keeps the text in the model (CRDT-safe, same mechanism
+  as `cm-conceal.ts`); coexists with `cm-conceal` (no double-decoration of the same
+  range), is a no-op inside fenced code, and must not break caret placement at ref
+  boundaries. Unit tests for the range-finding; e2e asserting the chip renders on
+  active and inactive lines while the model text stays byte-identical.
+- done-when: `pnpm lint && pnpm check && pnpm test` green; e2e shows the chip with
+  the doc unchanged.
 
 ### 15. Images — Phase 3: sharing (zero-knowledge path)
 
@@ -353,6 +390,32 @@ What already works well (do not regress):
 - done-when: removed; `pnpm check` green.
 
 ## Parked (noticed, not yet scoped)
+
+- **CM6 editable check (images phase 2):** `view.editable` is NOT an instance
+  property in @codemirror/view 6.43 — `EditorView.editable` is a static `Facet`, so
+  gate on `view.state.facet(EditorView.editable)`.
+- **CM6 domEventHandlers + synthetic paste/drop (images phase 2):** the handlers
+  attach to `.cm-content` (contentDOM), and Chromium honors
+  `new ClipboardEvent('paste', { clipboardData: dataTransfer })` and
+  `new DragEvent('drop', { dataTransfer })` — dispatching them on `.cm-content` in
+  `page.evaluate` is a working Playwright recipe for paste/drop tests (files built
+  via canvas `toBlob` → `File`). A handler must return `false` (synchronously) for
+  non-image content or it swallows normal text pastes.
+- **lezer image node structure (images phase 2):** `![alt](url)` parses as `Image`
+  with children `LinkMark` (`![`, `]`, `(`, `)`) + `URL` — all already in
+  cm-conceal's set, so an image ref on an INACTIVE line renders as its bare alt
+  text (free chip-like look; item 17 makes it deliberate). Corollary for e2e:
+  `editorText` (DOM textContent) undercounts refs on inactive lines — assert on
+  blob counts / preview imgs, or keep the caret on the ref's line.
+- **DOMPurify custom schemes (images phase 2):** the supported way to allow
+  `mynotes:` is passing `ALLOWED_URI_REGEXP` per `sanitize` call — a copy of
+  DOMPurify's default regex with `mynotes` added to the protocol group (there is no
+  `ADD_URI_SAFE_PROTOCOL` config in dompurify 3.4).
+- **Local CM dispatch → CRDT (images phase 2):** inserting via
+  `view.dispatch({ changes, selection })` (not `ytext.insert`) is the clean
+  insertion path — yCollab propagates local transactions to the Y text, and setting
+  the selection in the same transaction parks the caret after the inserted text
+  with no change-mapping races.
 
 - **gnhf worktree env quirk (iteration 10):** the bash tool's cwd is
   `/home/matt/workspace`, NOT the worktree — relative paths (`docs/`, `apps/`) fail
