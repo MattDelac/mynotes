@@ -6,16 +6,16 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 7)
+## Status (2026-08-21, run 2, iteration 8)
 
-- Iteration 7 shipped item 17 slice (c) — interactive preview checkboxes:
-  clicking a preview task checkbox flips the corresponding `- [ ]` line in the
-  document (verified via editor state after toggling back); read-only shared
-  views keep the preview disabled, so no interactive checkboxes exist there
-  (locked by e2e). 16 + 6 new unit tests, 5 new e2e tests, full suite green
-  twice: 308 unit + 119 e2e. With this, all of item 17 is done. Next unblocked:
-  item 18 (undo granularity for the non-format keymap commands), then
-  12 (rebind Mod+N), 11 (chore).
+- Iteration 8 shipped item 18 — undo granularity: EVERY keymap command
+  (indent/dedent, table Enter/Tab/Shift+Tab/Backspace, fence auto-close,
+  bracket pairing) is now its own undo step via the new `src/lib/cm-undo.ts`
+  `ownUndoStep` helper. Type a line, Tab, Ctrl+Z now reverts only the Tab
+  (locked by unit + e2e; sensitivity-verified — all 5 new e2e tests fail with
+  the isolation disabled). 6 new unit + 5 new e2e tests, full suite green
+  twice: 314 unit + 124 e2e (5 pre-existing skips). Next unblocked: item 12
+  (rebind Mod+N), then 11 (chore).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -23,7 +23,7 @@ done items are kept in place as the audit trail).
 - Seeded the agreed writing-experience feature set as items 13–17 (per-iteration slices
   with done-when lines) and re-prioritized: formatting first (most frequent writing
   action), then headings, links, task lists. Item 18 (undo granularity) was added the
-  same day — a gap found while implementing item 13, which is now DONE.
+  same day — a gap found while implementing item 13 — and shipped in iteration 8.
 - Chord reservation audit for the new bindings is in
   "Chord reservation audit (2026-08-21)" below — the mandate's Mod+Shift+X, Mod+1..6 and
   Mod+0 do **not** survive the audit; documented substitutions: Mod+Alt+X, Mod+Alt+1..6,
@@ -507,19 +507,35 @@ What already works well (do not regress):
   task list and the fixtures never click a checkbox, so no PNG can change
   (docker still unavailable in this env — see Parked).
 
-### 18. Undo granularity: coarse undo steps for the non-format keymap commands
+### 18. DONE (2026-08-21): Undo granularity — every keymap command is its own undo step
 
-- Evidence: `y-codemirror.next` 0.3.5's `YSyncPluginValue.update` runs
-  `ytext.doc.transact(fn, this.conf)` for **every** local dispatch — one Yjs origin
-  for everything. `Y.UndoManager`'s default 5 s same-origin grouping therefore merges
-  all local edits in that window into ONE undo step: type a line, Tab-indent 1 s
-  later, one Ctrl+Z reverts both. Found while shipping item 13 (the e2e undo test
-  wiped the whole note). The format commands already avoid it via `stopCapturing()`.
-- Scope: apply the same `stopCapturing()` pattern (a shared keymap wrapper is the
-  DRY option) to `cm-indent.ts`, `cm-table.ts` and `cm-input-rules.ts` so each
-  keymap command is its own undo step.
-- done-when: e2e "type, indent, Ctrl+Z → only the indent reverts" passes; full
-  suite green.
+- Evidence: new `src/lib/cm-undo.ts` — `ownUndoStep(view, spec, undoManager?)`
+  wraps a dispatch in `undoManager.stopCapturing()` before/after, **but only
+  when the spec has changes** (a selection-only dispatch must NOT reset Yjs's
+  capture clock, or it would split a typing burst that straddles a cursor
+  move). `indentKeymap` / `tableKeymap` / `inputRulesKeymap` became factories
+  taking the editor's `Y.UndoManager` and route every dispatch through
+  `ownUndoStep`; `Editor.svelte` passes the manager in (as it already did for
+  `formatKeymap`). Root cause unchanged from when it was found (item 13):
+  `y-codemirror.next` 0.3.5 transacts **every** local CM dispatch to the
+  `Y.Text` with one origin, and `Y.UndoManager` merges same-origin edits
+  within its capture window into ONE undo step.
+- Tests: 6 unit tests (`cm-undo.test.ts`, driving a REAL `Y.Doc` +
+  `Y.UndoManager` with a y-codemirror-style single tracked origin — command
+  isolated from typing on both sides, two consecutive isolated commands,
+  selection-only creates no step and does not split a typing burst, plus a
+  control test proving an UNisolated dispatch merges with the typing step) +
+  5 e2e tests: indent (type+Tab → Ctrl+Z reverts only the Tab; and the
+  type/indent/dedent three-step ladder), tables (typed row + Enter → Ctrl+Z
+  reverts only the row insert), input rules (fence auto-close, and `[]()`
+  bracket pairing, each their own step).
+- Sensitivity: with the isolation disabled (`ownUndoStep` reduced to a bare
+  `dispatch`), all 5 new e2e tests FAIL (typing + command merge, one Ctrl+Z
+  reverts both) — the tests genuinely lock the fix. Full suite green twice:
+  314 unit + 124 e2e (5 pre-existing skips).
+- Screenshots: keymap-only change; the committed fixtures use `fill()` and
+  never press Tab/Enter/`]` in the affected contexts, so no PNG can change
+  (docker still unavailable in this env — see Parked).
 
 ### 12. Follow-up: Mod+N (new session) is likely a dead binding in real browsers
 
@@ -609,10 +625,18 @@ platforms (NVDA/JAWS use different modifiers).
   collapse the selection to its end/start instead of moving — e2e tests that wrap a
   selection (which leaves it selected) must collapse first (e.g. `End`) before the
   vertical move registers.
-- **y-codemirror single Yjs origin (run 2, iteration 1):** see item 18. Practical
-  consequence for any future keymap command: wrap the dispatch in
-  `undoManager.stopCapturing()` calls or the command will merge with adjacent typing
-  into one undo step. `Y.UndoManager` default `timeout` is 5000 ms.
+- **y-codemirror single Yjs origin (run 2, iteration 1; item 18 DONE in iteration 8):**
+  for any future keymap command, route the dispatch through `ownUndoStep` in
+  `src/lib/cm-undo.ts` or it will merge with adjacent typing into one undo step.
+  Corrected details, verified against the installed yjs 13.6.31 +
+  y-codemirror.next 0.3.5 source (the iteration-1 note was imprecise): the merge
+  window is `captureTimeout = 500` ms (NOT 5 s); local CM edits are transacted to
+  the `Y.Text` with origin = the ySync config object (NOT null), which `yCollab`
+  registers on the manager via `undoManager.addTrackedOrigin(syncConf)`;
+  `stopCapturing()` is just a `lastChange = 0` capture-clock reset. Trap pinned by
+  a unit test: calling `stopCapturing()` around a SELECTION-ONLY dispatch (no doc
+  change) would split a typing burst that straddles the cursor move —
+  `ownUndoStep` therefore guards on `spec.changes !== undefined`.
 - **lezer bold node names (run 2, iteration 1):** `**bold**` parses as
   `StrongEmphasis` with `EmphasisMark` children — NOT `Strong`/`StrongMark` as in
   CommonMark. `cm-conceal.ts`'s `EmphasisMark` entry therefore covers both italic

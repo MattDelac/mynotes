@@ -1,7 +1,9 @@
 import type { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { EditorView, type KeyBinding } from '@codemirror/view';
+import type { UndoManager } from 'yjs';
 import { isInsideFencedCode } from './cm-conceal';
+import { ownUndoStep } from './cm-undo';
 
 const FENCE_LINE = /^( {0,3})(`{3,}|~{3,})([^`\n]*)$/;
 
@@ -46,31 +48,41 @@ export function emptyBracketPairAt(state: EditorState): BracketPair | null {
 	return { at: sel.head, insert: ']()' };
 }
 
-export const inputRulesKeymap: KeyBinding[] = [
-	{
-		key: 'Enter',
-		run(view) {
-			if (!view.state.facet(EditorView.editable)) return false;
-			const close = fenceCloseAt(view.state);
-			if (!close) return false;
-			view.dispatch({
-				changes: { from: close.at, insert: close.insert },
-				selection: { anchor: close.at + 1 }
-			});
-			return true;
+export function inputRulesKeymap(undoManager?: UndoManager): KeyBinding[] {
+	return [
+		{
+			key: 'Enter',
+			run(view) {
+				if (!view.state.facet(EditorView.editable)) return false;
+				const close = fenceCloseAt(view.state);
+				if (!close) return false;
+				ownUndoStep(
+					view,
+					{
+						changes: { from: close.at, insert: close.insert },
+						selection: { anchor: close.at + 1 }
+					},
+					undoManager
+				);
+				return true;
+			}
+		},
+		{
+			key: ']',
+			run(view) {
+				if (!view.state.facet(EditorView.editable)) return false;
+				const pair = emptyBracketPairAt(view.state);
+				if (!pair) return false;
+				ownUndoStep(
+					view,
+					{
+						changes: { from: pair.at, insert: pair.insert },
+						selection: { anchor: pair.at + 2 }
+					},
+					undoManager
+				);
+				return true;
+			}
 		}
-	},
-	{
-		key: ']',
-		run(view) {
-			if (!view.state.facet(EditorView.editable)) return false;
-			const pair = emptyBracketPairAt(view.state);
-			if (!pair) return false;
-			view.dispatch({
-				changes: { from: pair.at, insert: pair.insert },
-				selection: { anchor: pair.at + 2 }
-			});
-			return true;
-		}
-	}
-];
+	];
+}

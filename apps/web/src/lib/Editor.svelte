@@ -75,9 +75,9 @@
 			extensions: [
 				keymap.of([
 					...yUndoManagerKeymap,
-					...tableKeymap,
-					...indentKeymap,
-					...inputRulesKeymap,
+					...tableKeymap(undoManager),
+					...indentKeymap(undoManager),
+					...inputRulesKeymap(undoManager),
 					...formatKeymap(undoManager),
 					...defaultKeymap
 				]),

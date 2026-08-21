@@ -57,3 +57,25 @@ test('bracket pairing is disabled inside a fenced code block', async ({ page }) 
 	await page.keyboard.press(']');
 	await expect.poll(() => editorText(page)).toBe('```\n[]');
 });
+
+test('fence auto-close is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('```');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('```\n\n```');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('```');
+});
+
+test('bracket pairing is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('[');
+	await page.keyboard.press(']');
+	await expect.poll(() => editorText(page)).toBe('[]()');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('[');
+});

@@ -2,7 +2,9 @@ import type { EditorState, Line, TransactionSpec } from '@codemirror/state';
 import { EditorView, type KeyBinding } from '@codemirror/view';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
+import type { UndoManager } from 'yjs';
 import { isInsideFencedCode } from './cm-conceal';
+import { ownUndoStep } from './cm-undo';
 
 export function tableColumns(line: string): number {
 	const text = line.trim();
@@ -159,49 +161,51 @@ export function tableEnter(state: EditorState): TransactionSpec | null {
 	};
 }
 
-export const tableKeymap: KeyBinding[] = [
-	{
-		key: 'Enter',
-		preventDefault: true,
-		run(view) {
-			if (!view.state.facet(EditorView.editable)) return false;
-			const change = tableEnter(view.state);
-			if (!change) return false;
-			view.dispatch(change);
-			return true;
+export function tableKeymap(undoManager?: UndoManager): KeyBinding[] {
+	return [
+		{
+			key: 'Enter',
+			preventDefault: true,
+			run(view) {
+				if (!view.state.facet(EditorView.editable)) return false;
+				const change = tableEnter(view.state);
+				if (!change) return false;
+				ownUndoStep(view, change, undoManager);
+				return true;
+			}
+		},
+		{
+			key: 'Tab',
+			preventDefault: true,
+			run(view) {
+				if (!view.state.facet(EditorView.editable)) return false;
+				const change = tableTab(view.state);
+				if (!change) return false;
+				ownUndoStep(view, change, undoManager);
+				return true;
+			}
+		},
+		{
+			key: 'Shift-Tab',
+			preventDefault: true,
+			run(view) {
+				if (!view.state.facet(EditorView.editable)) return false;
+				const change = tableShiftTab(view.state);
+				if (!change) return false;
+				ownUndoStep(view, change, undoManager);
+				return true;
+			}
+		},
+		{
+			key: 'Backspace',
+			preventDefault: true,
+			run(view) {
+				if (!view.state.facet(EditorView.editable)) return false;
+				const change = tableBackspace(view.state);
+				if (!change) return false;
+				ownUndoStep(view, change, undoManager);
+				return true;
+			}
 		}
-	},
-	{
-		key: 'Tab',
-		preventDefault: true,
-		run(view) {
-			if (!view.state.facet(EditorView.editable)) return false;
-			const change = tableTab(view.state);
-			if (!change) return false;
-			view.dispatch(change);
-			return true;
-		}
-	},
-	{
-		key: 'Shift-Tab',
-		preventDefault: true,
-		run(view) {
-			if (!view.state.facet(EditorView.editable)) return false;
-			const change = tableShiftTab(view.state);
-			if (!change) return false;
-			view.dispatch(change);
-			return true;
-		}
-	},
-	{
-		key: 'Backspace',
-		preventDefault: true,
-		run(view) {
-			if (!view.state.facet(EditorView.editable)) return false;
-			const change = tableBackspace(view.state);
-			if (!change) return false;
-			view.dispatch(change);
-			return true;
-		}
-	}
-];
+	];
+}
