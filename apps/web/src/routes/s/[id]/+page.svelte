@@ -30,6 +30,8 @@
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, sessionOwnerLink, sessionViewLink } from '$lib/share';
 	import { downloadNote } from '$lib/export';
+	import { scanTaskLines } from '$lib/task-lines';
+	import { forgetCaret } from '$lib/caret-memory';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -53,15 +55,15 @@
 	let shareError = $state('');
 	let copied = $state(false);
 	let shareKind = $state<'view' | 'edit'>('view');
-	let editor = $state<Editor | null>(null);
+	let previewEl = $state<HTMLElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let sessionState = $state<SessionState | 'idle'>('idle');
 	let collab: RoomSession | null = null;
 	let textObserver: (() => void) | null = null;
 
-	const title = $derived(noteTitle(content));
-	const rendered = $derived(renderMarkdown(content));
 	const canWrite = $derived(!data.shared || data.shared.owner);
+	const title = $derived(noteTitle(content));
+	const rendered = $derived(renderMarkdown(content, !canWrite));
 	const headerTitle = $derived(
 		data.shared && !data.shared.owner ? 'Shared session (read-only)' : title
 	);
@@ -81,6 +83,13 @@
 		if (shareError) {
 			showToast('danger', shareError);
 		}
+	});
+
+	$effect(() => {
+		const el = previewEl;
+		if (!el) return;
+		el.addEventListener('click', onPreviewClick);
+		return () => el.removeEventListener('click', onPreviewClick);
 	});
 
 	function exportNote() {
@@ -282,6 +291,7 @@
 	async function removeNoteById(id: string) {
 		await removeNote(docId(), id);
 		await deleteNote(id);
+		forgetCaret(id);
 		await syncMetadata();
 		if (id === noteId) {
 			if (notes.length > 0) {
@@ -356,6 +366,29 @@
 		else if (action === 'newSession') startEmptySession();
 		else if (action === 'deleteNote') void deleteCurrentNote();
 	}
+
+	function toggleTaskLine(line: number, expectChecked: boolean) {
+		const text = ytext;
+		const doc = text?.doc;
+		if (!text || !doc) return;
+		const entry = scanTaskLines(text.toString()).find(
+			(t) => t.line === line && t.checked === expectChecked
+		);
+		if (!entry) return;
+		doc.transact(() => {
+			text.delete(entry.markerStart, 1);
+			text.insert(entry.markerStart, expectChecked ? ' ' : 'x');
+		});
+	}
+
+	function onPreviewClick(event: MouseEvent) {
+		if (!canWrite || !ytext) return;
+		const target = event.target;
+		if (!(target instanceof Element)) return;
+		const input = target.closest('input[data-task-line]');
+		if (!input || !(input instanceof HTMLInputElement)) return;
+		toggleTaskLine(Number(input.getAttribute('data-task-line')), input.hasAttribute('checked'));
+	}
 </script>
 
 <div class="shell">
@@ -413,13 +446,14 @@
 			<article
 				class="preview"
 				style="max-width: var(--content-width); margin: 0 auto; padding: var(--space-4) var(--space-3);"
+				bind:this={previewEl}
 			>
 				<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized with DOMPurify above -->
 				{@html rendered}
 			</article>
 		{:else if noteId && ytext}
 			{#key noteId}
-				<Editor bind:this={editor} {ytext} editable={canWrite} />
+				<Editor {ytext} {noteId} editable={canWrite} />
 			{/key}
 		{/if}
 	</main>

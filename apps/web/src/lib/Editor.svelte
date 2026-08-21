@@ -11,11 +11,18 @@
 	import { concealMarks } from './cm-conceal';
 	import { titleLines } from './cm-title';
 	import { clickableLinks } from './cm-links';
+	import { formatKeymap } from './cm-format';
 	import { indentKeymap } from './cm-indent';
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
+	import { taskMarkerClick } from './cm-task-click';
+	import { recordCaret, savedCaret } from './caret-memory';
 
-	let { ytext, editable = true }: { ytext: Y.Text; editable?: boolean } = $props();
+	let {
+		ytext,
+		editable = true,
+		noteId = ''
+	}: { ytext: Y.Text; editable?: boolean; noteId?: string } = $props();
 
 	let container = $state<HTMLDivElement | null>(null);
 	let view: EditorView | null = null;
@@ -52,30 +59,20 @@
 		{ tag: tags.processingInstruction, color: 'var(--fg-muted)' }
 	]);
 
-	export function insertAtCursor(text: string): void {
-		if (!view) return;
-		const { from, to } = view.state.selection.main;
-		ytext.delete(from, to - from);
-		ytext.insert(from, text);
-		view.dispatch({ selection: { anchor: from + text.length } });
-		view.focus();
-	}
-
-	export function focus(): void {
-		view?.focus();
-	}
-
 	onMount(() => {
 		if (!container) return;
 		const undoManager = new Y.UndoManager(ytext);
+		const docText = ytext.toString();
 		const state = EditorState.create({
-			doc: ytext.toString(),
+			doc: docText,
+			selection: { anchor: savedCaret(noteId, docText.length) },
 			extensions: [
 				keymap.of([
 					...yUndoManagerKeymap,
-					...tableKeymap,
-					...indentKeymap,
-					...inputRulesKeymap,
+					...tableKeymap(undoManager),
+					...indentKeymap(undoManager),
+					...inputRulesKeymap(undoManager),
+					...formatKeymap(undoManager),
 					...defaultKeymap
 				]),
 				markdown({ base: markdownLanguage }),
@@ -85,7 +82,11 @@
 				titleLines,
 				EditorView.decorations.of((view) => view.state.field(titleLines)),
 				clickableLinks,
+				taskMarkerClick(undoManager),
 				cmPlaceholder('Start typing…'),
+				EditorView.updateListener.of((update) => {
+					recordCaret(noteId, update.state.selection.main.head);
+				}),
 				EditorView.lineWrapping,
 				EditorView.editable.of(editable),
 				EditorView.contentAttributes.of({ 'aria-label': 'Note' }),
@@ -115,6 +116,7 @@
 			]
 		});
 		view = new EditorView({ state, parent: container });
+		if (editable) view.focus();
 		return () => {
 			undoManager.destroy();
 			view?.destroy();

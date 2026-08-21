@@ -28,14 +28,27 @@ test('Ctrl+Alt+N creates and opens a new note in the current session', async ({ 
 	await expect(page.locator('aside a')).toHaveText(['second note', 'first note']);
 });
 
-test('Ctrl+N still starts a new session', async ({ page }) => {
+test('Ctrl+Alt+S starts a new session', async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('stays behind');
+	await page.waitForTimeout(700);
+	const firstSession = /\/s\/([\w-]+)/.exec(page.url())?.[1];
+
+	await page.keyboard.press('Control+Alt+s');
+	await expect.poll(() => /\/s\/([\w-]+)/.exec(page.url())?.[1]).not.toBe(firstSession);
+});
+
+test('Ctrl+N no longer starts a new session', async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('textbox', { name: 'Note' }).fill('stays behind');
 	await page.waitForTimeout(700);
 	const firstSession = /\/s\/([\w-]+)/.exec(page.url())?.[1];
 
 	await page.keyboard.press('Control+n');
-	await expect.poll(() => /\/s\/([\w-]+)/.exec(page.url())?.[1]).not.toBe(firstSession);
+	await page.waitForTimeout(700);
+
+	expect(/\/s\/([\w-]+)/.exec(page.url())?.[1]).toBe(firstSession);
+	await expect(page.getByRole('textbox', { name: 'Note' })).toBeVisible();
 });
 
 test('Ctrl+Alt+N is a no-op in a read-only shared session', async ({ page, browser }) => {

@@ -51,3 +51,31 @@ test('tab and shift+tab never move focus out of the editor', async ({ page }) =>
 		await expect(editor).toBeFocused();
 	}
 });
+
+test('typing then tab: ctrl+z reverts only the indent', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('- hello');
+	await page.keyboard.press('Tab');
+	await expect.poll(() => editorText(page)).toBe('  - hello');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('- hello');
+});
+
+test('indent and dedent are separate undo steps', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('- hello');
+	await page.keyboard.press('Tab');
+	await expect.poll(() => editorText(page)).toBe('  - hello');
+	await page.keyboard.press('Shift+Tab');
+	await expect.poll(() => editorText(page)).toBe('- hello');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('  - hello');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('- hello');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('Start typing…');
+});

@@ -64,6 +64,20 @@ Optional blob TTL (e.g., auto-delete after 30 days).
 
 ## Features
 
+### Writing experience (invisible ergonomics)
+
+Formatting lives in the keyboard and typing behavior, never in added chrome — all
+documents stay pure markdown. Planned (see `docs/UX-BACKLOG.md` for scope and
+browser-reservation audit of every chord):
+
+- Formatting toggles with selection-or-word semantics: bold (Mod+B), italic
+  (Mod+I), strikethrough (Mod+Alt+X), inline code (Mod+Alt+C)
+- Heading levels: Mod+Alt+1..6 set the current line's ATX level, Mod+Alt+0 removes it
+- Link command: Mod+K (clipboard URL auto-fill; pasting a URL over a selection
+  already links it via the built-in `pasteURLAsLink`)
+- Task lists: `- [ ]` lines continue on Enter; the bracket token toggles on click
+  in the editor and in the preview (preview disabled in read-only shares)
+
 ### Export to disk
 
 - "Export" button → serialize the current note as markdown → browser download

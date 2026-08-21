@@ -24,7 +24,14 @@ export default defineConfig({
 			url: 'http://localhost:3000/healthz',
 			reuseExistingServer: !process.env.CI,
 			timeout: 300_000,
-			env: { DATABASE_URL: 'sqlite:/tmp/mynotes-e2e.db' }
+			env: {
+				DATABASE_URL: 'sqlite:/tmp/mynotes-e2e.db',
+				RATE_CREATE_PER_MIN: '1000',
+				RATE_WRITE_PER_MIN: '1000',
+				RATE_READ_PER_MIN: '5000',
+				RATE_WS_PER_MIN: '1000',
+				MAX_WS_PER_IP: '100'
+			}
 		}
 	]
 });

@@ -62,6 +62,17 @@ test('enter on an empty table row removes the row', async ({ page }) => {
 	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n| Ada |  |');
 });
 
+test('enter creating a table row is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n|  |  |');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('| a | b |');
+});
+
 test('enter outside a table keeps the default newline behavior', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });

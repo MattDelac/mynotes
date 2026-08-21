@@ -3,7 +3,60 @@
 Plan of record for the overnight UX loop. Take the top unblocked item, implement the
 smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`, plus
 `pnpm screenshots` for any visible UI change), mark it done with one line of evidence,
-and re-prioritize. Items are ordered by user impact.
+and re-prioritize. Open items are listed by priority (numbering is stable across runs;
+done items are kept in place as the audit trail).
+
+## Status (2026-08-21, run 2, iteration 12)
+
+- Iteration 12 shipped item 20 — per-note caret restoration. New
+  `src/lib/caret-memory.ts` (per-tab `Map<noteId, number>`) records the
+  caret head on every editor update and restores it as the initial
+  selection on remount, clamped to the current doc length. `Editor.svelte`
+  takes a `noteId` prop; both routes pass it and `forgetCaret` on note
+  delete. 9 unit tests (`caret-memory.test.ts`) + 2 e2e tests
+  (`e2e/caret-memory.spec.ts`): mid-line A→B→A restore (a typed char lands
+  at the saved position, not 0) and a clamp verified through a LIVE edit
+  collaborator (fresh context + edit link over the server relay) who
+  shrinks the note from 11 to 2 chars while the owner is on another note —
+  the owner's return lands the caret at the end. The autofocus spec's
+  note-switch expectation was tightened from
+  `['!alpha note', 'alpha note!']` to exactly `'alpha note!'` (the
+  iteration-11 hand-off, now consumed). Full suite green twice: 323 unit +
+  130 e2e (5 pre-existing skips). No screenshot impact: caret position is
+  not asserted by any fixture (docker still unavailable in this env — see
+  Parked). Next unblocked: item 21 (per-note undo history across note
+  switches).
+
+- Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
+  The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
+  be re-added without explicitly re-opening that ADR.
+- Seeded the agreed writing-experience feature set as items 13–17 (per-iteration slices
+  with done-when lines) and re-prioritized: formatting first (most frequent writing
+  action), then headings, links, task lists. Item 18 (undo granularity) was added the
+  same day — a gap found while implementing item 13 — and shipped in iteration 8.
+- Chord reservation audit for the new bindings is in
+  "Chord reservation audit (2026-08-21)" below — the mandate's Mod+Shift+X, Mod+1..6 and
+  Mod+0 do **not** survive the audit; documented substitutions: Mod+Alt+X, Mod+Alt+1..6,
+  Mod+Alt+0, Mod+Alt+C.
+
+## Audit delta (2026-08-21, run 2, iteration 1)
+
+Probes run against the installed packages (no Playwright needed):
+
+- `markdown()` from `@codemirror/lang-markdown` ships `pasteURLAsLink` **enabled by
+  default** (config `pasteURLAsLink: true`): pasting a URL over a selection turns the
+  selection into a link with the pasted URL as target. Already live in the app; item 16
+  documents it rather than re-building it.
+- The GFM grammar (`@lezer/markdown`) **parses task lists**: `- [ ] x` →
+  `BulletList > ListItem > Task > TaskMarker "[ ]"` (+ `Task "[x]"`). So task lines are
+  already recognized by the syntax tree — item 17b can key on the `TaskMarker` node.
+- `markdownKeymap`'s Enter **already continues task items** (probed with the real
+  `insertNewlineContinueMarkup`): `- [ ] buy milk` + Enter → `- [ ] ` (cursor after the
+  marker, new task unchecked), and Enter on an empty task item removes the marker (list
+  exits). Item 17a is verification + regression lock, not new behavior.
+- `marked` v18 renders task lists as `<li><input disabled="" type="checkbox">…</li>` —
+  the preview checkbox is **disabled by default**; item 17c must make it interactive
+  (custom renderer or post-process) and wire a click back into the document.
 
 ## Audit evidence (2026-08-20, iteration 1)
 
@@ -40,9 +93,10 @@ What already works well (do not regress):
   editor (`cm-title.ts`) and preview (`p.note-title`), display-only (see item 6)
 - Preview toggle (`marked` + DOMPurify, `gfm: true, breaks: true`)
 - Sidebar (hover zone desktop / drawer mobile), note switch, new/delete, share, export/import
-- Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar, Mod+Alt+N new note,
+- Shortcuts: Mod+Alt+S new session, Mod+E export, Mod+O sidebar, Mod+Alt+N new note,
   Mod+Alt+P preview toggle (see items 7, 8 and 12 — the Alt chords were chosen because
-  the original Mod-Shift+N / Mod-Shift-P proposals are browser-reserved chords)
+  the original Mod-Shift+N / Mod-Shift-P proposals, and the Mod+N new-session chord,
+  are browser-reserved)
 - 720px content width; mobile line length ~358px (comfortable)
 
 ## Backlog
@@ -267,40 +321,473 @@ What already works well (do not regress):
   tables, so no docker regeneration was needed (the earlier "blocked on docker" note
   conflated *showing* alignment in the PNGs with the feature itself working).
 
-### 10. Images: committed design doc first (implementation later)
+### 10. CLOSED (2026-08-21): Images — abandoned by product decision
 
-- Evidence: seed requirement — the first deliverable is a design doc, not code.
-- Scope: write `docs/IMAGES.md` covering: client-side AES-GCM encryption of image bytes
-  (per-session key or per-image keys), opaque blob upload endpoint reusing the
-  zero-knowledge API (new `POST /blobs`-style endpoint or reuse of `/notes` with a
-  kind), size caps + rate limits via existing `api/src/config.rs` abuse limits,
-  markdown syntax (`![alt](mynotes:blobId)` resolved client-side), rendering in editor
-  + preview, and what happens when a session is shared.
-- done-when: `docs/IMAGES.md` committed, reviewed against the hard rules (zero-knowledge
-  stays intact, markdown storage format unchanged, no new dependencies).
+- Closed and pruned per the run-2 mandate. The images experiment (design doc +
+  implementation phases 1–2) was abandoned; the record is
+  `docs/adr/0001-documents-stay-pure-markdown.md`. No binary media of any kind — do not
+  resurrect the blob API or `mynotes:` refs without explicitly re-opening the ADR.
 
-### 11. Chore: remove dead editor API
+### 13. DONE (2026-08-21): Formatting commands Mod+B bold + Mod+I italic (shared engine, selection-or-word toggle)
 
-- Evidence: `insertAtCursor` and `focus` are exported from `Editor.svelte` but unused
-  anywhere (grep over `src/`).
-- done-when: removed; `pnpm check` green.
+- Evidence: new `src/lib/cm-format.ts` — pure `applyFormat({ doc, from, to, open,
+  close })` + `formatCommand(mark, undoManager)` + `formatKeymap(undoManager)`
+  (`Mod-b` → `**`, `Mod-i` → `*`), wired in `Editor.svelte` after `inputRulesKeymap`.
+  21 unit tests (`cm-format.test.ts`: every selection/word/empty case for both marks,
+  nested-mark unwrap, `insideFencedCode` node walk) + 6 e2e tests
+  (`e2e/formatting.spec.ts`: selection wrap+toggle, word wrap with no selection,
+  blank-note pair insert, italic, undo + concealment invariant, read-only no-op).
+  Full suite green: 188 unit + 83 e2e (5 pre-existing skips).
+- Semantics: selection → wrap, then the wrapped content stays selected so a repeat
+  press unwraps; selection flanked by the exact marks (or including them) → unwrap;
+  cursor on a word → wrap/unwrap the word (word = maximal run of chars that are
+  neither whitespace nor the mark's own char — that is what makes `**bold**` resolve
+  to `bold`, not `**bold**`); cursor between an empty pair → remove it; else insert
+  the pair with the cursor between. No-op when not editable, on multi-range
+  selections, or when the cursor/selection touches a fenced code block.
+- Undo: `undoManager.stopCapturing()` before/after the dispatch — without it the
+  wrap merges into the surrounding typing burst, because y-codemirror applies ALL
+  local edits with one Yjs origin and `Y.UndoManager`'s 5 s same-origin grouping
+  swallows the command (see item 18 and Parked).
+- Screenshots: keymap-only change, fixtures never press Mod+B/Mod+I — committed PNGs
+  cannot change; no regeneration needed (docker still unavailable here, see Parked).
 
-### 12. Follow-up: Mod+N (new session) is likely a dead binding in real browsers
+### 14. DONE (2026-08-21): Formatting commands: Mod+Alt+X strikethrough, Mod+Alt+C inline code
 
-- Evidence: the app's Mod+N new-session shortcut (`AppHeader.svelte`) works in
-  e2e (CDP key dispatch delivers Ctrl+N to the page in headless — probed in
-  iteration 8), but Ctrl/Cmd+N is a browser-reserved "new window" chord on
-  Chrome/Firefox/Safari: in a real browser the browser consumes it before the
-  page, so the shortcut likely never fires for real users. Same class of bug as
-  the item-7 Mod-Shift+N proposal.
-- Scope: rebind new-session to an unreserved chord (candidate: Mod+Alt+S) in
-  `AppHeader.svelte`, update the e2e shortcut test, keep the menu entry.
-- done-when: e2e passes with the new chord and the old chord is no longer
-  bound. (Real-browser verification of the old chord is not possible from this
-  loop — the choice is based on the browsers' reserved-shortcut lists.)
+- Evidence: `formatKeymap` in `src/lib/cm-format.ts` gained `Mod-Alt-x` → `~~` and
+  `Mod-Alt-c` → `` ` `` on item 13's mark-agnostic engine (no engine change); 16 unit
+  tests (`cm-format.test.ts`, both marks across selection/word/empty/unwrap cases incl.
+  backtick-as-word-boundary) + 5 e2e tests (`e2e/formatting.spec.ts`: word wrap + toggle
+  per chord, selection wrap per chord, concealment of both mark types on inactive lines
+  with document unchanged). Full suite green: 204 unit + 88 e2e (5 pre-existing skips).
+- Concealment: verified `cm-conceal.ts` already conceals `StrikethroughMark` and
+  `CodeMark` (grammar premises pinned in `cm-conceal.test.ts`) — no concealment change
+  needed, e2e locks it.
+- Key parsing: verified in `@codemirror/view`'s `normalizeKeyName` that `Mod-Alt-x`
+  normalizes to `Ctrl-Alt-x` (Win/Linux) / `Alt-Meta-x` (mac), and CM6's keyCode-based
+  fallback (`w3c-keyname` + `base[]` table) resolves macOS Option-mangled `e.key`
+  (e.g. `∩`) back to the chord — unlike the raw DOM handlers in `AppHeader.svelte`, CM6
+  keymap bindings need no `e.code` workaround for Option chords.
+- Screenshots: keymap-only change, fixtures never press the new chords — committed PNGs
+  cannot change; no regeneration needed (docker still unavailable here, see Parked).
+
+### 15. DONE (2026-08-21): Heading toggles — Mod+Alt+1..6 set the line's level, Mod+Alt+0 removes it
+
+- Evidence: `applyHeading` (pure) + `headingBlocked` (syntax-tree guard) +
+  `headingCommand(level, undoManager)` in `src/lib/cm-format.ts`, plus 7 new
+  `formatKeymap` bindings (`Mod-Alt-1..6` / `Mod-Alt-0`), already wired in
+  `Editor.svelte`. 20 unit tests (`cm-format.test.ts`: set/overwrite/remove,
+  cursor + selection shifting, empty line / empty heading, `#######` and `#nospace`
+  not treated as headings, table / indented-code / setext no-ops) + 8 e2e tests
+  (`e2e/headings.spec.ts`: set, overwrite, remove, concealment invariant on the
+  `#` mark, fenced-code no-op, table-row no-op, own-undo-step, read-only no-op).
+  Full suite green: 232 unit + 96 e2e (5 pre-existing skips).
+- Semantics: acts on the cursor's line only. An existing ATX prefix
+  (`^ {0,3}#{1,6}` + space) is replaced with `#`×level + one space (extra spaces
+  collapsed); level 0 strips the prefix; a plain line gets the prefix inserted at
+  column 0; an empty line gets a bare `#`×level (no trailing space). The cursor /
+  single-line selection shifts with the content. No-op: multi-line selection,
+  fenced code, indented `CodeBlock`, table rows, and setext (see below).
+- Tree guard (`headingBlocked`): resolves the line's first non-space char and walks
+  up for `FencedCode` / `CodeBlock` / `Table`. GFM gotcha pinned by a unit test: a
+  pipe-less line *directly* under a table (no blank line) parses as a table row, so
+  it is blocked too — a blank line is required for the line to be free.
+- Setext headings: ATX-only for v1, per scope. The command no-ops both on the
+  underline line and on the paragraph line directly above a `=`/`-` underline,
+  rather than converting setext→ATX (documented in Parked).
+- Screenshots: keymap-only change; the committed fixture never presses the new
+  chords and headings already render styled, so no PNG can change (docker still
+  unavailable in this env — see Parked).
+
+### 16. DONE (2026-08-21): Link command — Mod+K
+
+- Evidence: `pasteURLAsLink` (built into `markdown()`, default on) already turns a
+  pasted URL over a selection into `[selection](pasted-url)` — the paste path is
+  live and documented here; Mod+K is the deliberate keyboard counterpart.
+  `linkCommand()` + pure `applyLink()` + tree probes `linkProbe()`/`overlappingLink()`
+  in `src/lib/cm-format.ts`, `Mod-k` binding in `formatKeymap` (already wired in
+  `Editor.svelte`). 34 unit tests (`cm-format.test.ts`: wrap/word/pair/unwrap range
+  math, `[ ] ( )` as word boundaries, `clipboardUrl` validation, probe hit/miss
+  incl. boundaries and images) + 8 e2e tests (`e2e/link.spec.ts`: selection +
+  clipboard-URL auto-fill with toggle-off, no-URL empty parens with cursor verified
+  by typing, word label, bare `[]()`, unwrap from inside a link, concealment of
+  `[ ]()` marks on inactive lines, own-undo-step, read-only shared-session no-op).
+  Full suite green: 260 unit + 104 e2e (5 pre-existing skips).
+- Semantics: selection → `[sel](url)`; no selection, cursor on a word → `[word]()`,
+  cursor inside `()`; no word → `[]()`, cursor inside `[]`. Toggle: cursor or
+  selection strictly inside a `Link` node → unwrap to the label (label stays
+  selected, so a third press re-wraps). Cursor/selection inside an `Image` node, a
+  selection crossing a link/image boundary, or fenced code → no-op.
+- Clipboard: `navigator.clipboard.readText()` is async, so the wrap dispatches
+  immediately with `()` and the url is filled by a guarded follow-up dispatch
+  (only if the cursor is still between `](` and `)` with nothing in between).
+  Validation: absolute URL (`^[a-z][a-z\d+.-]*:\/\/\S+$`) after trim; anything else
+  (incl. `www.…` and `javascript:`) is ignored. Because the fill is a separate
+  transaction, a clipboard-filled link is TWO undo steps (wrap, then url) —
+  accepted: same-origin grouping can't be used safely across the async gap (see
+  item 18).
+- Word bounds for links exclude `[ ] ( )` (so a cursor next to an existing link
+  never swallows it into the new label).
+- Screenshots: keymap-only change; the committed fixture never presses Mod+K and
+  link marks were already concealed, so no PNG can change (docker still
+  unavailable in this env — see Parked).
+
+### 17. Task lists (checkboxes)
+
+- Slice (a) — DONE (2026-08-21): verified + regression-locked continuation
+  (verification only, no new behavior). Evidence: `src/lib/task-continuation.test.ts`
+  (9 unit tests driving `insertNewlineContinueMarkup` through a real state: unchecked
+  continuation with the cursor after the marker, checked→unchecked, nested indent kept,
+  single empty item exits the list, empty item after a blank line is removed, empty
+  item in a tight list takes a blank line first, fenced-code no-continue, plain-bullet
+  control) + `e2e/task-lists.spec.ts` (5 tests: continue + type into the new task,
+  checked→unchecked, empty-item exit, the tight→loose→exit Enter ladder, fenced-code
+  no-continue). Full suite green: 269 unit + 109 e2e (5 pre-existing skips).
+  Exit nuance (locked, and relevant to slice c): Enter on an empty task item removes
+  the marker only when it is the first item or a blank line precedes it; the empty
+  *second* item of a tight list first inserts a blank line (tight→loose), so exiting
+  can take two Enters.
+- Slice (b) — DONE (2026-08-21): editor bracket-click toggle. Evidence:
+  `src/lib/cm-task-click.ts` — `taskMarkerAt` (line-bounded `TaskMarker` tree
+  probe) + pure `toggleMarkerChange` + `taskMarkerClick` (`domEventHandlers`
+  click), wired in `Editor.svelte` after `clickableLinks` — with 17 unit tests
+  (`cm-task-click.test.ts`: token-range computation incl. both boundaries,
+  indented / multi-line / right-line-of-two markers, no-trailing-space and
+  invalid-middle-char lines not toggleable, fenced code no-op) + 5 e2e tests
+  (`e2e/task-lists.spec.ts`: toggle on→off round trip, word click does not
+  toggle and places the caret (verified by typing into the word), nested item
+  toggles only itself, own undo step, read-only shared-view no-op). Full suite
+  green: 286 unit + 114 e2e (5 pre-existing skips).
+  Semantics: an unmodified click whose `posAtCoords` position falls within the
+  `TaskMarker` range (inclusive both ends = the whole 3-char token) flips the
+  middle char (` ` ↔ `x`; `[X]` unchecks) as a single one-char dispatch with
+  `stopCapturing` undo isolation, and consumes the click (caret stays at the
+  click point). Modified clicks (ctrl/meta = link open, shift/alt = selection)
+  and read-only views fall through to default behavior.
+  **Premise correction** (locked by unit tests): the toggleable char is at
+  `TaskMarker.from + 1` (the middle of the 3-char token), NOT `from + 2` as the
+  slice-(a) premise said. Also locked: `- [x]` with no trailing content parses
+  as a `Link` and bare `- [ ]` as a `Paragraph` — neither has a `TaskMarker`, so
+  neither is toggleable.
+  Screenshots: click-handler-only change; the committed fixture contains no
+  task list and never clicks a marker, so no PNG can change (docker still
+  unavailable in this env — see Parked).
+- Slice (c) — DONE (2026-08-21): preview checkboxes. Evidence:
+  `src/lib/task-lines.ts` — pure `scanTaskLines(content)` line-based GFM
+  task scanner (fence / top-level + nested indented-code / blockquote /
+  list-item state machine; mirrors marked's `listIsTask`
+  `/^\[[ xX]\] +\S/` semantics incl. tab expansion and the
+  trailing-space + content requirements) returning
+  `{ line, checked, markerStart }` in document order — cross-validated
+  against marked's real task detection on 30 fixture documents (count +
+  state, all match); `markdown.ts` — `renderMarkdown(content, readOnly = true)`
+  / `titleWrappedHtml(content, readOnly = true)` build a full `marked`
+  `Renderer` whose `checkbox` override (marked v18 renders task items via a
+  dedicated `checkbox` token/renderer) emits
+  `<input type="checkbox" tabindex="-1" data-task-line={n} [checked]>` for
+  writable views, pairing the i-th checkbox with the i-th scanner candidate
+  guarded by a checked-state match (any divergence falls back to marked's
+  default disabled checkbox — never a wrong line); `s/[id]/+page.svelte` —
+  delegated click listener on the preview article (attached via `bind:this` +
+  `$effect` addEventListener to keep svelte-check a11y-warning-free),
+  `toggleTaskLine` re-scans the CURRENT document, requires the line AND the
+  expected pre-click state to match, and applies one `doc.transact`
+  delete+insert (null origin — same as y-codemirror's local edits, so the
+  toggle stays undoable by mounted collaborators); `app.css` —
+  `.preview input[data-task-line] { cursor: pointer; accent-color:
+  var(--accent) }`. 16 unit tests (`task-lines.test.ts`: flat/nested/ordered/
+  blockquote/loose, fence + top-level + nested-code exclusion,
+  no-content / no-trailing-space non-tasks, `[X]`, extra bullet-marker
+  spaces, marker offsets) + 6 unit tests (`markdown.test.ts`: default
+  disabled output, interactive output, nested + fence + title-split line
+  numbering, non-task items untouched) + 5 e2e tests
+  (`e2e/task-lists.spec.ts`: checkbox click flips the stored line (verified
+  via editor state after toggling back), uncheck round trip, nested toggle
+  isolation, fenced fake task gets no checkbox, read-only shared view has
+  no preview toggle and no interactive checkboxes). Full suite green twice:
+  308 unit + 119 e2e.
+  Semantics: the pre-click state is read from the `checked` ATTRIBUTE, not
+  the `checked` property — browsers natively toggle the property on
+  mousedown (before the click event), so the property is already post-click
+  in the handler and `preventDefault` cannot revert it. `tabindex="-1"`
+  keeps the checkbox mouse-only (a native keyboard toggle would desync from
+  the document). Read-only shared views: the preview stays disabled (item 8
+  / PLAN.md "preview disabled in read-only shares"), which satisfies the
+  mandate's "disabled in read-only shared views" — no preview, hence no
+  checkboxes; locked by e2e. Screenshots: the committed fixture contains no
+  task list and the fixtures never click a checkbox, so no PNG can change
+  (docker still unavailable in this env — see Parked).
+
+### 18. DONE (2026-08-21): Undo granularity — every keymap command is its own undo step
+
+- Evidence: new `src/lib/cm-undo.ts` — `ownUndoStep(view, spec, undoManager?)`
+  wraps a dispatch in `undoManager.stopCapturing()` before/after, **but only
+  when the spec has changes** (a selection-only dispatch must NOT reset Yjs's
+  capture clock, or it would split a typing burst that straddles a cursor
+  move). `indentKeymap` / `tableKeymap` / `inputRulesKeymap` became factories
+  taking the editor's `Y.UndoManager` and route every dispatch through
+  `ownUndoStep`; `Editor.svelte` passes the manager in (as it already did for
+  `formatKeymap`). Root cause unchanged from when it was found (item 13):
+  `y-codemirror.next` 0.3.5 transacts **every** local CM dispatch to the
+  `Y.Text` with one origin, and `Y.UndoManager` merges same-origin edits
+  within its capture window into ONE undo step.
+- Tests: 6 unit tests (`cm-undo.test.ts`, driving a REAL `Y.Doc` +
+  `Y.UndoManager` with a y-codemirror-style single tracked origin — command
+  isolated from typing on both sides, two consecutive isolated commands,
+  selection-only creates no step and does not split a typing burst, plus a
+  control test proving an UNisolated dispatch merges with the typing step) +
+  5 e2e tests: indent (type+Tab → Ctrl+Z reverts only the Tab; and the
+  type/indent/dedent three-step ladder), tables (typed row + Enter → Ctrl+Z
+  reverts only the row insert), input rules (fence auto-close, and `[]()`
+  bracket pairing, each their own step).
+- Sensitivity: with the isolation disabled (`ownUndoStep` reduced to a bare
+  `dispatch`), all 5 new e2e tests FAIL (typing + command merge, one Ctrl+Z
+  reverts both) — the tests genuinely lock the fix. Full suite green twice:
+  314 unit + 124 e2e (5 pre-existing skips).
+- Screenshots: keymap-only change; the committed fixtures use `fill()` and
+  never press Tab/Enter/`]` in the affected contexts, so no PNG can change
+  (docker still unavailable in this env — see Parked).
+
+### 12. DONE (2026-08-21): New session rebound to Mod+Alt+S — Mod+N was a dead binding in real browsers
+
+- Premise (carried from the follow-up): the Mod+N new-session shortcut
+  (`AppHeader.svelte`) worked in e2e (CDP key dispatch delivers Ctrl+N to the
+  page in headless — probed in iteration 8), but Ctrl/Cmd+N is a
+  browser-reserved "new window" chord on Chrome/Firefox/Safari: in a real
+  browser the browser consumes it before the page, so it likely never fired for
+  real users. Same class of bug as the item-7 Mod-Shift+N proposal.
+- Evidence: `AppHeader.svelte`'s keydown now maps `mod + altKey + s` to
+  `onMenuAction('newSession')` — matched `e.code === 'KeyS'` on macOS and
+  `e.key.toLowerCase() === 's'` elsewhere, so Option-mangled `e.key` on macOS
+  and AltGr character typing on European layouts never misfire (same pattern as
+  the Mod+Alt+N/P handlers) — and the old `mod + e.key === 'n'` branch is
+  REMOVED, so the reserved chord does the browser's thing (open a new window)
+  instead of silently stealing it. Mod+Alt+S was already audited free on all
+  three browsers (audit table below, now assigned). `e2e/shortcuts.spec.ts`:
+  `Ctrl+Alt+S starts a new session` (navigates to a fresh `/s/{id}`) and
+  `Ctrl+N no longer starts a new session` (pressing the old chord leaves the
+  session URL and editor untouched — sensitivity-verified: it fails if the old
+  branch is re-added, since CDP dispatch does deliver Ctrl+N in headless). Full
+  suite green twice: 314 unit + 125 e2e (5 pre-existing skips).
+- Scope notes: the "New session" menu entry is unchanged; the frozen legacy
+  `n/[id]` page's `handleMenuAction` does not handle `newSession`, so the chord
+  is a no-op there (as Mod+N was). Read-only shared views behave as before:
+  the chord creates a LOCAL session on the viewer's own device (their data,
+  zero-knowledge server untouched). Screenshots: keydown-handler-only change,
+  fixtures never press the chord — no PNG can change (docker still unavailable
+  in this env — see Parked). Real-browser verification of the new chord is not
+  possible from this loop — the choice is based on the browsers'
+  reserved-shortcut lists (see Parked: CDP bypasses the accelerator layer).
+
+### 11. DONE (2026-08-21, iteration 10): Chore — remove dead editor API
+
+- Evidence: `insertAtCursor` and `focus` removed from `Editor.svelte`; the audit
+  extended to the bind chain — both pages kept `let editor = $state<Editor | null>`
+  + `bind:this={editor}` solely to call those two exports, and the variable was
+  never read (grep `editor\??\.` over `src/` = 0 matches), so the orphaned state
+  + bindings were removed from `s/[id]/+page.svelte` and `n/[id]/+page.svelte`
+  as part of the same chore. `pnpm lint && pnpm check && pnpm test` green
+  (0 errors / 0 warnings, 314 unit). No behavior change → no e2e/screenshot
+  impact.
+
+### 19. DONE (2026-08-21, iteration 11): Editor autofocus — typing starts without a click
+
+- Premise (code-verified iteration 10): nothing in `src/` ever focuses the
+  editor — no `focus()` call, no `autofocus` attribute. After load (or a note
+  switch, which remounts via `{#key noteId}`) `document.activeElement` is
+  `<body>`, so the user's first keystroke is silently lost until they click the
+  page. That breaks the "one blank page, instant start" north star (Docs /
+  Obsidian / Typora all place the caret immediately on open).
+- Scope: focus the editor on mount **when it is editable** (covers first load
+  and note-switch remounts; a mount-time focus does not steal focus while the
+  user is in the sidebar/share panel, because those interactions do not
+  remount the editor). Read-only shared views must NOT autofocus (no caret to
+  show, and no surprise focus). Mobile consequence (virtual keyboard opens on
+  load) is accepted: the user opened a note page to write.
+- Evidence: `Editor.svelte`'s `onMount` calls `view.focus()` immediately after
+  `new EditorView(...)` when the `editable` prop is true — one line; both
+  routes benefit (`n/[id]` passes `editable={data.shared.owner}` on shared
+  notes, default `true` otherwise), so read-only shared views never autofocus.
+  3 e2e tests (`e2e/autofocus.spec.ts`): (a) zero-click typing right after load
+  — verified sensitive, fails with the fix removed; (b) read-only shared view
+  keeps `document.activeElement` at `<body>`; (c) refocus across a note switch
+  — type in A, new note + type in B (no clicks), back to A + type (no click),
+  char verified to land in A — verified sensitive too. Full suite green twice:
+  314 unit + 128 e2e (5 pre-existing skips). Screenshots: none regenerated —
+  the fixtures' `page.screenshot` calls already pass `caret: 'hide'` +
+  `animations: 'disabled'`, so a focused caret cannot change a committed PNG
+  (docker still unavailable in this env — see Parked). Note for item 20: the
+  note-switch test's final expectation is `'!alpha note'` (caret at 0,
+  pre-restoration); it becomes `'alpha note!'` once caret restoration lands.
+
+### 20. DONE (2026-08-21, iteration 12): Restore per-note caret position on note switch
+
+- Evidence: new `src/lib/caret-memory.ts` — a per-tab (module-level)
+  `Map<noteId, number>` with `recordCaret(noteId, head)`,
+  `savedCaret(noteId, docLength)` (clamps a stale head into `0..docLength`;
+  unknown note → 0), and `forgetCaret(noteId)`. `Editor.svelte` takes a
+  `noteId` prop, seeds `EditorState.create({ selection: { anchor:
+  savedCaret(noteId, docText.length) } })`, and records the caret on EVERY
+  `EditorView.updateListener` update (`update.state.selection.main.head`) —
+  deliberately not gated on `update.selectionSet`, which only reflects
+  explicitly-set selections and would miss remote-change-driven cursor
+  shifts. `s/[id]` and `n/[id]` pass their note id into the keyed `<Editor>`
+  and call `forgetCaret(id)` in their delete paths.
+- Tests: 9 unit tests (`caret-memory.test.ts`: unknown→0, record, per-note
+  independence, overwrite, clamp to shorter/empty doc, clamp negative,
+  forget, forget-only-named) + 2 e2e (`e2e/caret-memory.spec.ts`):
+  (a) `caret position is restored after switching notes` — type `hello
+  world`, park the caret mid-line (End + 6×ArrowLeft), A→B→A, one typed
+  char lands at the saved position (`helloX world`, NOT `Xhello world`);
+  (b) `restored caret is clamped to the end when a collaborator shrinks the
+  note` — the owner parks the caret at the end of an 11-char note and
+  switches away; a LIVE edit collaborator (fresh browser context opening
+  the edit share link, syncing over the server relay) shrinks the note to
+  `hi` (2 chars); the owner's return clamps the stale caret to the end and
+  a typed char lands there (`hi!`, NOT `!hi`). Both e2e tests
+  sensitivity-verified: with the `selection` seed removed from
+  `Editor.svelte`, both fail (the caret defaults to 0 — `Xhello world` /
+  `!hi`). Full suite green twice: 323 unit + 130 e2e
+  (5 pre-existing skips).
+- Hand-off consumed: the iteration-11 note predicted the autofocus
+  spec's note-switch expectation would flip to `'alpha note!'` once
+  restoration landed — `e2e/autofocus.spec.ts` now asserts exactly
+  `'alpha note!'`.
+- Scope notes: in-memory / per-tab only (a reload starts at 0, per the
+  slice); caret only (selection restoration still out of scope); the frozen
+  `n/[id]` page also benefits because its note switch is an SPA navigation
+  and the module-level map survives it. No screenshot impact — caret
+  position is not asserted by any fixture (docker still unavailable here —
+  see Parked).
+- Learning: two LOCAL tabs of the same session do NOT sync in real time —
+  `y-indexeddb` is persistence-only (see Parked) — so the clamp e2e had to
+  use the server relay (a fresh context + edit link), not a second local
+  tab.
+
+### 21. Per-note undo history should survive note switches (iteration-12 discovery)
+
+- Premise (code-verified iteration 12): `Editor.svelte` constructs a fresh
+  `new Y.UndoManager(ytext)` in `onMount` and calls `undoManager.destroy()`
+  in its cleanup. The undo stack lives on the manager instance, so every
+  `{#key noteId}` remount (note switch, preview toggle, new note, import,
+  delete-current-note replacement) throws the note's entire undo/redo
+  history away: type in A, switch to B, come back, and Ctrl+Z does
+  nothing. Docs/Obsidian keep per-note history across switches within a
+  session; losing it makes the safety net of a writing app vanish exactly
+  when the user multitasks between notes.
+- Scope (smallest useful slice): a per-tab registry
+  (`WeakMap<Y.Text, Y.UndoManager>` in a small lib module) that creates a
+  manager on first mount of a note's Y.Text and REUSES it on later mounts
+  instead of destroying it on unmount. Re-verify the details: an
+  un-destroyed manager keeps observing its Y.Text (so it keeps recording
+  edits made while the note is closed, from any origin), and re-passing the
+  same manager to `yCollab` on remount re-registers the tracked origin
+  idempotently.
+- done-when: e2e — type in A, switch to B, switch back, and Ctrl+Z reverts
+  the A-typing (redo re-applies it); a preview-toggle round trip also
+  preserves the stack. `pnpm lint && pnpm check && pnpm test` green;
+  screenshots unaffected.
+
+## Chord reservation audit (2026-08-21, run 2, iteration 1)
+
+Mandate: every chord must be free on Chromium, Firefox **and** Safari. CDP key
+dispatch cannot verify this (it bypasses the browser accelerator layer — see
+Parked), so this is a desk audit against the three browsers' published
+reserved-shortcut lists. Mod = Ctrl (Win/Linux) / Cmd (macOS).
+
+| Chord                | Chromium                     | Firefox                  | Safari (macOS)                        | Decision                                              |
+| -------------------- | ---------------------------- | ------------------------ | ------------------------------------- | ----------------------------------------------------- |
+| Mod+B                | free                         | free                     | free                                  | **bold**                                              |
+| Mod+I                | free                         | free                     | free                                  | **italic**                                            |
+| Mod+K                | free                         | free                     | free                                  | **link**                                              |
+| Mod+Shift+X          | free                         | free                     | **reserved** (close tab + all right)  | rejected                                              |
+| Mod+Alt+X            | free                         | free                     | free                                  | **strikethrough** (substitution for Mod+Shift+X)      |
+| Mod+` (backquote)    | free (Win/Linux)             | free                     | **reserved at OS level** (Cmd+\` = app switch) | rejected                                     |
+| Mod+Alt+C            | free                         | free                     | free                                  | **inline code** (substitution; "C for code")          |
+| Mod+1..6             | **reserved** (switch to tab 1..6) | **reserved** (tab switching) | **reserved** (Cmd+1..8 tab switch) | rejected                                            |
+| Mod+0                | **reserved** (reset zoom)    | **reserved** (reset zoom) | **reserved** (reset zoom)             | rejected                                              |
+| Mod+Alt+1..6         | free                         | free                     | free                                  | **heading 1..6** (substitution for Mod+1..6)          |
+| Mod+Alt+0            | free                         | free                     | free                                  | **remove heading** (substitution for Mod+0)           |
+| Mod+N                | **reserved** (new window)    | **reserved** (new window) | **reserved** (new window)           | rejected (old new-session binding; dead in real browsers, see item 12) |
+| Mod+Alt+S            | free                         | free                     | free                                  | **new session** (substitution for the dead Mod+N, item 12) |
+
+Notes: the substitutions follow the Mod+Alt pattern this app already established for
+the rejected Mod+Shift+N / Mod+Shift+P (items 7, 8), keeping all substituted chords in
+one family. Mod+Alt+1..6/0 must be matched via `e.code` (`Digit1`..`Digit6`, `Digit0`)
+on macOS (Option alters `e.key`) exactly like the existing Mod+Alt+N/P handlers.
+Ctrl+Alt+digit has no known collision with IME or screen-reader modifiers on the three
+platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **y-indexeddb is persistence-only — no cross-tab sync (run 2, iteration
+  12):** `IndexeddbPersistence` (y-indexeddb 9.0.12) applies stored updates
+  exactly ONCE at construction (`fetchUpdates`) and stores local updates on
+  change (`doc.on('update', …)`), but has no BroadcastChannel / object-store
+  watch / polling — two tabs of the SAME local session do NOT see each
+  other's edits until a reload. Verified in the installed dist source.
+  Consequence: an e2e that needs a second LIVE local editor must use the
+  server relay (fresh browser context + edit share link), not a second tab
+  of the same context. The passive-recipient direction is reliable (share
+  spec's "owner edits appear live in an open shared view" is green); the
+  two-way convergence test remains `test.skip` (flaky). Product question
+  (not scoped): should local sessions sync across tabs (e.g. a
+  BroadcastChannel update exchange)? Today, editing the same session in two
+  tabs diverges until reload.
+- **Driving CM6 commands in unit tests (run 2, iteration 5):** `EditorState` has no
+  `applyTransaction` — a command's `dispatch(tr)` receives a `Transaction`, and the
+  resulting state is `tr.state` (lazily applied to `startState`). Pattern
+  (`task-continuation.test.ts`): `let next = state; insertNewlineContinueMarkup({
+  state, dispatch(tr) { next = tr.state; } })`. Also: `markdownLanguage.isActiveAt`
+  (which gates the continuation command) is true in a plain `EditorState.create`
+  with `markdown({ base: markdownLanguage })`, so no `EditorView` is needed.
+- **lezer cursor/node iteration gotchas (run 2, iteration 4):** three traps hit while
+  writing the Mod+K probes. (1) `Tree.iterate({enter})` hands the callback a
+  **TreeCursor**, and its `.node` getter returns an internal `BufferNode`/`TreeNode`
+  that has **no `.iterate`** — and `SyntaxNode` (an interface) has no `.iterate` at
+  all. To scan a subtree from a spec callback, either use the cursor's own
+  `cursor.iterate(enter)` (different signature: `(enter, leave)` args, not a spec
+  object) or walk `SyntaxNode.firstChild` / `.nextSibling` manually (what
+  `linkLabelEnd` now does). (2) `tree.resolve(pos, 1)` at a link's start returns the
+  innermost node starting there — the `[` `LinkMark`, not the `Link` — so go one
+  `.parent` up (guard on the name). (3) `tree.iterate({from, to})` reports nodes
+  merely *adjacent* to the range (a cursor right after `)` still yields the link),
+  so cursor-vs-link logic needs an explicit strict-containment check
+  (`node.from < pos && pos < node.to`), and selection-vs-link logic an open-interval
+  overlap check. (4, run 2 iteration 6) The TreeCursor handed to an `enter` callback
+  is **reused and mutated** as the iteration advances: storing the reference
+  (`found = node`) and reading `.name/.from/.to` later yields whatever node the
+  cursor has moved to (observed: `Document`) — copy the needed values
+  (`{ from: n.from, to: n.to }`) INSIDE the callback, or re-resolve via
+  `tree.resolve(n.from, 1)`.
+- **Setext headings vs heading toggles (run 2, iteration 3):** item 15 no-ops on a
+  setext heading — both the paragraph line above a `=`/`-` underline and the underline
+  line itself — instead of converting it. A conversion is lossless and small (level N:
+  replace the underline line with an ATX prefix on the line above; level 0: delete the
+  underline), so it is a good next slice only if real notes turn out to use setext
+  headings. Until then the no-op is the safe behavior (it never mangles a document).
+- **CM6 arrow keys collapse before moving (run 2, iteration 1):** with a non-empty
+  selection, `ArrowDown`/`ArrowUp` (`cursorByLine` in `@codemirror/commands`)
+  collapse the selection to its end/start instead of moving — e2e tests that wrap a
+  selection (which leaves it selected) must collapse first (e.g. `End`) before the
+  vertical move registers.
+- **y-codemirror single Yjs origin (run 2, iteration 1; item 18 DONE in iteration 8):**
+  for any future keymap command, route the dispatch through `ownUndoStep` in
+  `src/lib/cm-undo.ts` or it will merge with adjacent typing into one undo step.
+  Corrected details, verified against the installed yjs 13.6.31 +
+  y-codemirror.next 0.3.5 source (the iteration-1 note was imprecise): the merge
+  window is `captureTimeout = 500` ms (NOT 5 s); local CM edits are transacted to
+  the `Y.Text` with origin = the ySync config object (NOT null), which `yCollab`
+  registers on the manager via `undoManager.addTrackedOrigin(syncConf)`;
+  `stopCapturing()` is just a `lastChange = 0` capture-clock reset. Trap pinned by
+  a unit test: calling `stopCapturing()` around a SELECTION-ONLY dispatch (no doc
+  change) would split a typing burst that straddles the cursor move —
+  `ownUndoStep` therefore guards on `spec.changes !== undefined`.
+- **lezer bold node names (run 2, iteration 1):** `**bold**` parses as
+  `StrongEmphasis` with `EmphasisMark` children — NOT `Strong`/`StrongMark` as in
+  CommonMark. `cm-conceal.ts`'s `EmphasisMark` entry therefore covers both italic
+  and bold marks (no change needed); any future "is this bold?" logic must match
+  `StrongEmphasis`, and grep-based audits for `Strong` will false-negative.
 - **e2e suite is flaky on a 24-core box with a reused/stale API (iteration 9):** the
   local machine has 24 cores, so Playwright defaults to 12 concurrent workers; ~16 tests
   share a session (each a `POST /notes` + `PUT` snapshot + WS, some opening a 2nd viewer
@@ -311,12 +798,23 @@ What already works well (do not regress):
   persists across `npx playwright test` invocations, so back-to-back runs fail more as the
   buckets stay drained; (b) manually starting a preview/API that then lingers makes `vite
   preview` pick a different port ("Port 4173 is in use… 4174") while Playwright still waits
-  on 4173, so editor-only tests hang at the 30s test timeout. **Recipe for a green local run:**
+  on 4173, so editor-only tests hang at the 30s test timeout.   **Recipe for a green local run:**
   kill any stale `mynotes-api` / `vite preview` procs and confirm ports 3000/4173 are free,
   then run `npx playwright test --config playwright.config.ts --workers=2` (Playwright starts
   fresh servers). Verified 3× green this way (66 passed). CI is unaffected — GitHub runners
   have few cores → few workers → low concurrency. Not committed as a config change (kept the
-  diff to the feature); revisit if a future iteration needs a stable default.
+  diff to the feature); revisit if a future iteration needed a stable default.
+  **RESOLVED (run 2, iteration 6):** root cause confirmed by differential runs — the suite
+  was green with 7 concurrent share sessions and red with 8 (a new read-only e2e test was the
+  8th): by the time the last share test ran, the per-IP token buckets (e.g. `RATE_WRITE_PER_MIN`
+  for `PUT /notes/{id}`) could be empty, the share flow's PUT 429s, and the share panel never
+  opens (the API does NOT log 429s, so the failure looks like a silent render stall). Fix:
+  `playwright.config.ts` webServer now starts the e2e API with generous limits
+  (`RATE_CREATE/WRITE/WS_PER_MIN=1000`, `RATE_READ_PER_MIN=5000`, `MAX_WS_PER_IP=100`) —
+  e2e-only envs, production defaults in `api/src/config.rs` untouched, and no e2e test depends
+  on the defaults (verified by grep). 2× full-suite green (114 passed) after the fix. The
+  stale-proc kill is still required because `reuseExistingServer: !CI` reuses a rate-limited
+  API process.
 - **CDP key dispatch bypasses browser accelerator handling (iteration 8):** in
   headless Playwright Chromium every chord reaches the page — Ctrl+N and
   Ctrl+Shift+N (both reserved in real browsers) as well as Ctrl+Alt+N. So e2e
@@ -330,6 +828,15 @@ What already works well (do not regress):
   placeholder inside the line), so `editorText(page)` is not `''` for an empty
   document — assert emptiness by typing into the note or by targeting
   `.cm-placeholder` instead.
+- **Clicking a specific character in e2e (run 2, iteration 6):** a `.cm-line` is a
+  FULL-WIDTH block (100% of the content area), so `locator('.cm-line').click()`
+  (element center) lands far past the end of any short line → `posAtCoords` clamps
+  to the line end. That is why the pre-existing "click the line" tests reliably put
+  the caret at the line end (and never on a left-aligned token like a `TaskMarker`).
+  To click a specific character, compute its pixel point in `page.evaluate`
+  (TreeWalker over the line's text nodes to find the offset, then a 1-char
+  `Range.getBoundingClientRect()` center) and `page.mouse.click(x, y)`. This is what
+  the task-list bracket-click tests use to hit the 3-char marker precisely.
 - **SvelteKit `goto()` URL timing (iteration 8):** client-side navigation
   updates the URL only after the navigation completes (~300 ms observed,
   includes an IndexedDB write in this app), so shortcut/navigation e2e tests

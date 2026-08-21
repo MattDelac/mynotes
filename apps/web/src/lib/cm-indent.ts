@@ -1,6 +1,8 @@
 import type { EditorState, TransactionSpec } from '@codemirror/state';
 import { EditorView, type KeyBinding } from '@codemirror/view';
+import type { UndoManager } from 'yjs';
 import { isInsideFencedCode } from './cm-conceal';
+import { ownUndoStep } from './cm-undo';
 import { tableAt } from './cm-table';
 
 const LIST_ITEM = /^(\s*)(?:([-*+])|(\d{1,9})[.)])\s/;
@@ -98,25 +100,27 @@ export function dedentSelection(state: EditorState): TransactionSpec | null {
 	return buildSpec(state, (line) => -dedentAmount(state, line));
 }
 
-export const indentKeymap: KeyBinding[] = [
-	{
-		key: 'Tab',
-		preventDefault: true,
-		run(view) {
-			if (!view.state.facet(EditorView.editable)) return false;
-			const spec = indentSelection(view.state);
-			if (spec) view.dispatch(spec);
-			return true;
+export function indentKeymap(undoManager?: UndoManager): KeyBinding[] {
+	return [
+		{
+			key: 'Tab',
+			preventDefault: true,
+			run(view) {
+				if (!view.state.facet(EditorView.editable)) return false;
+				const spec = indentSelection(view.state);
+				if (spec) ownUndoStep(view, spec, undoManager);
+				return true;
+			}
+		},
+		{
+			key: 'Shift-Tab',
+			preventDefault: true,
+			run(view) {
+				if (!view.state.facet(EditorView.editable)) return false;
+				const spec = dedentSelection(view.state);
+				if (spec) ownUndoStep(view, spec, undoManager);
+				return true;
+			}
 		}
-	},
-	{
-		key: 'Shift-Tab',
-		preventDefault: true,
-		run(view) {
-			if (!view.state.facet(EditorView.editable)) return false;
-			const spec = dedentSelection(view.state);
-			if (spec) view.dispatch(spec);
-			return true;
-		}
-	}
-];
+	];
+}

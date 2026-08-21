@@ -1,5 +1,6 @@
-import { marked } from 'marked';
+import { marked, Renderer, type Token } from 'marked';
 import DOMPurify from 'dompurify';
+import { scanTaskLines, type TaskLine } from './task-lines';
 
 marked.use({ gfm: true, breaks: true });
 
@@ -12,24 +13,41 @@ if (DOMPurify.isSupported) {
 	});
 }
 
-export function titleWrappedHtml(content: string): string {
+function taskCheckboxRenderer(candidates: TaskLine[], readOnly: boolean): Renderer {
+	const counter = { i: 0 };
+	const renderer = new Renderer({});
+	renderer.checkbox = (token) => {
+		const candidate = readOnly ? undefined : candidates[counter.i];
+		counter.i += 1;
+		const checked = token.checked;
+		if (candidate && candidate.checked === checked) {
+			return `<input type="checkbox" tabindex="-1" data-task-line="${candidate.line}"${checked ? ' checked=""' : ''}> `;
+		}
+		return `<input ${checked ? 'checked="" ' : ''}disabled="" type="checkbox"> `;
+	};
+	return renderer;
+}
+
+function renderTokens(tokens: Token[], renderer: Renderer): string {
+	return marked.parser(tokens, { async: false, renderer }) as string;
+}
+
+export function titleWrappedHtml(content: string, readOnly = true): string {
 	const tokens = marked.lexer(content);
+	const renderer = taskCheckboxRenderer(scanTaskLines(content), readOnly);
 	const first = tokens.find((t) => {
 		if (t.type === 'space') return false;
 		if (t.type === 'paragraph') return t.text.trim() !== '';
 		return true;
 	});
 	if (first && first.type === 'paragraph') {
-		const head = (marked.parser([first], { async: false }) as string).replace(
-			'<p>',
-			'<p class="note-title">'
-		);
-		const rest = marked.parser(tokens.slice(tokens.indexOf(first) + 1), { async: false }) as string;
+		const head = renderTokens([first], renderer).replace('<p>', '<p class="note-title">');
+		const rest = renderTokens(tokens.slice(tokens.indexOf(first) + 1), renderer);
 		return head + rest;
 	}
-	return marked.parse(content, { async: false }) as string;
+	return renderTokens(tokens, renderer);
 }
 
-export function renderMarkdown(content: string): string {
-	return DOMPurify.sanitize(titleWrappedHtml(content));
+export function renderMarkdown(content: string, readOnly = true): string {
+	return DOMPurify.sanitize(titleWrappedHtml(content, readOnly));
 }
