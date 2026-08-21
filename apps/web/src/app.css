@@ -127,6 +127,10 @@ select:focus-visible {
 	padding-left: 1.5em;
 	margin: 0.6em 0;
 }
+.preview input[data-task-line] {
+	cursor: pointer;
+	accent-color: var(--accent);
+}
 .preview code {
 	font-family: var(--mono);
 	font-size: 0.9em;

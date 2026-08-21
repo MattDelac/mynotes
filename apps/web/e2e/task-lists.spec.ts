@@ -133,6 +133,101 @@ test('a bracket click is its own undo step', async ({ page }) => {
 	await expect.poll(() => editorText(page)).toBe('- [ ] buy milk');
 });
 
+async function openPreview(page: Page): Promise<void> {
+	await page.locator('button[aria-label="Toggle preview"]').click();
+	await expect(page.locator('article.preview')).toBeVisible();
+}
+
+test('clicking a preview checkbox flips the stored markdown line', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [ ] alpha\n- [x] beta');
+	await openPreview(page);
+
+	const boxes = page.locator('article.preview input[data-task-line]');
+	await expect(boxes).toHaveCount(2);
+	await expect(boxes.nth(0)).toHaveAttribute('data-task-line', '1');
+	await expect(boxes.nth(1)).toHaveAttribute('data-task-line', '2');
+	await expect(boxes.nth(0)).not.toBeChecked();
+	await expect(boxes.nth(1)).toBeChecked();
+
+	await boxes.nth(0).click();
+	await expect(boxes.nth(0)).toBeChecked();
+	await expect(boxes.nth(1)).toBeChecked();
+
+	await page.keyboard.press('Control+Alt+p');
+	await expect.poll(() => editorText(page)).toBe('- [x] alpha\n- [x] beta');
+});
+
+test('clicking a checked preview checkbox unchecks it', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [x] done');
+	await openPreview(page);
+
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toBeChecked();
+
+	await box.click();
+	await expect(box).not.toBeChecked();
+
+	await page.keyboard.press('Control+Alt+p');
+	await expect.poll(() => editorText(page)).toBe('- [ ] done');
+});
+
+test('clicking a nested preview checkbox toggles only that line', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [ ] first\n  - [x] second');
+	await openPreview(page);
+
+	const boxes = page.locator('article.preview input[data-task-line]');
+	await expect(boxes).toHaveCount(2);
+	await expect(boxes.nth(1)).toHaveAttribute('data-task-line', '2');
+
+	await boxes.nth(1).click();
+	await expect(boxes.nth(0)).not.toBeChecked();
+	await expect(boxes.nth(1)).not.toBeChecked();
+
+	await page.keyboard.press('Control+Alt+p');
+	await expect.poll(() => editorText(page)).toBe('- [ ] first\n  - [ ] second');
+});
+
+test('task-like lines in a fence get no preview checkbox', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('```\n- [ ] fake\n```\n- [ ] real');
+	await openPreview(page);
+
+	const boxes = page.locator('article.preview input[data-task-line]');
+	await expect(boxes).toHaveCount(1);
+	await expect(boxes).toHaveAttribute('data-task-line', '4');
+
+	await boxes.click();
+
+	await page.keyboard.press('Control+Alt+p');
+	await expect.poll(() => editorText(page)).toBe('```\n- [ ] fake\n```\n- [x] real');
+});
+
+test('a read-only shared view has no interactive preview checkboxes', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('- [ ] shared task');
+	await page.waitForTimeout(700);
+	const link = await shareCurrentSession(page);
+
+	const context = await browser.newContext();
+	const viewer = await context.newPage();
+	await viewer.goto(link);
+	await expect(viewer.locator('.cm-content')).toContainText('- [ ] shared task', {
+		timeout: 10_000
+	});
+	await expect(viewer.locator('button[aria-label="Toggle preview"]')).toHaveCount(0);
+	await expect(viewer.locator('input[data-task-line]')).toHaveCount(0);
+	await context.close();
+});
+
 test('clicking a bracket in a read-only shared session does nothing', async ({ page, browser }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');

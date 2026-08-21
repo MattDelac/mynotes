@@ -48,6 +48,47 @@ describe('titleWrappedHtml', () => {
 	});
 });
 
+describe('task checkboxes', () => {
+	it('renders read-only disabled checkboxes by default', () => {
+		expect(titleWrappedHtml('- [ ] alpha\n- [x] beta')).toBe(
+			'<ul>\n<li><input disabled="" type="checkbox"> alpha</li>\n<li><input checked="" disabled="" type="checkbox"> beta</li>\n</ul>\n'
+		);
+	});
+
+	it('renders interactive checkboxes with line numbers when writable', () => {
+		expect(titleWrappedHtml('- [ ] alpha\n- [x] beta', false)).toBe(
+			'<ul>\n<li><input type="checkbox" tabindex="-1" data-task-line="1"> alpha</li>\n<li><input type="checkbox" tabindex="-1" data-task-line="2" checked=""> beta</li>\n</ul>\n'
+		);
+	});
+
+	it('numbers nested task checkboxes by document line', () => {
+		const html = titleWrappedHtml('- [ ] first\n  - [ ] second', false);
+		expect(html).toContain('data-task-line="1"> first');
+		expect(html).toContain('data-task-line="2"> second');
+	});
+
+	it('numbers task checkboxes past preceding blocks', () => {
+		const html = titleWrappedHtml('```js\n- [ ] fake\n```\n- [ ] real', false);
+		expect(html).not.toContain('fake</li>');
+		expect(html).toContain(
+			'<li><input type="checkbox" tabindex="-1" data-task-line="4"> real</li>'
+		);
+	});
+
+	it('numbers checkboxes correctly across the title split', () => {
+		expect(titleWrappedHtml('Title\n\n- [ ] task', false)).toBe(
+			'<p class="note-title">Title</p>\n<ul>\n<li><input type="checkbox" tabindex="-1" data-task-line="3"> task</li>\n</ul>\n'
+		);
+	});
+
+	it('keeps non-task list items untouched', () => {
+		const html = titleWrappedHtml('- plain\n- [ ] task', false);
+		expect(html).toBe(
+			'<ul>\n<li>plain</li>\n<li><input type="checkbox" tabindex="-1" data-task-line="2"> task</li>\n</ul>\n'
+		);
+	});
+});
+
 describe('table alignment', () => {
 	it('keeps column alignment attributes on th and td', () => {
 		const html = titleWrappedHtml('| L | C | R |\n| :--- | :-: | ---: |\n| 1 | 2 | 3 |');

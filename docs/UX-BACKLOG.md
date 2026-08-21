@@ -6,15 +6,16 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 6)
+## Status (2026-08-21, run 2, iteration 7)
 
-- Iteration 6 shipped item 17 slice (b) — editor bracket-click toggle
-  (`[ ]` ↔ `[x]` on a strict token click, 17 unit + 5 e2e tests, full suite
-  green: 286 unit + 114 e2e). It also fixed the e2e rate-limit flake (the suite
-  had turned red once the 8th concurrent share session landed): the playwright
-  webServer API now runs with generous rate-limit envs — e2e-only, production
-  defaults untouched. Next unblocked: item 17 slice (c) (preview checkboxes),
-  then 18 (undo granularity), 12 (rebind Mod+N), 11 (chore).
+- Iteration 7 shipped item 17 slice (c) — interactive preview checkboxes:
+  clicking a preview task checkbox flips the corresponding `- [ ]` line in the
+  document (verified via editor state after toggling back); read-only shared
+  views keep the preview disabled, so no interactive checkboxes exist there
+  (locked by e2e). 16 + 6 new unit tests, 5 new e2e tests, full suite green
+  twice: 308 unit + 119 e2e. With this, all of item 17 is done. Next unblocked:
+  item 18 (undo granularity for the non-format keymap commands), then
+  12 (rebind Mod+N), 11 (chore).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -460,14 +461,51 @@ What already works well (do not regress):
   Screenshots: click-handler-only change; the committed fixture contains no
   task list and never clicks a marker, so no PNG can change (docker still
   unavailable in this env — see Parked).
-- Slice (c) — preview checkboxes: make marked's `disabled` task checkbox
-  interactive (custom `marked` extension/renderer emitting our own
-  `<input type="checkbox" data-task-line={n}>`), wire a click handler in the
-  preview container that maps back to the corresponding `- [ ]` line in the
-  document and toggles it; disabled (no handler) in read-only shared views.
-  done-when: e2e: clicking a preview checkbox flips the stored markdown line
-  (verified via export or editor state after toggling back), read-only preview
-  checkbox does nothing; full suite green.
+- Slice (c) — DONE (2026-08-21): preview checkboxes. Evidence:
+  `src/lib/task-lines.ts` — pure `scanTaskLines(content)` line-based GFM
+  task scanner (fence / top-level + nested indented-code / blockquote /
+  list-item state machine; mirrors marked's `listIsTask`
+  `/^\[[ xX]\] +\S/` semantics incl. tab expansion and the
+  trailing-space + content requirements) returning
+  `{ line, checked, markerStart }` in document order — cross-validated
+  against marked's real task detection on 30 fixture documents (count +
+  state, all match); `markdown.ts` — `renderMarkdown(content, readOnly = true)`
+  / `titleWrappedHtml(content, readOnly = true)` build a full `marked`
+  `Renderer` whose `checkbox` override (marked v18 renders task items via a
+  dedicated `checkbox` token/renderer) emits
+  `<input type="checkbox" tabindex="-1" data-task-line={n} [checked]>` for
+  writable views, pairing the i-th checkbox with the i-th scanner candidate
+  guarded by a checked-state match (any divergence falls back to marked's
+  default disabled checkbox — never a wrong line); `s/[id]/+page.svelte` —
+  delegated click listener on the preview article (attached via `bind:this` +
+  `$effect` addEventListener to keep svelte-check a11y-warning-free),
+  `toggleTaskLine` re-scans the CURRENT document, requires the line AND the
+  expected pre-click state to match, and applies one `doc.transact`
+  delete+insert (null origin — same as y-codemirror's local edits, so the
+  toggle stays undoable by mounted collaborators); `app.css` —
+  `.preview input[data-task-line] { cursor: pointer; accent-color:
+  var(--accent) }`. 16 unit tests (`task-lines.test.ts`: flat/nested/ordered/
+  blockquote/loose, fence + top-level + nested-code exclusion,
+  no-content / no-trailing-space non-tasks, `[X]`, extra bullet-marker
+  spaces, marker offsets) + 6 unit tests (`markdown.test.ts`: default
+  disabled output, interactive output, nested + fence + title-split line
+  numbering, non-task items untouched) + 5 e2e tests
+  (`e2e/task-lists.spec.ts`: checkbox click flips the stored line (verified
+  via editor state after toggling back), uncheck round trip, nested toggle
+  isolation, fenced fake task gets no checkbox, read-only shared view has
+  no preview toggle and no interactive checkboxes). Full suite green twice:
+  308 unit + 119 e2e.
+  Semantics: the pre-click state is read from the `checked` ATTRIBUTE, not
+  the `checked` property — browsers natively toggle the property on
+  mousedown (before the click event), so the property is already post-click
+  in the handler and `preventDefault` cannot revert it. `tabindex="-1"`
+  keeps the checkbox mouse-only (a native keyboard toggle would desync from
+  the document). Read-only shared views: the preview stays disabled (item 8
+  / PLAN.md "preview disabled in read-only shares"), which satisfies the
+  mandate's "disabled in read-only shared views" — no preview, hence no
+  checkboxes; locked by e2e. Screenshots: the committed fixture contains no
+  task list and the fixtures never click a checkbox, so no PNG can change
+  (docker still unavailable in this env — see Parked).
 
 ### 18. Undo granularity: coarse undo steps for the non-format keymap commands
 
