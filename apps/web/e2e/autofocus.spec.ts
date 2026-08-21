@@ -32,8 +32,7 @@ test('switching notes refocuses the editor', async ({ page }) => {
 	await page.locator('aside a', { hasText: 'alpha note' }).click();
 	await expect.poll(() => editorText(page)).toBe('alpha note');
 	await page.keyboard.type('!');
-	const text = await editorText(page);
-	expect(['!alpha note', 'alpha note!']).toContain(text);
+	await expect.poll(() => editorText(page)).toBe('alpha note!');
 });
 
 test('a read-only shared view does not autofocus the editor', async ({ page, browser }) => {

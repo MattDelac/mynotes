@@ -16,8 +16,13 @@
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
 	import { taskMarkerClick } from './cm-task-click';
+	import { recordCaret, savedCaret } from './caret-memory';
 
-	let { ytext, editable = true }: { ytext: Y.Text; editable?: boolean } = $props();
+	let {
+		ytext,
+		editable = true,
+		noteId = ''
+	}: { ytext: Y.Text; editable?: boolean; noteId?: string } = $props();
 
 	let container = $state<HTMLDivElement | null>(null);
 	let view: EditorView | null = null;
@@ -57,8 +62,10 @@
 	onMount(() => {
 		if (!container) return;
 		const undoManager = new Y.UndoManager(ytext);
+		const docText = ytext.toString();
 		const state = EditorState.create({
-			doc: ytext.toString(),
+			doc: docText,
+			selection: { anchor: savedCaret(noteId, docText.length) },
 			extensions: [
 				keymap.of([
 					...yUndoManagerKeymap,
@@ -77,6 +84,9 @@
 				clickableLinks,
 				taskMarkerClick(undoManager),
 				cmPlaceholder('Start typing…'),
+				EditorView.updateListener.of((update) => {
+					recordCaret(noteId, update.state.selection.main.head);
+				}),
 				EditorView.lineWrapping,
 				EditorView.editable.of(editable),
 				EditorView.contentAttributes.of({ 'aria-label': 'Note' }),

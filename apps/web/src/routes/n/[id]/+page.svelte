@@ -12,6 +12,7 @@
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, viewLink } from '$lib/share';
 	import { downloadNote } from '$lib/export';
+	import { forgetCaret } from '$lib/caret-memory';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -173,6 +174,7 @@
 	async function removeNoteById(id: string) {
 		await deleteNote(id);
 		await destroyNoteDoc(id);
+		forgetCaret(id);
 		notes = await listNotes();
 		if (id === note.id) {
 			if (notes.length > 0) {
@@ -297,7 +299,7 @@
 	<main>
 		{#if data.shared}
 			{#if sharedYtext}
-				<Editor ytext={sharedYtext} editable={data.shared.owner} />
+				<Editor ytext={sharedYtext} noteId={data.shared.remoteId} editable={data.shared.owner} />
 			{/if}
 		{:else if preview}
 			<article
@@ -309,7 +311,7 @@
 			</article>
 		{:else if note.id && ytext}
 			{#key note.id}
-				<Editor {ytext} />
+				<Editor {ytext} noteId={note.id} />
 			{/key}
 		{/if}
 	</main>

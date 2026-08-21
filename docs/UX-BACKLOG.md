@@ -6,24 +6,26 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 11)
+## Status (2026-08-21, run 2, iteration 12)
 
-- Iteration 11 shipped item 19 — editor autofocus. `Editor.svelte`'s
-  `onMount` now calls `view.focus()` immediately after the `EditorView` is
-  created, gated on the `editable` prop: the caret is live on first load,
-  after every `{#key noteId}` remount (note switch, new note, import,
-  delete-current-note replacement, preview toggle off), and read-only shared
-  views never autofocus. 3 e2e tests (`e2e/autofocus.spec.ts`): zero-click
-  typing after load, refocus across a note switch (both verified sensitive —
-  they fail with the fix removed), and `document.activeElement === <body>` in
-  a read-only shared view. Full suite green twice: 314 unit + 128 e2e
-  (5 pre-existing skips). No screenshot impact: the fixture screenshots
-  already pass `caret: 'hide'` + `animations: 'disabled'`, so the focused
-  caret cannot change any PNG (docker still unavailable in this env — see
-  Parked). Next unblocked: item 20. Hand-off for item 20: the autofocus
-  spec's note-switch test asserts the typed char lands in note A as
-  `'!alpha note'` (caret at 0, pre-restoration) — when caret restoration
-  lands, that expectation moves to `'alpha note!'`.
+- Iteration 12 shipped item 20 — per-note caret restoration. New
+  `src/lib/caret-memory.ts` (per-tab `Map<noteId, number>`) records the
+  caret head on every editor update and restores it as the initial
+  selection on remount, clamped to the current doc length. `Editor.svelte`
+  takes a `noteId` prop; both routes pass it and `forgetCaret` on note
+  delete. 9 unit tests (`caret-memory.test.ts`) + 2 e2e tests
+  (`e2e/caret-memory.spec.ts`): mid-line A→B→A restore (a typed char lands
+  at the saved position, not 0) and a clamp verified through a LIVE edit
+  collaborator (fresh context + edit link over the server relay) who
+  shrinks the note from 11 to 2 chars while the owner is on another note —
+  the owner's return lands the caret at the end. The autofocus spec's
+  note-switch expectation was tightened from
+  `['!alpha note', 'alpha note!']` to exactly `'alpha note!'` (the
+  iteration-11 hand-off, now consumed). Full suite green twice: 323 unit +
+  130 e2e (5 pre-existing skips). No screenshot impact: caret position is
+  not asserted by any fixture (docker still unavailable in this env — see
+  Parked). Next unblocked: item 21 (per-note undo history across note
+  switches).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -618,23 +620,73 @@ What already works well (do not regress):
   note-switch test's final expectation is `'!alpha note'` (caret at 0,
   pre-restoration); it becomes `'alpha note!'` once caret restoration lands.
 
-### 20. Restore per-note caret position on note switch (iteration-10 discovery)
+### 20. DONE (2026-08-21, iteration 12): Restore per-note caret position on note switch
 
-- Premise (code-verified iteration 10): switching notes changes `noteId`, the
-  `{#key noteId}` remounts the whole editor, and `EditorState.create` starts
-  with the selection at document position 0 — the user's editing context is
-  lost on every A→B→A round trip.
-- Scope (smallest useful slice): an in-memory (per-tab) `Map<noteId, number>`
-  that records `selection.main.head` before a remount and applies it as the
-  initial selection on remount, clamped to `doc.length` (a remote collaborator
-  may have shrunk the doc). No cross-reload persistence yet (that would mean
-  IndexedDB note metadata) — revisit only if the in-memory slice proves its
-  value. Selection (not just caret) restoration is out of scope for the slice.
-- done-when: e2e — type into note A, switch to B, switch back, and the caret is
-  at the previous position (verify by typing one char and asserting the exact
-  stored content); clamped position verified when the doc is shorter than the
-  saved offset. `pnpm lint && pnpm check && pnpm test` green; screenshots
-  unaffected (caret position is not asserted by fixtures).
+- Evidence: new `src/lib/caret-memory.ts` — a per-tab (module-level)
+  `Map<noteId, number>` with `recordCaret(noteId, head)`,
+  `savedCaret(noteId, docLength)` (clamps a stale head into `0..docLength`;
+  unknown note → 0), and `forgetCaret(noteId)`. `Editor.svelte` takes a
+  `noteId` prop, seeds `EditorState.create({ selection: { anchor:
+  savedCaret(noteId, docText.length) } })`, and records the caret on EVERY
+  `EditorView.updateListener` update (`update.state.selection.main.head`) —
+  deliberately not gated on `update.selectionSet`, which only reflects
+  explicitly-set selections and would miss remote-change-driven cursor
+  shifts. `s/[id]` and `n/[id]` pass their note id into the keyed `<Editor>`
+  and call `forgetCaret(id)` in their delete paths.
+- Tests: 9 unit tests (`caret-memory.test.ts`: unknown→0, record, per-note
+  independence, overwrite, clamp to shorter/empty doc, clamp negative,
+  forget, forget-only-named) + 2 e2e (`e2e/caret-memory.spec.ts`):
+  (a) `caret position is restored after switching notes` — type `hello
+  world`, park the caret mid-line (End + 6×ArrowLeft), A→B→A, one typed
+  char lands at the saved position (`helloX world`, NOT `Xhello world`);
+  (b) `restored caret is clamped to the end when a collaborator shrinks the
+  note` — the owner parks the caret at the end of an 11-char note and
+  switches away; a LIVE edit collaborator (fresh browser context opening
+  the edit share link, syncing over the server relay) shrinks the note to
+  `hi` (2 chars); the owner's return clamps the stale caret to the end and
+  a typed char lands there (`hi!`, NOT `!hi`). Both e2e tests
+  sensitivity-verified: with the `selection` seed removed from
+  `Editor.svelte`, both fail (the caret defaults to 0 — `Xhello world` /
+  `!hi`). Full suite green twice: 323 unit + 130 e2e
+  (5 pre-existing skips).
+- Hand-off consumed: the iteration-11 note predicted the autofocus
+  spec's note-switch expectation would flip to `'alpha note!'` once
+  restoration landed — `e2e/autofocus.spec.ts` now asserts exactly
+  `'alpha note!'`.
+- Scope notes: in-memory / per-tab only (a reload starts at 0, per the
+  slice); caret only (selection restoration still out of scope); the frozen
+  `n/[id]` page also benefits because its note switch is an SPA navigation
+  and the module-level map survives it. No screenshot impact — caret
+  position is not asserted by any fixture (docker still unavailable here —
+  see Parked).
+- Learning: two LOCAL tabs of the same session do NOT sync in real time —
+  `y-indexeddb` is persistence-only (see Parked) — so the clamp e2e had to
+  use the server relay (a fresh context + edit link), not a second local
+  tab.
+
+### 21. Per-note undo history should survive note switches (iteration-12 discovery)
+
+- Premise (code-verified iteration 12): `Editor.svelte` constructs a fresh
+  `new Y.UndoManager(ytext)` in `onMount` and calls `undoManager.destroy()`
+  in its cleanup. The undo stack lives on the manager instance, so every
+  `{#key noteId}` remount (note switch, preview toggle, new note, import,
+  delete-current-note replacement) throws the note's entire undo/redo
+  history away: type in A, switch to B, come back, and Ctrl+Z does
+  nothing. Docs/Obsidian keep per-note history across switches within a
+  session; losing it makes the safety net of a writing app vanish exactly
+  when the user multitasks between notes.
+- Scope (smallest useful slice): a per-tab registry
+  (`WeakMap<Y.Text, Y.UndoManager>` in a small lib module) that creates a
+  manager on first mount of a note's Y.Text and REUSES it on later mounts
+  instead of destroying it on unmount. Re-verify the details: an
+  un-destroyed manager keeps observing its Y.Text (so it keeps recording
+  edits made while the note is closed, from any origin), and re-passing the
+  same manager to `yCollab` on remount re-registers the tracked origin
+  idempotently.
+- done-when: e2e — type in A, switch to B, switch back, and Ctrl+Z reverts
+  the A-typing (redo re-applies it); a preview-toggle round trip also
+  preserves the stack. `pnpm lint && pnpm check && pnpm test` green;
+  screenshots unaffected.
 
 ## Chord reservation audit (2026-08-21, run 2, iteration 1)
 
@@ -668,6 +720,20 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **y-indexeddb is persistence-only — no cross-tab sync (run 2, iteration
+  12):** `IndexeddbPersistence` (y-indexeddb 9.0.12) applies stored updates
+  exactly ONCE at construction (`fetchUpdates`) and stores local updates on
+  change (`doc.on('update', …)`), but has no BroadcastChannel / object-store
+  watch / polling — two tabs of the SAME local session do NOT see each
+  other's edits until a reload. Verified in the installed dist source.
+  Consequence: an e2e that needs a second LIVE local editor must use the
+  server relay (fresh browser context + edit share link), not a second tab
+  of the same context. The passive-recipient direction is reliable (share
+  spec's "owner edits appear live in an open shared view" is green); the
+  two-way convergence test remains `test.skip` (flaky). Product question
+  (not scoped): should local sessions sync across tabs (e.g. a
+  BroadcastChannel update exchange)? Today, editing the same session in two
+  tabs diverges until reload.
 - **Driving CM6 commands in unit tests (run 2, iteration 5):** `EditorState` has no
   `applyTransaction` — a command's `dispatch(tr)` receives a `Transaction`, and the
   resulting state is `tr.state` (lazily applied to `startState`). Pattern

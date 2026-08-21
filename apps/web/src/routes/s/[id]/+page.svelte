@@ -31,6 +31,7 @@
 	import { mailtoLink, sessionOwnerLink, sessionViewLink } from '$lib/share';
 	import { downloadNote } from '$lib/export';
 	import { scanTaskLines } from '$lib/task-lines';
+	import { forgetCaret } from '$lib/caret-memory';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -290,6 +291,7 @@
 	async function removeNoteById(id: string) {
 		await removeNote(docId(), id);
 		await deleteNote(id);
+		forgetCaret(id);
 		await syncMetadata();
 		if (id === noteId) {
 			if (notes.length > 0) {
@@ -451,7 +453,7 @@
 			</article>
 		{:else if noteId && ytext}
 			{#key noteId}
-				<Editor {ytext} editable={canWrite} />
+				<Editor {ytext} {noteId} editable={canWrite} />
 			{/key}
 		{/if}
 	</main>
