@@ -15,6 +15,7 @@
 	import { indentKeymap } from './cm-indent';
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
+	import { taskMarkerClick } from './cm-task-click';
 
 	let { ytext, editable = true }: { ytext: Y.Text; editable?: boolean } = $props();
 
@@ -87,6 +88,7 @@
 				titleLines,
 				EditorView.decorations.of((view) => view.state.field(titleLines)),
 				clickableLinks,
+				taskMarkerClick(undoManager),
 				cmPlaceholder('Start typing…'),
 				EditorView.lineWrapping,
 				EditorView.editable.of(editable),

@@ -6,12 +6,15 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 5)
+## Status (2026-08-21, run 2, iteration 6)
 
-- Iteration 5 shipped item 17 slice (a) — task-list Enter continuation verified and
-  regression-locked (9 unit + 5 e2e tests, no behavior change). Next unblocked: item 17
-  slice (b) (editor bracket-click toggle), then slice (c) (preview checkboxes),
-  18 (undo granularity), 12 (rebind Mod+N), 11 (chore).
+- Iteration 6 shipped item 17 slice (b) — editor bracket-click toggle
+  (`[ ]` ↔ `[x]` on a strict token click, 17 unit + 5 e2e tests, full suite
+  green: 286 unit + 114 e2e). It also fixed the e2e rate-limit flake (the suite
+  had turned red once the 8th concurrent share session landed): the playwright
+  webServer API now runs with generous rate-limit envs — e2e-only, production
+  defaults untouched. Next unblocked: item 17 slice (c) (preview checkboxes),
+  then 18 (undo granularity), 12 (rebind Mod+N), 11 (chore).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -432,16 +435,31 @@ What already works well (do not regress):
   the marker only when it is the first item or a blank line precedes it; the empty
   *second* item of a tight list first inserts a blank line (tight→loose), so exiting
   can take two Enters.
-- Slice (b) — editor bracket click: clicking strictly on the `[ ]`/`[x]` token
-  (the `TaskMarker` node) toggles it (`[ ]` ↔ `[x]`, one-char change through a
-  dispatch so y-collab/undo see it); clicks anywhere else on the line place the
-  cursor normally (return false / let the default happen). done-when: unit tests
-  for the token-range computation; e2e: clicking the bracket toggles, clicking
-  the word does not toggle and moves the caret; read-only view: click is a no-op.
-  Premise for the token probe (locked by slice (a)'s tests): the `TaskMarker` node
-  only exists with the marker's trailing space — `- [ ]` (no space) parses as a
-  plain Paragraph and `- [x]` as a Link, so a toggle dispatch must land on the
-  space at `TaskMarker.from + 2`.
+- Slice (b) — DONE (2026-08-21): editor bracket-click toggle. Evidence:
+  `src/lib/cm-task-click.ts` — `taskMarkerAt` (line-bounded `TaskMarker` tree
+  probe) + pure `toggleMarkerChange` + `taskMarkerClick` (`domEventHandlers`
+  click), wired in `Editor.svelte` after `clickableLinks` — with 17 unit tests
+  (`cm-task-click.test.ts`: token-range computation incl. both boundaries,
+  indented / multi-line / right-line-of-two markers, no-trailing-space and
+  invalid-middle-char lines not toggleable, fenced code no-op) + 5 e2e tests
+  (`e2e/task-lists.spec.ts`: toggle on→off round trip, word click does not
+  toggle and places the caret (verified by typing into the word), nested item
+  toggles only itself, own undo step, read-only shared-view no-op). Full suite
+  green: 286 unit + 114 e2e (5 pre-existing skips).
+  Semantics: an unmodified click whose `posAtCoords` position falls within the
+  `TaskMarker` range (inclusive both ends = the whole 3-char token) flips the
+  middle char (` ` ↔ `x`; `[X]` unchecks) as a single one-char dispatch with
+  `stopCapturing` undo isolation, and consumes the click (caret stays at the
+  click point). Modified clicks (ctrl/meta = link open, shift/alt = selection)
+  and read-only views fall through to default behavior.
+  **Premise correction** (locked by unit tests): the toggleable char is at
+  `TaskMarker.from + 1` (the middle of the 3-char token), NOT `from + 2` as the
+  slice-(a) premise said. Also locked: `- [x]` with no trailing content parses
+  as a `Link` and bare `- [ ]` as a `Paragraph` — neither has a `TaskMarker`, so
+  neither is toggleable.
+  Screenshots: click-handler-only change; the committed fixture contains no
+  task list and never clicks a marker, so no PNG can change (docker still
+  unavailable in this env — see Parked).
 - Slice (c) — preview checkboxes: make marked's `disabled` task checkbox
   interactive (custom `marked` extension/renderer emitting our own
   `<input type="checkbox" data-task-line={n}>`), wire a click handler in the
@@ -536,7 +554,12 @@ platforms (NVDA/JAWS use different modifiers).
   merely *adjacent* to the range (a cursor right after `)` still yields the link),
   so cursor-vs-link logic needs an explicit strict-containment check
   (`node.from < pos && pos < node.to`), and selection-vs-link logic an open-interval
-  overlap check.
+  overlap check. (4, run 2 iteration 6) The TreeCursor handed to an `enter` callback
+  is **reused and mutated** as the iteration advances: storing the reference
+  (`found = node`) and reading `.name/.from/.to` later yields whatever node the
+  cursor has moved to (observed: `Document`) — copy the needed values
+  (`{ from: n.from, to: n.to }`) INSIDE the callback, or re-resolve via
+  `tree.resolve(n.from, 1)`.
 - **Setext headings vs heading toggles (run 2, iteration 3):** item 15 no-ops on a
   setext heading — both the paragraph line above a `=`/`-` underline and the underline
   line itself — instead of converting it. A conversion is lossless and small (level N:
@@ -567,12 +590,23 @@ platforms (NVDA/JAWS use different modifiers).
   persists across `npx playwright test` invocations, so back-to-back runs fail more as the
   buckets stay drained; (b) manually starting a preview/API that then lingers makes `vite
   preview` pick a different port ("Port 4173 is in use… 4174") while Playwright still waits
-  on 4173, so editor-only tests hang at the 30s test timeout. **Recipe for a green local run:**
+  on 4173, so editor-only tests hang at the 30s test timeout.   **Recipe for a green local run:**
   kill any stale `mynotes-api` / `vite preview` procs and confirm ports 3000/4173 are free,
   then run `npx playwright test --config playwright.config.ts --workers=2` (Playwright starts
   fresh servers). Verified 3× green this way (66 passed). CI is unaffected — GitHub runners
   have few cores → few workers → low concurrency. Not committed as a config change (kept the
-  diff to the feature); revisit if a future iteration needs a stable default.
+  diff to the feature); revisit if a future iteration needed a stable default.
+  **RESOLVED (run 2, iteration 6):** root cause confirmed by differential runs — the suite
+  was green with 7 concurrent share sessions and red with 8 (a new read-only e2e test was the
+  8th): by the time the last share test ran, the per-IP token buckets (e.g. `RATE_WRITE_PER_MIN`
+  for `PUT /notes/{id}`) could be empty, the share flow's PUT 429s, and the share panel never
+  opens (the API does NOT log 429s, so the failure looks like a silent render stall). Fix:
+  `playwright.config.ts` webServer now starts the e2e API with generous limits
+  (`RATE_CREATE/WRITE/WS_PER_MIN=1000`, `RATE_READ_PER_MIN=5000`, `MAX_WS_PER_IP=100`) —
+  e2e-only envs, production defaults in `api/src/config.rs` untouched, and no e2e test depends
+  on the defaults (verified by grep). 2× full-suite green (114 passed) after the fix. The
+  stale-proc kill is still required because `reuseExistingServer: !CI` reuses a rate-limited
+  API process.
 - **CDP key dispatch bypasses browser accelerator handling (iteration 8):** in
   headless Playwright Chromium every chord reaches the page — Ctrl+N and
   Ctrl+Shift+N (both reserved in real browsers) as well as Ctrl+Alt+N. So e2e
@@ -586,6 +620,15 @@ platforms (NVDA/JAWS use different modifiers).
   placeholder inside the line), so `editorText(page)` is not `''` for an empty
   document — assert emptiness by typing into the note or by targeting
   `.cm-placeholder` instead.
+- **Clicking a specific character in e2e (run 2, iteration 6):** a `.cm-line` is a
+  FULL-WIDTH block (100% of the content area), so `locator('.cm-line').click()`
+  (element center) lands far past the end of any short line → `posAtCoords` clamps
+  to the line end. That is why the pre-existing "click the line" tests reliably put
+  the caret at the line end (and never on a left-aligned token like a `TaskMarker`).
+  To click a specific character, compute its pixel point in `page.evaluate`
+  (TreeWalker over the line's text nodes to find the offset, then a 1-char
+  `Range.getBoundingClientRect()` center) and `page.mouse.click(x, y)`. This is what
+  the task-list bracket-click tests use to hit the 3-char marker precisely.
 - **SvelteKit `goto()` URL timing (iteration 8):** client-side navigation
   updates the URL only after the navigation completes (~300 ms observed,
   includes an IndexedDB write in this app), so shortcut/navigation e2e tests
