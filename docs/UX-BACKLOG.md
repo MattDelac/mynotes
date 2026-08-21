@@ -6,12 +6,12 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 3)
+## Status (2026-08-21, run 2, iteration 4)
 
-- Iteration 3 shipped item 15 (heading toggles Mod+Alt+1..6 / Mod+Alt+0) as a
-  pure `applyHeading` + tree-aware `headingBlocked` in `cm-format.ts`. Next
-  unblocked: item 16 (Mod+K link), then 17 (task lists), 18 (undo granularity
-  for the other keymaps), 12 (rebind Mod+N), 11 (chore).
+- Iteration 4 shipped item 16 (Mod+K link command: selection/word/`[]()` insert,
+  clipboard URL auto-fill, unwrap toggle). Next unblocked: item 17 (task lists —
+  slice a first), then 18 (undo granularity for the other keymaps), 12 (rebind
+  Mod+N), 11 (chore).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -384,23 +384,38 @@ What already works well (do not regress):
   chords and headings already render styled, so no PNG can change (docker still
   unavailable in this env — see Parked).
 
-### 16. Link command: Mod+K
+### 16. DONE (2026-08-21): Link command — Mod+K
 
 - Evidence: `pasteURLAsLink` (built into `markdown()`, default on) already turns a
-  pasted URL over a selection into `[selection](pasted-url)` — document that in the
-  backlog (done here) so users/iterations know the paste path exists; Mod+K is the
-  deliberate counterpart.
-- Scope: `linkCommand()` in `cm-format.ts`:
-  - selection → `[sel](url)` where url is auto-filled from the clipboard when it holds
-    a URL (clipboard read via `navigator.clipboard.readText()`, best-effort — on
-    denial/failure fall back to empty url), cursor inside `()`;
-  - no selection, cursor on a word → the word becomes the label, cursor inside `()`;
-  - else insert `[]()` with the cursor inside `[]`;
-  - toggle: cursor/selection already inside a plain `[label](url)` → unwrap to the
-    label; no-op inside fenced code.
-- done-when: unit tests for the pure range computation; e2e for selection + clipboard
-  URL (grant clipboard permission in the test), word label, bare `[]()` insert,
-  unwrap, read-only no-op; full suite green.
+  pasted URL over a selection into `[selection](pasted-url)` — the paste path is
+  live and documented here; Mod+K is the deliberate keyboard counterpart.
+  `linkCommand()` + pure `applyLink()` + tree probes `linkProbe()`/`overlappingLink()`
+  in `src/lib/cm-format.ts`, `Mod-k` binding in `formatKeymap` (already wired in
+  `Editor.svelte`). 34 unit tests (`cm-format.test.ts`: wrap/word/pair/unwrap range
+  math, `[ ] ( )` as word boundaries, `clipboardUrl` validation, probe hit/miss
+  incl. boundaries and images) + 8 e2e tests (`e2e/link.spec.ts`: selection +
+  clipboard-URL auto-fill with toggle-off, no-URL empty parens with cursor verified
+  by typing, word label, bare `[]()`, unwrap from inside a link, concealment of
+  `[ ]()` marks on inactive lines, own-undo-step, read-only shared-session no-op).
+  Full suite green: 260 unit + 104 e2e (5 pre-existing skips).
+- Semantics: selection → `[sel](url)`; no selection, cursor on a word → `[word]()`,
+  cursor inside `()`; no word → `[]()`, cursor inside `[]`. Toggle: cursor or
+  selection strictly inside a `Link` node → unwrap to the label (label stays
+  selected, so a third press re-wraps). Cursor/selection inside an `Image` node, a
+  selection crossing a link/image boundary, or fenced code → no-op.
+- Clipboard: `navigator.clipboard.readText()` is async, so the wrap dispatches
+  immediately with `()` and the url is filled by a guarded follow-up dispatch
+  (only if the cursor is still between `](` and `)` with nothing in between).
+  Validation: absolute URL (`^[a-z][a-z\d+.-]*:\/\/\S+$`) after trim; anything else
+  (incl. `www.…` and `javascript:`) is ignored. Because the fill is a separate
+  transaction, a clipboard-filled link is TWO undo steps (wrap, then url) —
+  accepted: same-origin grouping can't be used safely across the async gap (see
+  item 18).
+- Word bounds for links exclude `[ ] ( )` (so a cursor next to an existing link
+  never swallows it into the new label).
+- Screenshots: keymap-only change; the committed fixture never presses Mod+K and
+  link marks were already concealed, so no PNG can change (docker still
+  unavailable in this env — see Parked).
 
 ### 17. Task lists (checkboxes)
 
@@ -489,6 +504,20 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **lezer cursor/node iteration gotchas (run 2, iteration 4):** three traps hit while
+  writing the Mod+K probes. (1) `Tree.iterate({enter})` hands the callback a
+  **TreeCursor**, and its `.node` getter returns an internal `BufferNode`/`TreeNode`
+  that has **no `.iterate`** — and `SyntaxNode` (an interface) has no `.iterate` at
+  all. To scan a subtree from a spec callback, either use the cursor's own
+  `cursor.iterate(enter)` (different signature: `(enter, leave)` args, not a spec
+  object) or walk `SyntaxNode.firstChild` / `.nextSibling` manually (what
+  `linkLabelEnd` now does). (2) `tree.resolve(pos, 1)` at a link's start returns the
+  innermost node starting there — the `[` `LinkMark`, not the `Link` — so go one
+  `.parent` up (guard on the name). (3) `tree.iterate({from, to})` reports nodes
+  merely *adjacent* to the range (a cursor right after `)` still yields the link),
+  so cursor-vs-link logic needs an explicit strict-containment check
+  (`node.from < pos && pos < node.to`), and selection-vs-link logic an open-interval
+  overlap check.
 - **Setext headings vs heading toggles (run 2, iteration 3):** item 15 no-ops on a
   setext heading — both the paragraph line above a `=`/`-` underline and the underline
   line itself — instead of converting it. A conversion is lossless and small (level N:

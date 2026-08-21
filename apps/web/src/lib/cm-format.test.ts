@@ -4,8 +4,12 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import {
 	applyFormat,
 	applyHeading,
+	applyLink,
+	clipboardUrl,
 	headingBlocked,
 	insideFencedCode,
+	linkProbe,
+	overlappingLink,
 	type FormatMark,
 	type FormatResult,
 	type HeadingResult
@@ -380,5 +384,182 @@ describe('headingBlocked', () => {
 	it('allows the line after a table when a blank line separates them', () => {
 		const doc = '| a | b |\n| --- | --- |\n| c | d |\n\nafter';
 		expect(headingBlocked(makeState(doc, 39), lineAt(doc, 39))).toBe(false);
+	});
+});
+
+function link(doc: string, from: number, to: number, url = '') {
+	return apply(doc, applyLink({ doc, from, to, url }));
+}
+
+describe('applyLink — wrap', () => {
+	it('wraps a selection with the url and parks the cursor inside the parens', () => {
+		const r = applyLink({ doc: 'Hello world', from: 6, to: 11, url: 'https://e.com' });
+		expect(apply('Hello world', r)).toBe('Hello [world](https://e.com)');
+		expect(r.kind).toBe('wrap');
+		expect(r.anchor).toBe(27);
+		expect(r.head).toBe(27);
+	});
+
+	it('wraps a selection with empty parens when there is no url', () => {
+		const r = applyLink({ doc: 'Hello world', from: 6, to: 11, url: '' });
+		expect(apply('Hello world', r)).toBe('Hello [world]()');
+		expect(r.anchor).toBe(14);
+		expect(r.head).toBe(14);
+	});
+
+	it('links the word under the cursor', () => {
+		expect(link('see docs here', 4, 4, 'https://d.dev')).toBe('see [docs](https://d.dev) here');
+	});
+
+	it('links the word to the left of the cursor', () => {
+		expect(link('see docs here', 3, 3, '')).toBe('[see]() docs here');
+	});
+
+	it('links the word to the right of the cursor', () => {
+		expect(link('see docs here', 4, 4, '')).toBe('see [docs]() here');
+	});
+
+	it('treats link punctuation as a word boundary', () => {
+		expect(link('[a](b) x', 7, 7, '')).toBe('[a](b) [x]()');
+		expect(link('x [a](b)', 1, 1, '')).toBe('[x]() [a](b)');
+	});
+
+	it('inserts []() with the cursor inside the brackets when there is no word', () => {
+		const r = applyLink({ doc: '', from: 0, to: 0, url: 'https://e.com' });
+		expect(apply('', r)).toBe('[]()');
+		expect(r.kind).toBe('pair');
+		expect(r.anchor).toBe(1);
+		expect(r.head).toBe(1);
+	});
+
+	it('inserts []() between words', () => {
+		const r = applyLink({ doc: 'ab  cd', from: 3, to: 3, url: '' });
+		expect(apply('ab  cd', r)).toBe('ab []() cd');
+		expect(r.anchor).toBe(4);
+	});
+
+	it('wraps a multi-line selection as plain text', () => {
+		expect(link('a\nb', 0, 3, '')).toBe('[a\nb]()');
+	});
+});
+
+describe('applyLink — unwrap', () => {
+	const unwrap = { from: 0, to: 11, labelFrom: 1, labelTo: 5 };
+
+	it('removes the brackets and the url, selecting the label', () => {
+		const r = applyLink({ doc: '[text](url)', from: 3, to: 3, url: '', unwrap });
+		expect(apply('[text](url)', r)).toBe('text');
+		expect(r.kind).toBe('unwrap');
+		expect(r.anchor).toBe(0);
+		expect(r.head).toBe(4);
+	});
+
+	it('unwraps a reference-style link (no url part)', () => {
+		const r = applyLink({
+			doc: '[label]',
+			from: 3,
+			to: 3,
+			url: '',
+			unwrap: { from: 0, to: 7, labelFrom: 1, labelTo: 6 }
+		});
+		expect(apply('[label]', r)).toBe('label');
+		expect(r.anchor).toBe(0);
+		expect(r.head).toBe(5);
+	});
+
+	it('unwraps a link in the middle of a line', () => {
+		const r = applyLink({
+			doc: 'a [b](c) d',
+			from: 4,
+			to: 4,
+			url: '',
+			unwrap: { from: 2, to: 8, labelFrom: 3, labelTo: 4 }
+		});
+		expect(apply('a [b](c) d', r)).toBe('a b d');
+		expect(r.anchor).toBe(2);
+		expect(r.head).toBe(3);
+	});
+});
+
+describe('clipboardUrl', () => {
+	it('accepts http(s) urls', () => {
+		expect(clipboardUrl('https://example.com/a?b=c')).toBe('https://example.com/a?b=c');
+		expect(clipboardUrl('http://x.y')).toBe('http://x.y');
+	});
+
+	it('accepts other absolute schemes', () => {
+		expect(clipboardUrl('ftp://files.example.com/x')).toBe('ftp://files.example.com/x');
+	});
+
+	it('trims surrounding whitespace', () => {
+		expect(clipboardUrl('  https://e.com  ')).toBe('https://e.com');
+	});
+
+	it('rejects non-urls', () => {
+		expect(clipboardUrl('hello world')).toBe('');
+		expect(clipboardUrl('javascript:alert(1)')).toBe('');
+		expect(clipboardUrl('www.example.com')).toBe('');
+		expect(clipboardUrl('')).toBe('');
+	});
+
+	it('rejects urls with trailing text', () => {
+		expect(clipboardUrl('https://e.com and more')).toBe('');
+	});
+});
+
+describe('linkProbe', () => {
+	it('finds a link from the label', () => {
+		const p = linkProbe(makeState('a [b c](u) z', 5), 5);
+		expect(p).toEqual({ kind: 'link', from: 2, to: 10, labelFrom: 3, labelTo: 6 });
+	});
+
+	it('finds a link from the url part', () => {
+		const p = linkProbe(makeState('[text](url)', 8), 8);
+		expect(p?.kind).toBe('link');
+		expect(p).toHaveProperty('labelTo', 5);
+	});
+
+	it('finds a reference-style link', () => {
+		const p = linkProbe(makeState('[label]', 3), 3);
+		expect(p).toEqual({ kind: 'link', from: 0, to: 7, labelFrom: 1, labelTo: 6 });
+	});
+
+	it('returns null at the boundaries of a link', () => {
+		expect(linkProbe(makeState('[text](url)', 0), 0)).toBeNull();
+		expect(linkProbe(makeState('[text](url)', 11), 11)).toBeNull();
+	});
+
+	it('returns image for a cursor inside an image', () => {
+		expect(linkProbe(makeState('![alt](img)', 3), 3)).toEqual({ kind: 'image' });
+	});
+
+	it('returns null for plain text', () => {
+		expect(linkProbe(makeState('just text', 4), 4)).toBeNull();
+	});
+});
+
+describe('overlappingLink', () => {
+	const doc = 'see [a](b) and [c](d) here';
+
+	it('finds a link the selection starts inside', () => {
+		expect(overlappingLink(makeState(doc, 0), 8, 13)?.kind).toBe('link');
+	});
+
+	it('finds a link the selection ends on', () => {
+		const p = overlappingLink(makeState(doc, 0), 0, 10);
+		expect(p).toEqual({ kind: 'link', from: 4, to: 10, labelFrom: 5, labelTo: 6 });
+	});
+
+	it('finds a link the selection fully covers', () => {
+		const p = overlappingLink(makeState(doc, 0), 4, 10);
+		expect(p).toEqual({ kind: 'link', from: 4, to: 10, labelFrom: 5, labelTo: 6 });
+	});
+
+	it('returns null when the selection avoids the links', () => {
+		expect(overlappingLink(makeState(doc, 0), 10, 15)).toBeNull();
+	});
+
+	it('returns image for a selection inside an image', () => {
+		expect(overlappingLink(makeState('![alt](img)', 0), 1, 4)).toEqual({ kind: 'image' });
 	});
 });
