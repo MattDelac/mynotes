@@ -267,23 +267,57 @@ What already works well (do not regress):
   tables, so no docker regeneration was needed (the earlier "blocked on docker" note
   conflated *showing* alignment in the PNGs with the feature itself working).
 
-### 10. Images: committed design doc first (implementation later)
+### 10. DONE (2026-08-20): Images — committed design doc (`docs/IMAGES.md`)
 
-- Evidence: seed requirement — the first deliverable is a design doc, not code.
-- Scope: write `docs/IMAGES.md` covering: client-side AES-GCM encryption of image bytes
-  (per-session key or per-image keys), opaque blob upload endpoint reusing the
-  zero-knowledge API (new `POST /blobs`-style endpoint or reuse of `/notes` with a
-  kind), size caps + rate limits via existing `api/src/config.rs` abuse limits,
-  markdown syntax (`![alt](mynotes:blobId)` resolved client-side), rendering in editor
-  + preview, and what happens when a session is shared.
-- done-when: `docs/IMAGES.md` committed, reviewed against the hard rules (zero-knowledge
-  stays intact, markdown storage format unchanged, no new dependencies).
+- Evidence: `docs/IMAGES.md` committed. It pins: per-session AES-GCM keying (no
+  per-image keys); client-chosen UUID blob ids embedded as `![alt](mynotes:<id>)` so
+  sharing needs **no markdown rewrite**; a write-once, idempotent `PUT/GET /blobs/{id}`
+  with no edit token; a new `MAX_IMAGE_SIZE` (5 MB) config plus the router-wide
+  `DefaultBodyLimit` fix (today it is capped at the 2 MB snapshot size and would reject
+  large images before the handler); paste/drag-drop insertion + downscale (≤2048 px,
+  WebP 0.8); an editor chip token + data-URL preview with a DOMPurify `mynotes:` allow;
+  a zero-knowledge review; a 4-phase rollout plan; and a test plan incl. a zero-knowledge
+  e2e assertion. Hard rules verified: zero-knowledge intact (server sees only ciphertext),
+  markdown storage format unchanged, no new dependencies. Implementation split into 13–16.
 
-### 11. Chore: remove dead editor API
+### 13. Images — Phase 1: server blob store (API only, additive)
 
-- Evidence: `insertAtCursor` and `focus` are exported from `Editor.svelte` but unused
-  anywhere (grep over `src/`).
-- done-when: removed; `pnpm check` green.
+- Evidence: scope in `docs/IMAGES.md` §6 and §13 (Phase 1).
+- Scope: `api/migrations/0004_blobs.sql` (`blobs` table); `config.rs` `max_image_size`
+  (+ `MAX_IMAGE_SIZE` env, default 5 MB) and raise `DefaultBodyLimit` to
+  `max(max_snapshot_size, max_image_size)`; `lib.rs` `PUT /blobs/{id}` (write-once,
+  201/204, 413 over cap) + `GET /blobs/{id}` (200/404, throttled `last_activity` touch)
+  + extend `cleanup_expired` to sweep blobs. Cargo tests. No frontend change.
+- done-when: `cargo fmt --check && cargo clippy -- -D warnings && cargo test` green;
+  blob endpoints + TTL sweep verified in tests.
+
+### 14. Images — Phase 2: client local insert + render (local-only sessions)
+
+- Evidence: scope in `docs/IMAGES.md` §4.2, §7.1, §7.2, §13 (Phase 2).
+- Scope: `db.ts` `blobs` store (schema v3); `lib/images.ts` (downscale,
+  `parseMynotesRefs`, local resolve-to-data-URL); paste + drag-drop insertion; editor
+  `mynotes:` chip decoration; preview DOMPurify `mynotes:` allow + async data-URL pass +
+  placeholder. Unit + e2e (local). Screenshots fixture + regenerate (docker).
+- done-when: `pnpm lint && pnpm check && pnpm test` green; e2e proves a pasted image
+  becomes a `mynotes:` ref and renders in preview.
+
+### 15. Images — Phase 3: sharing (zero-knowledge path)
+
+- Evidence: scope in `docs/IMAGES.md` §5, §7.4, §8, §13 (Phase 3).
+- Scope: `api.ts`/`share.ts` `uploadBlob`/`fetchBlob`; `shareSession()` uploads referenced
+  blobs at share time; insert-into-shared-session uploads on insert; viewer fetch +
+  decrypt + render. e2e: a second view-only context renders the image; zero-knowledge
+  assertion (stored bytes are not the plaintext and only decrypt with the session key);
+  write-once (second PUT → 204, bytes unchanged).
+- done-when: e2e green incl. the zero-knowledge + write-once assertions.
+
+### 16. Images — Phase 4: polish + screenshots
+
+- Evidence: scope in `docs/IMAGES.md` §9, §11, §13 (Phase 4).
+- Scope: lazy local GC of unreferenced blobs; placeholder/retry UX for missing blobs;
+  mobile feel; add an image to the `screenshots.spec.ts` fixture and regenerate with
+  `pnpm screenshots` (docker) so the committed PNGs show the feature.
+- done-when: `pnpm screenshots` regenerated + committed; no regressions.
 
 ### 12. Follow-up: Mod+N (new session) is likely a dead binding in real browsers
 
@@ -299,8 +333,19 @@ What already works well (do not regress):
   bound. (Real-browser verification of the old chord is not possible from this
   loop — the choice is based on the browsers' reserved-shortcut lists.)
 
+### 11. Chore: remove dead editor API
+
+- Evidence: `insertAtCursor` and `focus` are exported from `Editor.svelte` but unused
+  anywhere (grep over `src/`).
+- done-when: removed; `pnpm check` green.
+
 ## Parked (noticed, not yet scoped)
 
+- **gnhf worktree env quirk (iteration 10):** the bash tool's cwd is
+  `/home/matt/workspace`, NOT the worktree — relative paths (`docs/`, `apps/`) fail
+  until you use absolute paths or the `workdir` param. Also `node_modules` is absent in a
+  fresh worktree; run `pnpm install` from the repo root before any code work (this
+  iteration was doc-only, so no install/test run was needed).
 - **e2e suite is flaky on a 24-core box with a reused/stale API (iteration 9):** the
   local machine has 24 cores, so Playwright defaults to 12 concurrent workers; ~16 tests
   share a session (each a `POST /notes` + `PUT` snapshot + WS, some opening a 2nd viewer
