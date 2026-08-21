@@ -6,20 +6,24 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 10)
+## Status (2026-08-21, run 2, iteration 11)
 
-- Iteration 10 shipped item 11 (chore) — the dead `insertAtCursor` / `focus`
-  exports are removed from `Editor.svelte`, plus the orphaned
-  `let editor = $state<Editor | null>(null)` + `bind:this={editor}` in both
-  `s/[id]` and `n/[id]` pages (the bound variable was never read anywhere —
-  grep-verified before removal). `pnpm lint && pnpm check && pnpm test` green:
-  0 errors / 0 warnings, 314 unit tests. No user-facing behavior changed, so
-  no e2e or screenshot impact. The iteration-10 re-audit found two further
-  writing-experience gaps and seeded them as item 19 (editor autofocus —
-  today the first keystroke after load or note switch is lost until a click,
-  since nothing in `src/` ever focuses the editor) and item 20 (per-note caret
-  restoration — note switches remount the editor with the selection at 0).
-  Next unblocked: item 19.
+- Iteration 11 shipped item 19 — editor autofocus. `Editor.svelte`'s
+  `onMount` now calls `view.focus()` immediately after the `EditorView` is
+  created, gated on the `editable` prop: the caret is live on first load,
+  after every `{#key noteId}` remount (note switch, new note, import,
+  delete-current-note replacement, preview toggle off), and read-only shared
+  views never autofocus. 3 e2e tests (`e2e/autofocus.spec.ts`): zero-click
+  typing after load, refocus across a note switch (both verified sensitive —
+  they fail with the fix removed), and `document.activeElement === <body>` in
+  a read-only shared view. Full suite green twice: 314 unit + 128 e2e
+  (5 pre-existing skips). No screenshot impact: the fixture screenshots
+  already pass `caret: 'hide'` + `animations: 'disabled'`, so the focused
+  caret cannot change any PNG (docker still unavailable in this env — see
+  Parked). Next unblocked: item 20. Hand-off for item 20: the autofocus
+  spec's note-switch test asserts the typed char lands in note A as
+  `'!alpha note'` (caret at 0, pre-restoration) — when caret restoration
+  lands, that expectation moves to `'alpha note!'`.
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -584,7 +588,7 @@ What already works well (do not regress):
   (0 errors / 0 warnings, 314 unit). No behavior change → no e2e/screenshot
   impact.
 
-### 19. Editor autofocus — typing should start without a click (iteration-10 discovery)
+### 19. DONE (2026-08-21, iteration 11): Editor autofocus — typing starts without a click
 
 - Premise (code-verified iteration 10): nothing in `src/` ever focuses the
   editor — no `focus()` call, no `autofocus` attribute. After load (or a note
@@ -598,13 +602,21 @@ What already works well (do not regress):
   remount the editor). Read-only shared views must NOT autofocus (no caret to
   show, and no surprise focus). Mobile consequence (virtual keyboard opens on
   load) is accepted: the user opened a note page to write.
-- done-when: e2e — (a) navigate to a fresh session and type with ZERO clicks:
-  the text appears (sensitivity: this fails today); (b) read-only shared view:
-  `document.activeElement` is not the editor; (c) switching notes refocuses the
-  editor (type in A, switch to B, type again in A without clicking).
-  `pnpm lint && pnpm check && pnpm test` green; screenshots unaffected (a caret
-  is not asserted by any fixture — verify by inspecting the committed fixtures'
-  interactions before claiming this).
+- Evidence: `Editor.svelte`'s `onMount` calls `view.focus()` immediately after
+  `new EditorView(...)` when the `editable` prop is true — one line; both
+  routes benefit (`n/[id]` passes `editable={data.shared.owner}` on shared
+  notes, default `true` otherwise), so read-only shared views never autofocus.
+  3 e2e tests (`e2e/autofocus.spec.ts`): (a) zero-click typing right after load
+  — verified sensitive, fails with the fix removed; (b) read-only shared view
+  keeps `document.activeElement` at `<body>`; (c) refocus across a note switch
+  — type in A, new note + type in B (no clicks), back to A + type (no click),
+  char verified to land in A — verified sensitive too. Full suite green twice:
+  314 unit + 128 e2e (5 pre-existing skips). Screenshots: none regenerated —
+  the fixtures' `page.screenshot` calls already pass `caret: 'hide'` +
+  `animations: 'disabled'`, so a focused caret cannot change a committed PNG
+  (docker still unavailable in this env — see Parked). Note for item 20: the
+  note-switch test's final expectation is `'!alpha note'` (caret at 0,
+  pre-restoration); it becomes `'alpha note!'` once caret restoration lands.
 
 ### 20. Restore per-note caret position on note switch (iteration-10 discovery)
 

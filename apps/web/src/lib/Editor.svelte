@@ -106,6 +106,7 @@
 			]
 		});
 		view = new EditorView({ state, parent: container });
+		if (editable) view.focus();
 		return () => {
 			undoManager.destroy();
 			view?.destroy();
