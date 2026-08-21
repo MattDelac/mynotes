@@ -7,6 +7,7 @@ use std::time::Instant;
 pub struct Config {
     pub max_blob_size: usize,
     pub max_snapshot_size: usize,
+    pub max_image_size: usize,
     pub max_room_bytes: usize,
     pub max_room_updates: u64,
     pub ttl_days: u64,
@@ -54,6 +55,7 @@ impl Config {
         Self {
             max_blob_size: env_usize("MAX_BLOB_SIZE", 64 * 1024),
             max_snapshot_size: env_usize("MAX_SNAPSHOT_SIZE", 2 * 1024 * 1024),
+            max_image_size: env_usize("MAX_IMAGE_SIZE", 5 * 1024 * 1024),
             max_room_bytes: env_usize("MAX_ROOM_BYTES", 10 * 1024 * 1024),
             max_room_updates: env_u64("MAX_ROOM_UPDATES", 5_000),
             ttl_days: env_u64("TTL_DAYS", 90),

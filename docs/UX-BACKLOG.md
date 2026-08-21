@@ -280,10 +280,23 @@ What already works well (do not regress):
   e2e assertion. Hard rules verified: zero-knowledge intact (server sees only ciphertext),
   markdown storage format unchanged, no new dependencies. Implementation split into 13–16.
 
-### 13. Images — Phase 1: server blob store (API only, additive)
+### 13. DONE (2026-08-20): Images — Phase 1: server blob store (API only, additive)
 
-- Evidence: scope in `docs/IMAGES.md` §6 and §13 (Phase 1).
-- Scope: `api/migrations/0004_blobs.sql` (`blobs` table); `config.rs` `max_image_size`
+- Evidence: `api/migrations/0004_blobs.sql` (`blobs` table + `last_activity` index);
+  `config.rs` `max_image_size` (`MAX_IMAGE_SIZE` env, default 5 MB) with the router
+  `DefaultBodyLimit` raised to `max(max_snapshot_size, max_image_size)`; `lib.rs`
+  `put_blob` (write-once: `201 {id}` / `204` on conflict / `413` over cap / `400`
+  empty, `create` rate bucket, no token) + `get_blob` (`200` / `404`, `read` bucket,
+  throttled `last_activity` touch via the now table-generic `touch_activity`) +
+  `cleanup_expired` extended to sweep stale blobs
+  (`COALESCE(last_activity, created_at)`) and return/log a third count. 9 new tests in
+  `api/tests/blobs.rs` (roundtrip + write-once immutability, 404, 400, 413, body-limit
+  admits up to the image cap despite a 64-byte snapshot cap, create/read 429s, activity
+  touch, TTL sweep spares `fresh`/`viewed` blobs); `defense.rs` updated for the new
+  config field and 3-tuple. `cargo fmt --check && cargo clippy --all-targets -- -D
+  warnings && cargo test` all green (25 tests). No frontend change; PLAN.md + AGENTS.md
+  contract tables updated in the same commit.
+- Scope (done): `api/migrations/0004_blobs.sql` (`blobs` table); `config.rs` `max_image_size`
   (+ `MAX_IMAGE_SIZE` env, default 5 MB) and raise `DefaultBodyLimit` to
   `max(max_snapshot_size, max_image_size)`; `lib.rs` `PUT /blobs/{id}` (write-once,
   201/204, 413 over cap) + `GET /blobs/{id}` (200/404, throttled `last_activity` touch)
@@ -346,6 +359,10 @@ What already works well (do not regress):
   until you use absolute paths or the `workdir` param. Also `node_modules` is absent in a
   fresh worktree; run `pnpm install` from the repo root before any code work (this
   iteration was doc-only, so no install/test run was needed).
+- **bash `workdir` param silently ignored (iteration 11):** passing `workdir` to the
+  bash tool did NOT change the cwd in this run — `cargo fmt` ran from
+  `/home/matt/workspace` and failed with "could not find Cargo.toml". Use an explicit
+  `cd <worktree>/api && cargo …` chain instead of the `workdir` param.
 - **e2e suite is flaky on a 24-core box with a reused/stale API (iteration 9):** the
   local machine has 24 cores, so Playwright defaults to 12 concurrent workers; ~16 tests
   share a session (each a `POST /notes` + `PUT` snapshot + WS, some opening a 2nd viewer

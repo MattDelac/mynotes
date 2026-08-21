@@ -24,6 +24,7 @@ fn test_config() -> Config {
     Config {
         max_blob_size: 64 * 1024,
         max_snapshot_size: 2 * 1024 * 1024,
+        max_image_size: 5 * 1024 * 1024,
         max_room_bytes: 10 * 1024 * 1024,
         max_room_updates: 5_000,
         ttl_days: 90,
@@ -337,9 +338,10 @@ async fn cleanup_removes_expired_rooms_and_orphan_updates() {
         .await
         .unwrap();
 
-    let (notes, updates) = cleanup_expired(&pool, 90).await.unwrap();
+    let (notes, updates, blobs) = cleanup_expired(&pool, 90).await.unwrap();
     assert_eq!(notes, 1);
     assert_eq!(updates, 2);
+    assert_eq!(blobs, 0);
 
     let remaining = sqlx::query_as::<_, (String,)>("SELECT id FROM notes")
         .fetch_all(&pool)
@@ -361,6 +363,6 @@ async fn cleanup_keeps_recently_active_rooms() {
     .await
     .unwrap();
 
-    let (notes, _) = cleanup_expired(&pool, 90).await.unwrap();
+    let (notes, _, _) = cleanup_expired(&pool, 90).await.unwrap();
     assert_eq!(notes, 0);
 }

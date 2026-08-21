@@ -47,6 +47,8 @@ Zero-knowledge encrypted blob store. No auth, no accounts.
 | `POST /notes`    | Store encrypted blob `{ id, ciphertext, created_at, updated_at }`  |
 | `GET /notes/:id` | Fetch blob                                                         |
 | `PUT /notes/:id` | Owner re-push, protected by an edit token (also in URL fragment)   |
+| `PUT /blobs/:id` | Store opaque encrypted image blob (write-once, idempotent)         |
+| `GET /blobs/:id` | Fetch image blob (ciphertext)                                      |
 
 Optional blob TTL (e.g., auto-delete after 30 days).
 
@@ -72,6 +74,14 @@ Optional blob TTL (e.g., auto-delete after 30 days).
   unencrypted copy"
 - On mobile, uses the standard share/download flow (lands in Files)
 - No server involvement; works fully offline
+
+### Images
+
+- Notes can embed images as `![alt](mynotes:<id>)` references; the bytes are
+  encrypted with the session key and stored as opaque blobs — the server stays
+  zero-knowledge (full design: `docs/IMAGES.md`)
+- Rollout is phased: the server blob API has shipped; client insertion
+  (paste/drag-drop), local rendering, and sharing follow in the UX backlog
 
 ### Send via email
 
@@ -111,7 +121,7 @@ focused on notes + collaboration.
 
 - Presence/awareness (collaborator cursors, names)
 - Accounts
-- Rich text, images, drawing
+- Rich text, drawing (images are in scope as encrypted blob references)
 - Server-side AI proxying
 
 ## Open Decisions

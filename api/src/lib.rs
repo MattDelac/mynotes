@@ -8,7 +8,7 @@ use axum::{
     },
     http::{request::Parts, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -51,9 +51,15 @@ pub fn app(state: AppState) -> Router {
         .route("/notes", post(create_note))
         .route("/notes/{id}", get(get_note).put(update_note))
         .route("/rooms/{id}/updates", get(room_updates))
-        .route("/rooms/{id}/snapshot", axum::routing::put(room_snapshot))
+        .route("/rooms/{id}/snapshot", put(room_snapshot))
+        .route("/blobs/{id}", get(get_blob).put(put_blob))
         .route("/ws/{room}", get(ws_handler))
-        .layer(DefaultBodyLimit::max(state.config.max_snapshot_size))
+        .layer(DefaultBodyLimit::max(
+            state
+                .config
+                .max_snapshot_size
+                .max(state.config.max_image_size),
+        ))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -140,7 +146,7 @@ fn internal_error(context: &str, e: impl std::fmt::Display) -> Response {
     error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
 }
 
-fn touch_activity(state: &AppState, room: &str) {
+fn touch_activity(state: &AppState, table: &str, key: &str) {
     let now = Instant::now();
     let should_touch = {
         let mut map = state.activity.lock().expect("activity lock poisoned");
@@ -148,28 +154,32 @@ fn touch_activity(state: &AppState, room: &str) {
             map.clear();
         }
         let due = map
-            .get(room)
+            .get(key)
             .is_none_or(|last| now.duration_since(*last) > ACTIVITY_TOUCH_INTERVAL);
         if due {
-            map.insert(room.to_string(), now);
+            map.insert(key.to_string(), now);
         }
         due
     };
     if should_touch {
         let pool = state.pool.clone();
-        let room = room.to_string();
+        let table = table.to_string();
+        let key = key.to_string();
         tokio::spawn(async move {
-            let _ = sqlx::query(
-                "UPDATE notes SET last_activity = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
-            )
-            .bind(room)
+            let _ = sqlx::query(&format!(
+                "UPDATE {table} SET last_activity = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+            ))
+            .bind(key)
             .execute(&pool)
             .await;
         });
     }
 }
 
-pub async fn cleanup_expired(pool: &SqlitePool, ttl_days: u64) -> Result<(u64, u64), sqlx::Error> {
+pub async fn cleanup_expired(
+    pool: &SqlitePool,
+    ttl_days: u64,
+) -> Result<(u64, u64, u64), sqlx::Error> {
     let notes = sqlx::query(
         "DELETE FROM notes WHERE COALESCE(last_activity, updated_at) < \
          strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?)",
@@ -183,7 +193,15 @@ pub async fn cleanup_expired(pool: &SqlitePool, ttl_days: u64) -> Result<(u64, u
             .execute(pool)
             .await?
             .rows_affected();
-    Ok((notes, updates))
+    let blobs = sqlx::query(
+        "DELETE FROM blobs WHERE COALESCE(last_activity, created_at) < \
+         strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?)",
+    )
+    .bind(format!("-{ttl_days} days"))
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok((notes, updates, blobs))
 }
 
 pub fn spawn_cleanup_task(pool: SqlitePool, config: Config) -> tokio::task::JoinHandle<()> {
@@ -197,8 +215,8 @@ pub fn spawn_cleanup_task(pool: SqlitePool, config: Config) -> tokio::task::Join
         loop {
             interval.tick().await;
             match cleanup_expired(&pool, config.ttl_days).await {
-                Ok((notes, updates)) if notes > 0 => {
-                    tracing::info!(notes, updates, "expired shares removed");
+                Ok((notes, updates, blobs)) if notes > 0 || updates > 0 || blobs > 0 => {
+                    tracing::info!(notes, updates, blobs, "expired shares removed");
                 }
                 Ok(_) => {}
                 Err(e) => tracing::error!(error = %e, "cleanup failed"),
@@ -357,6 +375,65 @@ async fn update_note(
         Ok(done) if done.rows_affected() > 0 => StatusCode::NO_CONTENT.into_response(),
         Ok(_) => error_response(StatusCode::FORBIDDEN, "invalid id or edit token"),
         Err(e) => internal_error("failed to update note", e),
+    }
+}
+
+async fn put_blob(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    peer: PeerAddr,
+    body: Bytes,
+) -> Response {
+    let ip = client_ip(&headers, &peer, state.config.trust_proxy_headers);
+    if let Err(retry_after) = state.limiters.create.check(ip) {
+        return too_many_requests(retry_after);
+    }
+    if body.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "empty body");
+    }
+    if body.len() > state.config.max_image_size {
+        return error_response(StatusCode::PAYLOAD_TOO_LARGE, "image too large");
+    }
+    let result = sqlx::query(
+        "INSERT INTO blobs (id, ciphertext, last_activity) \
+         VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) \
+         ON CONFLICT(id) DO NOTHING",
+    )
+    .bind(&id)
+    .bind(body.as_ref())
+    .execute(&state.pool)
+    .await;
+    match result {
+        Ok(done) if done.rows_affected() > 0 => {
+            (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
+        }
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => internal_error("failed to store blob", e),
+    }
+}
+
+async fn get_blob(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    peer: PeerAddr,
+) -> Response {
+    let ip = client_ip(&headers, &peer, state.config.trust_proxy_headers);
+    if let Err(retry_after) = state.limiters.read.check(ip) {
+        return too_many_requests(retry_after);
+    }
+    let row = sqlx::query_as::<_, (Vec<u8>,)>("SELECT ciphertext FROM blobs WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.pool)
+        .await;
+    match row {
+        Ok(Some((ciphertext,))) => {
+            touch_activity(&state, "blobs", &id);
+            (StatusCode::OK, ciphertext).into_response()
+        }
+        Ok(None) => error_response(StatusCode::NOT_FOUND, "blob not found"),
+        Err(e) => internal_error("failed to fetch blob", e),
     }
 }
 
@@ -521,7 +598,7 @@ async fn handle_socket(
                         .await;
                         match result {
                             Ok(_) => {
-                                touch_activity(&state, &room);
+                                touch_activity(&state, "notes", &room);
                                 let _ = tx.send(blob.to_vec());
                             }
                             Err(e) => {

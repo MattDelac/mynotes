@@ -59,7 +59,7 @@ cargo fmt --check
 
 Env vars: `DATABASE_URL` (default `sqlite:mynotes.db`), `BIND_ADDR` (default `0.0.0.0:3000`).
 Abuse-protection env vars (`api/src/config.rs`, all with defaults): `MAX_BLOB_SIZE` (64KB),
-`MAX_SNAPSHOT_SIZE` (2MB), `MAX_ROOM_BYTES` (10MB), `MAX_ROOM_UPDATES` (5000), `TTL_DAYS` (90,
+`MAX_SNAPSHOT_SIZE` (2MB), `MAX_IMAGE_SIZE` (5MB), `MAX_ROOM_BYTES` (10MB), `MAX_ROOM_UPDATES` (5000), `TTL_DAYS` (90,
 0 disables — background task deletes inactive rooms), `CLEANUP_INTERVAL_SECS` (3600),
 `RATE_CREATE_PER_MIN` (10), `RATE_WRITE_PER_MIN` (30), `RATE_READ_PER_MIN` (120),
 `RATE_WS_PER_MIN` (20) — per-IP token buckets, 429 + `Retry-After`; `MAX_WS_PER_IP` (10),
@@ -76,6 +76,8 @@ Abuse-protection env vars (`api/src/config.rs`, all with defaults): `MAX_BLOB_SI
 | `PUT /notes/{id}`              | requires `x-edit-token` header → `204`, `403` on bad token            |
 | `GET /rooms/{id}/updates?after=` | → `{updates: [{seq, blob(base64url)}]}` — encrypted Yjs update log  |
 | `PUT /rooms/{id}/snapshot`     | requires `x-edit-token` → replaces update log with encrypted snapshot |
+| `PUT /blobs/{id}`              | write-once ciphertext store → `201 {id}`, `204` if already present    |
+| `GET /blobs/{id}`              | → `200` ciphertext bytes, `404` if missing                           |
 | `GET /ws/{room}`               | WebSocket relay; first text message `{edit_token}` grants write       |
 
 ## Collaboration architecture
