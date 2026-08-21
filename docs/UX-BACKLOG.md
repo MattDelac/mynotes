@@ -6,12 +6,12 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 4)
+## Status (2026-08-21, run 2, iteration 5)
 
-- Iteration 4 shipped item 16 (Mod+K link command: selection/word/`[]()` insert,
-  clipboard URL auto-fill, unwrap toggle). Next unblocked: item 17 (task lists —
-  slice a first), then 18 (undo granularity for the other keymaps), 12 (rebind
-  Mod+N), 11 (chore).
+- Iteration 5 shipped item 17 slice (a) — task-list Enter continuation verified and
+  regression-locked (9 unit + 5 e2e tests, no behavior change). Next unblocked: item 17
+  slice (b) (editor bracket-click toggle), then slice (c) (preview checkboxes),
+  18 (undo granularity), 12 (rebind Mod+N), 11 (chore).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -419,17 +419,29 @@ What already works well (do not regress):
 
 ### 17. Task lists (checkboxes)
 
-- Slice (a) — verify + regression-lock continuation (verification only, no new
-  behavior, see Audit delta 2026-08-21): Enter after `- [ ] x` continues with
-  `- [ ] `, Enter on an empty task item exits the list, checked items continue
-  unchecked. done-when: unit tests driving `insertNewlineContinueMarkup` + e2e
-  lock the three behaviors; full suite green.
+- Slice (a) — DONE (2026-08-21): verified + regression-locked continuation
+  (verification only, no new behavior). Evidence: `src/lib/task-continuation.test.ts`
+  (9 unit tests driving `insertNewlineContinueMarkup` through a real state: unchecked
+  continuation with the cursor after the marker, checked→unchecked, nested indent kept,
+  single empty item exits the list, empty item after a blank line is removed, empty
+  item in a tight list takes a blank line first, fenced-code no-continue, plain-bullet
+  control) + `e2e/task-lists.spec.ts` (5 tests: continue + type into the new task,
+  checked→unchecked, empty-item exit, the tight→loose→exit Enter ladder, fenced-code
+  no-continue). Full suite green: 269 unit + 109 e2e (5 pre-existing skips).
+  Exit nuance (locked, and relevant to slice c): Enter on an empty task item removes
+  the marker only when it is the first item or a blank line precedes it; the empty
+  *second* item of a tight list first inserts a blank line (tight→loose), so exiting
+  can take two Enters.
 - Slice (b) — editor bracket click: clicking strictly on the `[ ]`/`[x]` token
   (the `TaskMarker` node) toggles it (`[ ]` ↔ `[x]`, one-char change through a
   dispatch so y-collab/undo see it); clicks anywhere else on the line place the
   cursor normally (return false / let the default happen). done-when: unit tests
   for the token-range computation; e2e: clicking the bracket toggles, clicking
   the word does not toggle and moves the caret; read-only view: click is a no-op.
+  Premise for the token probe (locked by slice (a)'s tests): the `TaskMarker` node
+  only exists with the marker's trailing space — `- [ ]` (no space) parses as a
+  plain Paragraph and `- [x]` as a Link, so a toggle dispatch must land on the
+  space at `TaskMarker.from + 2`.
 - Slice (c) — preview checkboxes: make marked's `disabled` task checkbox
   interactive (custom `marked` extension/renderer emitting our own
   `<input type="checkbox" data-task-line={n}>`), wire a click handler in the
@@ -504,6 +516,13 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **Driving CM6 commands in unit tests (run 2, iteration 5):** `EditorState` has no
+  `applyTransaction` — a command's `dispatch(tr)` receives a `Transaction`, and the
+  resulting state is `tr.state` (lazily applied to `startState`). Pattern
+  (`task-continuation.test.ts`): `let next = state; insertNewlineContinueMarkup({
+  state, dispatch(tr) { next = tr.state; } })`. Also: `markdownLanguage.isActiveAt`
+  (which gates the continuation command) is true in a plain `EditorState.create`
+  with `markdown({ base: markdownLanguage })`, so no `EditorView` is needed.
 - **lezer cursor/node iteration gotchas (run 2, iteration 4):** three traps hit while
   writing the Mod+K probes. (1) `Tree.iterate({enter})` hands the callback a
   **TreeCursor**, and its `.node` getter returns an internal `BufferNode`/`TreeNode`
