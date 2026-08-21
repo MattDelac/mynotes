@@ -66,16 +66,17 @@
 		const isMac = navigator.platform.startsWith('Mac');
 		const mod = isMac ? e.metaKey : e.ctrlKey;
 		const isNewNote = e.altKey && (isMac ? e.code === 'KeyN' : e.key.toLowerCase() === 'n');
+		const isNewSession = e.altKey && (isMac ? e.code === 'KeyS' : e.key.toLowerCase() === 's');
 		const isPreview = e.altKey && (isMac ? e.code === 'KeyP' : e.key.toLowerCase() === 'p');
 		if (mod && isNewNote) {
 			e.preventDefault();
 			onMenuAction?.('newNote');
+		} else if (mod && isNewSession) {
+			e.preventDefault();
+			onMenuAction?.('newSession');
 		} else if (mod && isPreview && !readOnly) {
 			e.preventDefault();
 			onTogglePreview?.();
-		} else if (mod && e.key === 'n') {
-			e.preventDefault();
-			onMenuAction?.('newSession');
 		} else if (mod && e.key === 'e') {
 			e.preventDefault();
 			onMenuAction?.('export');

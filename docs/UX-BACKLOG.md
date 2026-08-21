@@ -6,16 +6,19 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 8)
+## Status (2026-08-21, run 2, iteration 9)
 
-- Iteration 8 shipped item 18 — undo granularity: EVERY keymap command
-  (indent/dedent, table Enter/Tab/Shift+Tab/Backspace, fence auto-close,
-  bracket pairing) is now its own undo step via the new `src/lib/cm-undo.ts`
-  `ownUndoStep` helper. Type a line, Tab, Ctrl+Z now reverts only the Tab
-  (locked by unit + e2e; sensitivity-verified — all 5 new e2e tests fail with
-  the isolation disabled). 6 new unit + 5 new e2e tests, full suite green
-  twice: 314 unit + 124 e2e (5 pre-existing skips). Next unblocked: item 12
-  (rebind Mod+N), then 11 (chore).
+- Iteration 9 shipped item 12 — the new-session shortcut is rebound from Mod+N
+  (a browser-reserved "new window" chord, dead in real browsers) to Mod+Alt+S,
+  which the audit table found free on Chromium/Firefox/Safari. The old chord is
+  fully unbound (e2e locks that Ctrl+N no longer navigates), the menu entry is
+  unchanged, and the keydown match follows the established Mac-safe pattern
+  (`e.code === 'KeyS'` on macOS, `e.key === 's'` elsewhere so AltGr character
+  typing never triggers it). Evidence: `Ctrl+Alt+S starts a new session` and
+  `Ctrl+N no longer starts a new session` in `e2e/shortcuts.spec.ts` (the
+  second is sensitivity-verified: it fails with the old branch re-added). Full
+  suite green twice: 314 unit + 125 e2e (5 pre-existing skips). Next
+  unblocked: item 11 (chore: remove dead editor API).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -83,9 +86,10 @@ What already works well (do not regress):
   editor (`cm-title.ts`) and preview (`p.note-title`), display-only (see item 6)
 - Preview toggle (`marked` + DOMPurify, `gfm: true, breaks: true`)
 - Sidebar (hover zone desktop / drawer mobile), note switch, new/delete, share, export/import
-- Shortcuts: Mod+N new session, Mod+E export, Mod+O sidebar, Mod+Alt+N new note,
+- Shortcuts: Mod+Alt+S new session, Mod+E export, Mod+O sidebar, Mod+Alt+N new note,
   Mod+Alt+P preview toggle (see items 7, 8 and 12 — the Alt chords were chosen because
-  the original Mod-Shift+N / Mod-Shift-P proposals are browser-reserved chords)
+  the original Mod-Shift+N / Mod-Shift-P proposals, and the Mod+N new-session chord,
+  are browser-reserved)
 - 720px content width; mobile line length ~358px (comfortable)
 
 ## Backlog
@@ -537,19 +541,36 @@ What already works well (do not regress):
   never press Tab/Enter/`]` in the affected contexts, so no PNG can change
   (docker still unavailable in this env — see Parked).
 
-### 12. Follow-up: Mod+N (new session) is likely a dead binding in real browsers
+### 12. DONE (2026-08-21): New session rebound to Mod+Alt+S — Mod+N was a dead binding in real browsers
 
-- Evidence: the app's Mod+N new-session shortcut (`AppHeader.svelte`) works in
-  e2e (CDP key dispatch delivers Ctrl+N to the page in headless — probed in
-  iteration 8), but Ctrl/Cmd+N is a browser-reserved "new window" chord on
-  Chrome/Firefox/Safari: in a real browser the browser consumes it before the
-  page, so the shortcut likely never fires for real users. Same class of bug as
-  the item-7 Mod-Shift+N proposal.
-- Scope: rebind new-session to an unreserved chord (candidate: Mod+Alt+S) in
-  `AppHeader.svelte`, update the e2e shortcut test, keep the menu entry.
-- done-when: e2e passes with the new chord and the old chord is no longer
-  bound. (Real-browser verification of the old chord is not possible from this
-  loop — the choice is based on the browsers' reserved-shortcut lists.)
+- Premise (carried from the follow-up): the Mod+N new-session shortcut
+  (`AppHeader.svelte`) worked in e2e (CDP key dispatch delivers Ctrl+N to the
+  page in headless — probed in iteration 8), but Ctrl/Cmd+N is a
+  browser-reserved "new window" chord on Chrome/Firefox/Safari: in a real
+  browser the browser consumes it before the page, so it likely never fired for
+  real users. Same class of bug as the item-7 Mod-Shift+N proposal.
+- Evidence: `AppHeader.svelte`'s keydown now maps `mod + altKey + s` to
+  `onMenuAction('newSession')` — matched `e.code === 'KeyS'` on macOS and
+  `e.key.toLowerCase() === 's'` elsewhere, so Option-mangled `e.key` on macOS
+  and AltGr character typing on European layouts never misfire (same pattern as
+  the Mod+Alt+N/P handlers) — and the old `mod + e.key === 'n'` branch is
+  REMOVED, so the reserved chord does the browser's thing (open a new window)
+  instead of silently stealing it. Mod+Alt+S was already audited free on all
+  three browsers (audit table below, now assigned). `e2e/shortcuts.spec.ts`:
+  `Ctrl+Alt+S starts a new session` (navigates to a fresh `/s/{id}`) and
+  `Ctrl+N no longer starts a new session` (pressing the old chord leaves the
+  session URL and editor untouched — sensitivity-verified: it fails if the old
+  branch is re-added, since CDP dispatch does deliver Ctrl+N in headless). Full
+  suite green twice: 314 unit + 125 e2e (5 pre-existing skips).
+- Scope notes: the "New session" menu entry is unchanged; the frozen legacy
+  `n/[id]` page's `handleMenuAction` does not handle `newSession`, so the chord
+  is a no-op there (as Mod+N was). Read-only shared views behave as before:
+  the chord creates a LOCAL session on the viewer's own device (their data,
+  zero-knowledge server untouched). Screenshots: keydown-handler-only change,
+  fixtures never press the chord — no PNG can change (docker still unavailable
+  in this env — see Parked). Real-browser verification of the new chord is not
+  possible from this loop — the choice is based on the browsers'
+  reserved-shortcut lists (see Parked: CDP bypasses the accelerator layer).
 
 ### 11. Chore: remove dead editor API
 
@@ -577,7 +598,8 @@ reserved-shortcut lists. Mod = Ctrl (Win/Linux) / Cmd (macOS).
 | Mod+0                | **reserved** (reset zoom)    | **reserved** (reset zoom) | **reserved** (reset zoom)             | rejected                                              |
 | Mod+Alt+1..6         | free                         | free                     | free                                  | **heading 1..6** (substitution for Mod+1..6)          |
 | Mod+Alt+0            | free                         | free                     | free                                  | **remove heading** (substitution for Mod+0)           |
-| Mod+Alt+S            | free                         | free                     | free                                  | reserved candidate for item 12 (new session)          |
+| Mod+N                | **reserved** (new window)    | **reserved** (new window) | **reserved** (new window)           | rejected (old new-session binding; dead in real browsers, see item 12) |
+| Mod+Alt+S            | free                         | free                     | free                                  | **new session** (substitution for the dead Mod+N, item 12) |
 
 Notes: the substitutions follow the Mod+Alt pattern this app already established for
 the rejected Mod+Shift+N / Mod+Shift+P (items 7, 8), keeping all substituted chords in
