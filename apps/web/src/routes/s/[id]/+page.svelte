@@ -54,7 +54,6 @@
 	let shareError = $state('');
 	let copied = $state(false);
 	let shareKind = $state<'view' | 'edit'>('view');
-	let editor = $state<Editor | null>(null);
 	let previewEl = $state<HTMLElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let sessionState = $state<SessionState | 'idle'>('idle');
@@ -452,7 +451,7 @@
 			</article>
 		{:else if noteId && ytext}
 			{#key noteId}
-				<Editor bind:this={editor} {ytext} editable={canWrite} />
+				<Editor {ytext} editable={canWrite} />
 			{/key}
 		{/if}
 	</main>

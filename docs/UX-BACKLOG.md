@@ -6,19 +6,20 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 9)
+## Status (2026-08-21, run 2, iteration 10)
 
-- Iteration 9 shipped item 12 — the new-session shortcut is rebound from Mod+N
-  (a browser-reserved "new window" chord, dead in real browsers) to Mod+Alt+S,
-  which the audit table found free on Chromium/Firefox/Safari. The old chord is
-  fully unbound (e2e locks that Ctrl+N no longer navigates), the menu entry is
-  unchanged, and the keydown match follows the established Mac-safe pattern
-  (`e.code === 'KeyS'` on macOS, `e.key === 's'` elsewhere so AltGr character
-  typing never triggers it). Evidence: `Ctrl+Alt+S starts a new session` and
-  `Ctrl+N no longer starts a new session` in `e2e/shortcuts.spec.ts` (the
-  second is sensitivity-verified: it fails with the old branch re-added). Full
-  suite green twice: 314 unit + 125 e2e (5 pre-existing skips). Next
-  unblocked: item 11 (chore: remove dead editor API).
+- Iteration 10 shipped item 11 (chore) — the dead `insertAtCursor` / `focus`
+  exports are removed from `Editor.svelte`, plus the orphaned
+  `let editor = $state<Editor | null>(null)` + `bind:this={editor}` in both
+  `s/[id]` and `n/[id]` pages (the bound variable was never read anywhere —
+  grep-verified before removal). `pnpm lint && pnpm check && pnpm test` green:
+  0 errors / 0 warnings, 314 unit tests. No user-facing behavior changed, so
+  no e2e or screenshot impact. The iteration-10 re-audit found two further
+  writing-experience gaps and seeded them as item 19 (editor autofocus —
+  today the first keystroke after load or note switch is lost until a click,
+  since nothing in `src/` ever focuses the editor) and item 20 (per-note caret
+  restoration — note switches remount the editor with the selection at 0).
+  Next unblocked: item 19.
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -572,11 +573,56 @@ What already works well (do not regress):
   possible from this loop — the choice is based on the browsers'
   reserved-shortcut lists (see Parked: CDP bypasses the accelerator layer).
 
-### 11. Chore: remove dead editor API
+### 11. DONE (2026-08-21, iteration 10): Chore — remove dead editor API
 
-- Evidence: `insertAtCursor` and `focus` are exported from `Editor.svelte` but unused
-  anywhere (grep over `src/`).
-- done-when: removed; `pnpm check` green.
+- Evidence: `insertAtCursor` and `focus` removed from `Editor.svelte`; the audit
+  extended to the bind chain — both pages kept `let editor = $state<Editor | null>`
+  + `bind:this={editor}` solely to call those two exports, and the variable was
+  never read (grep `editor\??\.` over `src/` = 0 matches), so the orphaned state
+  + bindings were removed from `s/[id]/+page.svelte` and `n/[id]/+page.svelte`
+  as part of the same chore. `pnpm lint && pnpm check && pnpm test` green
+  (0 errors / 0 warnings, 314 unit). No behavior change → no e2e/screenshot
+  impact.
+
+### 19. Editor autofocus — typing should start without a click (iteration-10 discovery)
+
+- Premise (code-verified iteration 10): nothing in `src/` ever focuses the
+  editor — no `focus()` call, no `autofocus` attribute. After load (or a note
+  switch, which remounts via `{#key noteId}`) `document.activeElement` is
+  `<body>`, so the user's first keystroke is silently lost until they click the
+  page. That breaks the "one blank page, instant start" north star (Docs /
+  Obsidian / Typora all place the caret immediately on open).
+- Scope: focus the editor on mount **when it is editable** (covers first load
+  and note-switch remounts; a mount-time focus does not steal focus while the
+  user is in the sidebar/share panel, because those interactions do not
+  remount the editor). Read-only shared views must NOT autofocus (no caret to
+  show, and no surprise focus). Mobile consequence (virtual keyboard opens on
+  load) is accepted: the user opened a note page to write.
+- done-when: e2e — (a) navigate to a fresh session and type with ZERO clicks:
+  the text appears (sensitivity: this fails today); (b) read-only shared view:
+  `document.activeElement` is not the editor; (c) switching notes refocuses the
+  editor (type in A, switch to B, type again in A without clicking).
+  `pnpm lint && pnpm check && pnpm test` green; screenshots unaffected (a caret
+  is not asserted by any fixture — verify by inspecting the committed fixtures'
+  interactions before claiming this).
+
+### 20. Restore per-note caret position on note switch (iteration-10 discovery)
+
+- Premise (code-verified iteration 10): switching notes changes `noteId`, the
+  `{#key noteId}` remounts the whole editor, and `EditorState.create` starts
+  with the selection at document position 0 — the user's editing context is
+  lost on every A→B→A round trip.
+- Scope (smallest useful slice): an in-memory (per-tab) `Map<noteId, number>`
+  that records `selection.main.head` before a remount and applies it as the
+  initial selection on remount, clamped to `doc.length` (a remote collaborator
+  may have shrunk the doc). No cross-reload persistence yet (that would mean
+  IndexedDB note metadata) — revisit only if the in-memory slice proves its
+  value. Selection (not just caret) restoration is out of scope for the slice.
+- done-when: e2e — type into note A, switch to B, switch back, and the caret is
+  at the previous position (verify by typing one char and asserting the exact
+  stored content); clamped position verified when the doc is shorter than the
+  saved offset. `pnpm lint && pnpm check && pnpm test` green; screenshots
+  unaffected (caret position is not asserted by fixtures).
 
 ## Chord reservation audit (2026-08-21, run 2, iteration 1)
 

@@ -30,7 +30,6 @@
 	let shareOpen = $state(false);
 	let shareError = $state('');
 	let copied = $state(false);
-	let editor = $state<Editor | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let sessionState = $state<SessionState | 'idle'>('idle');
 	let session: RoomSession | null = null;
@@ -310,7 +309,7 @@
 			</article>
 		{:else if note.id && ytext}
 			{#key note.id}
-				<Editor bind:this={editor} {ytext} />
+				<Editor {ytext} />
 			{/key}
 		{/if}
 	</main>

@@ -54,19 +54,6 @@
 		{ tag: tags.processingInstruction, color: 'var(--fg-muted)' }
 	]);
 
-	export function insertAtCursor(text: string): void {
-		if (!view) return;
-		const { from, to } = view.state.selection.main;
-		ytext.delete(from, to - from);
-		ytext.insert(from, text);
-		view.dispatch({ selection: { anchor: from + text.length } });
-		view.focus();
-	}
-
-	export function focus(): void {
-		view?.focus();
-	}
-
 	onMount(() => {
 		if (!container) return;
 		const undoManager = new Y.UndoManager(ytext);
