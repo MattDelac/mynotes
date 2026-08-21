@@ -3,7 +3,41 @@
 Plan of record for the overnight UX loop. Take the top unblocked item, implement the
 smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`, plus
 `pnpm screenshots` for any visible UI change), mark it done with one line of evidence,
-and re-prioritize. Items are ordered by user impact.
+and re-prioritize. Open items are listed by priority (numbering is stable across runs;
+done items are kept in place as the audit trail).
+
+## Status (2026-08-21, run 2, iteration 1)
+
+- Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
+  The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
+  be re-added without explicitly re-opening that ADR.
+- Seeded the agreed writing-experience feature set as items 13–17 (per-iteration slices
+  with done-when lines) and re-prioritized: formatting first (most frequent writing
+  action), then headings, links, task lists. Item 18 (undo granularity) was added the
+  same day — a gap found while implementing item 13, which is now DONE.
+- Chord reservation audit for the new bindings is in
+  "Chord reservation audit (2026-08-21)" below — the mandate's Mod+Shift+X, Mod+1..6 and
+  Mod+0 do **not** survive the audit; documented substitutions: Mod+Alt+X, Mod+Alt+1..6,
+  Mod+Alt+0, Mod+Alt+C.
+
+## Audit delta (2026-08-21, run 2, iteration 1)
+
+Probes run against the installed packages (no Playwright needed):
+
+- `markdown()` from `@codemirror/lang-markdown` ships `pasteURLAsLink` **enabled by
+  default** (config `pasteURLAsLink: true`): pasting a URL over a selection turns the
+  selection into a link with the pasted URL as target. Already live in the app; item 16
+  documents it rather than re-building it.
+- The GFM grammar (`@lezer/markdown`) **parses task lists**: `- [ ] x` →
+  `BulletList > ListItem > Task > TaskMarker "[ ]"` (+ `Task "[x]"`). So task lines are
+  already recognized by the syntax tree — item 17b can key on the `TaskMarker` node.
+- `markdownKeymap`'s Enter **already continues task items** (probed with the real
+  `insertNewlineContinueMarkup`): `- [ ] buy milk` + Enter → `- [ ] ` (cursor after the
+  marker, new task unchecked), and Enter on an empty task item removes the marker (list
+  exits). Item 17a is verification + regression lock, not new behavior.
+- `marked` v18 renders task lists as `<li><input disabled="" type="checkbox">…</li>` —
+  the preview checkbox is **disabled by default**; item 17c must make it interactive
+  (custom renderer or post-process) and wire a click back into the document.
 
 ## Audit evidence (2026-08-20, iteration 1)
 
@@ -267,23 +301,112 @@ What already works well (do not regress):
   tables, so no docker regeneration was needed (the earlier "blocked on docker" note
   conflated *showing* alignment in the PNGs with the feature itself working).
 
-### 10. Images: committed design doc first (implementation later)
+### 10. CLOSED (2026-08-21): Images — abandoned by product decision
 
-- Evidence: seed requirement — the first deliverable is a design doc, not code.
-- Scope: write `docs/IMAGES.md` covering: client-side AES-GCM encryption of image bytes
-  (per-session key or per-image keys), opaque blob upload endpoint reusing the
-  zero-knowledge API (new `POST /blobs`-style endpoint or reuse of `/notes` with a
-  kind), size caps + rate limits via existing `api/src/config.rs` abuse limits,
-  markdown syntax (`![alt](mynotes:blobId)` resolved client-side), rendering in editor
-  + preview, and what happens when a session is shared.
-- done-when: `docs/IMAGES.md` committed, reviewed against the hard rules (zero-knowledge
-  stays intact, markdown storage format unchanged, no new dependencies).
+- Closed and pruned per the run-2 mandate. The images experiment (design doc +
+  implementation phases 1–2) was abandoned; the record is
+  `docs/adr/0001-documents-stay-pure-markdown.md`. No binary media of any kind — do not
+  resurrect the blob API or `mynotes:` refs without explicitly re-opening the ADR.
 
-### 11. Chore: remove dead editor API
+### 13. DONE (2026-08-21): Formatting commands Mod+B bold + Mod+I italic (shared engine, selection-or-word toggle)
 
-- Evidence: `insertAtCursor` and `focus` are exported from `Editor.svelte` but unused
-  anywhere (grep over `src/`).
-- done-when: removed; `pnpm check` green.
+- Evidence: new `src/lib/cm-format.ts` — pure `applyFormat({ doc, from, to, open,
+  close })` + `formatCommand(mark, undoManager)` + `formatKeymap(undoManager)`
+  (`Mod-b` → `**`, `Mod-i` → `*`), wired in `Editor.svelte` after `inputRulesKeymap`.
+  21 unit tests (`cm-format.test.ts`: every selection/word/empty case for both marks,
+  nested-mark unwrap, `insideFencedCode` node walk) + 6 e2e tests
+  (`e2e/formatting.spec.ts`: selection wrap+toggle, word wrap with no selection,
+  blank-note pair insert, italic, undo + concealment invariant, read-only no-op).
+  Full suite green: 188 unit + 83 e2e (5 pre-existing skips).
+- Semantics: selection → wrap, then the wrapped content stays selected so a repeat
+  press unwraps; selection flanked by the exact marks (or including them) → unwrap;
+  cursor on a word → wrap/unwrap the word (word = maximal run of chars that are
+  neither whitespace nor the mark's own char — that is what makes `**bold**` resolve
+  to `bold`, not `**bold**`); cursor between an empty pair → remove it; else insert
+  the pair with the cursor between. No-op when not editable, on multi-range
+  selections, or when the cursor/selection touches a fenced code block.
+- Undo: `undoManager.stopCapturing()` before/after the dispatch — without it the
+  wrap merges into the surrounding typing burst, because y-codemirror applies ALL
+  local edits with one Yjs origin and `Y.UndoManager`'s 5 s same-origin grouping
+  swallows the command (see item 18 and Parked).
+- Screenshots: keymap-only change, fixtures never press Mod+B/Mod+I — committed PNGs
+  cannot change; no regeneration needed (docker still unavailable here, see Parked).
+
+### 14. Formatting commands: Mod+Alt+X strikethrough, Mod+Alt+C inline code
+
+- Evidence: item 13's engine is mark-agnostic (`open`/`close` strings); the two
+  bindings are a few lines + tests.
+- Scope: extend `formatKeymap` with `Mod-Alt-x` → `~~` and `Mod-Alt-c` → `` ` ``;
+  e2e: word-wrap + toggle for each, and the existing concealment keeps applying
+  (inactive-line tildes stay hidden — `cm-conceal.ts` already conceals `~~`; verify
+  inline code marks are also concealed and add them if not).
+- done-when: both commands work with selection-or-word semantics, unit + e2e green.
+
+### 15. Heading toggles: Mod+Alt+1..6 set the line's level, Mod+Alt+0 removes it
+
+- Evidence: no heading shortcuts exist; lezer tags ATX headings
+  (`ATXHeading1..6`, verified in item 6's work).
+- Scope: `headingCommand(level)` in `cm-format.ts` (or a sibling module): on the cursor
+  line, replace an existing ATX prefix with `#`×level, strip it when level is 0
+  (Mod+Alt+0), no-op inside fenced code / on table rows; cursor/selection preserved on
+  the line. Setext headings: out of scope for v1 (document; ATX only — the app's own
+  title treatment and concealment are ATX-centric).
+- done-when: unit tests for set/remove/replace/no-op cases; e2e for Mod+Alt+1,
+  Mod+Alt+3 overwrite, Mod+Alt+0 removes; full suite green.
+
+### 16. Link command: Mod+K
+
+- Evidence: `pasteURLAsLink` (built into `markdown()`, default on) already turns a
+  pasted URL over a selection into `[selection](pasted-url)` — document that in the
+  backlog (done here) so users/iterations know the paste path exists; Mod+K is the
+  deliberate counterpart.
+- Scope: `linkCommand()` in `cm-format.ts`:
+  - selection → `[sel](url)` where url is auto-filled from the clipboard when it holds
+    a URL (clipboard read via `navigator.clipboard.readText()`, best-effort — on
+    denial/failure fall back to empty url), cursor inside `()`;
+  - no selection, cursor on a word → the word becomes the label, cursor inside `()`;
+  - else insert `[]()` with the cursor inside `[]`;
+  - toggle: cursor/selection already inside a plain `[label](url)` → unwrap to the
+    label; no-op inside fenced code.
+- done-when: unit tests for the pure range computation; e2e for selection + clipboard
+  URL (grant clipboard permission in the test), word label, bare `[]()` insert,
+  unwrap, read-only no-op; full suite green.
+
+### 17. Task lists (checkboxes)
+
+- Slice (a) — verify + regression-lock continuation (verification only, no new
+  behavior, see Audit delta 2026-08-21): Enter after `- [ ] x` continues with
+  `- [ ] `, Enter on an empty task item exits the list, checked items continue
+  unchecked. done-when: unit tests driving `insertNewlineContinueMarkup` + e2e
+  lock the three behaviors; full suite green.
+- Slice (b) — editor bracket click: clicking strictly on the `[ ]`/`[x]` token
+  (the `TaskMarker` node) toggles it (`[ ]` ↔ `[x]`, one-char change through a
+  dispatch so y-collab/undo see it); clicks anywhere else on the line place the
+  cursor normally (return false / let the default happen). done-when: unit tests
+  for the token-range computation; e2e: clicking the bracket toggles, clicking
+  the word does not toggle and moves the caret; read-only view: click is a no-op.
+- Slice (c) — preview checkboxes: make marked's `disabled` task checkbox
+  interactive (custom `marked` extension/renderer emitting our own
+  `<input type="checkbox" data-task-line={n}>`), wire a click handler in the
+  preview container that maps back to the corresponding `- [ ]` line in the
+  document and toggles it; disabled (no handler) in read-only shared views.
+  done-when: e2e: clicking a preview checkbox flips the stored markdown line
+  (verified via export or editor state after toggling back), read-only preview
+  checkbox does nothing; full suite green.
+
+### 18. Undo granularity: coarse undo steps for the non-format keymap commands
+
+- Evidence: `y-codemirror.next` 0.3.5's `YSyncPluginValue.update` runs
+  `ytext.doc.transact(fn, this.conf)` for **every** local dispatch — one Yjs origin
+  for everything. `Y.UndoManager`'s default 5 s same-origin grouping therefore merges
+  all local edits in that window into ONE undo step: type a line, Tab-indent 1 s
+  later, one Ctrl+Z reverts both. Found while shipping item 13 (the e2e undo test
+  wiped the whole note). The format commands already avoid it via `stopCapturing()`.
+- Scope: apply the same `stopCapturing()` pattern (a shared keymap wrapper is the
+  DRY option) to `cm-indent.ts`, `cm-table.ts` and `cm-input-rules.ts` so each
+  keymap command is its own undo step.
+- done-when: e2e "type, indent, Ctrl+Z → only the indent reverts" passes; full
+  suite green.
 
 ### 12. Follow-up: Mod+N (new session) is likely a dead binding in real browsers
 
@@ -299,8 +422,57 @@ What already works well (do not regress):
   bound. (Real-browser verification of the old chord is not possible from this
   loop — the choice is based on the browsers' reserved-shortcut lists.)
 
+### 11. Chore: remove dead editor API
+
+- Evidence: `insertAtCursor` and `focus` are exported from `Editor.svelte` but unused
+  anywhere (grep over `src/`).
+- done-when: removed; `pnpm check` green.
+
+## Chord reservation audit (2026-08-21, run 2, iteration 1)
+
+Mandate: every chord must be free on Chromium, Firefox **and** Safari. CDP key
+dispatch cannot verify this (it bypasses the browser accelerator layer — see
+Parked), so this is a desk audit against the three browsers' published
+reserved-shortcut lists. Mod = Ctrl (Win/Linux) / Cmd (macOS).
+
+| Chord                | Chromium                     | Firefox                  | Safari (macOS)                        | Decision                                              |
+| -------------------- | ---------------------------- | ------------------------ | ------------------------------------- | ----------------------------------------------------- |
+| Mod+B                | free                         | free                     | free                                  | **bold**                                              |
+| Mod+I                | free                         | free                     | free                                  | **italic**                                            |
+| Mod+K                | free                         | free                     | free                                  | **link**                                              |
+| Mod+Shift+X          | free                         | free                     | **reserved** (close tab + all right)  | rejected                                              |
+| Mod+Alt+X            | free                         | free                     | free                                  | **strikethrough** (substitution for Mod+Shift+X)      |
+| Mod+` (backquote)    | free (Win/Linux)             | free                     | **reserved at OS level** (Cmd+\` = app switch) | rejected                                     |
+| Mod+Alt+C            | free                         | free                     | free                                  | **inline code** (substitution; "C for code")          |
+| Mod+1..6             | **reserved** (switch to tab 1..6) | **reserved** (tab switching) | **reserved** (Cmd+1..8 tab switch) | rejected                                            |
+| Mod+0                | **reserved** (reset zoom)    | **reserved** (reset zoom) | **reserved** (reset zoom)             | rejected                                              |
+| Mod+Alt+1..6         | free                         | free                     | free                                  | **heading 1..6** (substitution for Mod+1..6)          |
+| Mod+Alt+0            | free                         | free                     | free                                  | **remove heading** (substitution for Mod+0)           |
+| Mod+Alt+S            | free                         | free                     | free                                  | reserved candidate for item 12 (new session)          |
+
+Notes: the substitutions follow the Mod+Alt pattern this app already established for
+the rejected Mod+Shift+N / Mod+Shift+P (items 7, 8), keeping all substituted chords in
+one family. Mod+Alt+1..6/0 must be matched via `e.code` (`Digit1`..`Digit6`, `Digit0`)
+on macOS (Option alters `e.key`) exactly like the existing Mod+Alt+N/P handlers.
+Ctrl+Alt+digit has no known collision with IME or screen-reader modifiers on the three
+platforms (NVDA/JAWS use different modifiers).
+
 ## Parked (noticed, not yet scoped)
 
+- **CM6 arrow keys collapse before moving (run 2, iteration 1):** with a non-empty
+  selection, `ArrowDown`/`ArrowUp` (`cursorByLine` in `@codemirror/commands`)
+  collapse the selection to its end/start instead of moving — e2e tests that wrap a
+  selection (which leaves it selected) must collapse first (e.g. `End`) before the
+  vertical move registers.
+- **y-codemirror single Yjs origin (run 2, iteration 1):** see item 18. Practical
+  consequence for any future keymap command: wrap the dispatch in
+  `undoManager.stopCapturing()` calls or the command will merge with adjacent typing
+  into one undo step. `Y.UndoManager` default `timeout` is 5000 ms.
+- **lezer bold node names (run 2, iteration 1):** `**bold**` parses as
+  `StrongEmphasis` with `EmphasisMark` children — NOT `Strong`/`StrongMark` as in
+  CommonMark. `cm-conceal.ts`'s `EmphasisMark` entry therefore covers both italic
+  and bold marks (no change needed); any future "is this bold?" logic must match
+  `StrongEmphasis`, and grep-based audits for `Strong` will false-negative.
 - **e2e suite is flaky on a 24-core box with a reused/stale API (iteration 9):** the
   local machine has 24 cores, so Playwright defaults to 12 concurrent workers; ~16 tests
   share a session (each a `POST /notes` + `PUT` snapshot + WS, some opening a 2nd viewer

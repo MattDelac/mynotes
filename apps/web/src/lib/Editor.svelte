@@ -11,6 +11,7 @@
 	import { concealMarks } from './cm-conceal';
 	import { titleLines } from './cm-title';
 	import { clickableLinks } from './cm-links';
+	import { formatKeymap } from './cm-format';
 	import { indentKeymap } from './cm-indent';
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
@@ -76,6 +77,7 @@
 					...tableKeymap,
 					...indentKeymap,
 					...inputRulesKeymap,
+					...formatKeymap(undoManager),
 					...defaultKeymap
 				]),
 				markdown({ base: markdownLanguage }),
