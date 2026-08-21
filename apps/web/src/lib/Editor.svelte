@@ -119,6 +119,10 @@
 			]
 		});
 		view = new EditorView({ state, parent: container });
+		const main = view.state.selection.main;
+		if (main.anchor !== 0 || main.head !== 0) {
+			view.dispatch({ selection: main, scrollIntoView: true });
+		}
 		if (editable) view.focus();
 		return () => {
 			view?.destroy();

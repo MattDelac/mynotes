@@ -6,7 +6,22 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 3, iteration 2)
+## Status (2026-08-21, run 3, iteration 3)
+
+- Iteration 3 shipped item 26 — the remounted editor now scrolls the
+  viewport to the restored caret/selection: `Editor.svelte` onMount
+  dispatches the seeded main selection with `scrollIntoView: true` when
+  it is a non-default position (selection-only transaction — no Yjs step,
+  no undo-clock reset). 3 e2e tests (`e2e/scroll-restore.spec.ts`), all
+  sensitivity-verified: 40-line note + `Control+End` + A→B→A →
+  `scrollTop > 0` and a typed char lands on line 40 (fails without the
+  dispatch); a 5-line note that fits the viewport stays at `scrollTop =
+  0`; preview toggle round trip also restores the scroll. Full suite
+  green: 336 unit + 138 e2e (5 pre-existing skips). No screenshot impact:
+  no visible change in the committed fixtures (they are shorter than one
+  viewport and never park a deep caret before switching — see Parked for
+  the CM6 `.cm-gap` culling gotcha that shaped the test assertions).
+  Next unblocked: item 25 (persist the per-note position across reloads).
 
 - Iteration 2 shipped item 24 — per-note SELECTION restoration on note
   switch: `caret-memory.ts` is now `selection-memory.ts` and records the
@@ -832,29 +847,44 @@ What already works well (do not regress):
   pass `caret: 'hide'` (docker still unavailable in this env — see
   Parked).
 
-### 26. Scroll the viewport to the restored caret/selection on remount
+### 26. DONE (2026-08-21, run 3, iteration 3): Scroll the viewport to the restored caret/selection on remount
 
 - Verified gap (run 3, iteration 2 probe, removed after the finding):
   a remounted 40-line note with the saved caret on the LAST line
-  (`Control+End` before switching) reports `scrollTop = 0`
+  (`Control+End` before switching) reported `scrollTop = 0`
   (scrollHeight 1224, clientHeight 676) — CM6 scrolls the selection into
   view on selection CHANGES but not for the INITIAL state's selection,
-  so the restored position (items 20/24) is invisible: the user returns
-  to the top of a long note with the caret somewhere deep.
-- Fix direction: in `Editor.svelte` onMount, after `new EditorView`,
-  when a non-default position was restored, dispatch the current main
-  selection with `scrollIntoView: true` (a selection-only transaction —
-  no doc change, so no Yjs step and no undo-clock reset). Applies to
-  every mount, which also covers the initial load once item 25 persists
-  positions across reloads.
-- done-when: e2e — type 40 lines, `Control+End`, A→B→A, the scroller's
-  `scrollTop` is > 0 (sensitivity: fails with the dispatch removed); a
-  short note that fits the viewport stays put. No UI change — the
-  committed fixtures are short of one screen and never switch notes with
-  a deep caret, so no PNG can change (docker still unavailable here —
-  see Parked).
-- Priority: top unblocked — completes the restoration story items 20/24
-  started; small, local-only, no UI.
+  and `EditorView.focus()` uses `focusPreventScroll` (verified in the
+  6.43.7 dist), so the restored position (items 20/24) was invisible:
+  the user returned to the top of a long note with the caret somewhere
+  deep.
+- Evidence: `Editor.svelte` onMount now dispatches the seeded main
+  selection with `scrollIntoView: true` when it is a non-default
+  position (`main.anchor !== 0 || main.head !== 0` — a restored
+  position at the very top needs no scroll). The dispatch is a
+  selection-only transaction: no doc change, so no Yjs step and no
+  undo-clock reset (and no awareness sync — `yCollab` is wired with a
+  null awareness here). It applies to EVERY mount (note switch,
+  preview toggle, first load) and to read-only shared views alike.
+  3 e2e tests (`e2e/scroll-restore.spec.ts`), all sensitivity-verified
+  (with the dispatch removed, both scroll tests fail exactly on the
+  `scrollTop > 0` assertion): (a) 40-line note + `Control+End` +
+  A→B→A → `scrollTop > 0` and a typed `X` lands on `line 40X`;
+  (b) a 5-line note that fits the viewport stays at `scrollTop = 0`
+  (the dispatch still runs but `scrollIntoView` is "nearest", so an
+  already-visible position does not move the view); (c) preview toggle
+  round trip restores the scroll too, with the model's integrity
+  checked via `article.preview br` count (39) while the editor is
+  unmounted. Full suite green: 336 unit + 138 e2e (5 pre-existing
+  skips).
+- Test-shaping gotcha (also in Parked): CM6 6.43.x culls off-viewport
+  lines into a `.cm-gap` placeholder, so the DOM-based `editorText`
+  helper cannot read a tall note in full — the assertions target the
+  visible tail (`endsWith('line 40X')`) and the preview (model) instead
+  of the full editor text.
+- No screenshot impact: the committed fixtures are shorter than one
+  viewport and never park a deep caret before switching, so no PNG can
+  change (docker still unavailable here — see Parked).
 
 ### 25. Persist the per-note work position across reloads
 
@@ -875,10 +905,12 @@ What already works well (do not regress):
 - done-when: unit tests for the persist/restore clamp + e2e — type a long
   note, park the caret deep, `page.reload()`, the position is back
   (verified by a selection-consuming action like the item-24 test) —
-  without regressing the in-tab restore tests.
-- Priority: second unblocked — small, local-only; benefits from item
-  26's scroll dispatch (a restored position that doesn't scroll is
-  half-useful).
+  without regressing the in-tab restore tests. Item 26 has landed, so
+  the e2e should also assert the scroller's `scrollTop > 0` after the
+  reload (the mount-time scroll dispatch covers the initial load for
+  free) — remember the `.cm-gap` culling gotcha (Parked) when asserting
+  on the editor DOM of a tall note.
+- Priority: TOP UNBLOCKED — small, local-only.
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
@@ -926,6 +958,43 @@ Ctrl+Alt+digit has no known collision with IME or screen-reader modifiers on the
 platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
+
+- **CM6 6.43.x culls off-viewport lines into `.cm-gap` placeholders
+  (run 3, iteration 3):** for a document taller than the viewport,
+  `@codemirror/view` 6.43.7 replaces the run of lines outside the
+  scroll viewport with a single empty `div.cm-gap` carrying the
+  combined height (verified: 40-line note, remounted at `scrollTop = 0`
+  → 36 `.cm-line` + one `.cm-gap` (≈3.9 lines) + the line containing the
+  selection, which is always kept rendered). The INITIAL mount renders
+  ALL lines before the first gap pass, so a DOM read right after mount
+  can transiently see the full text — a race. Consequence: the DOM-based
+  `editorText` e2e helper is UNRELIABLE for notes taller than one
+  viewport (it silently loses the gapped lines, which looks like
+  document corruption). For tall-note e2e, assert on the visible tail
+  (`text.endsWith(...)` at a known scroll position) and read the MODEL
+  through the preview (with `breaks: true`, N lines → N-1
+  `article.preview br` — `<br>` contributes nothing to `textContent`,
+  so `allTextContents()` on the preview paragraph also collapses the
+  lines).
+- **CM6 scroll mechanics (run 3, iteration 3, verified in the 6.43.7
+  dist):** the view's update loop sets a scroll target whenever
+  `tr.scrollIntoView` is true — regardless of whether the transaction
+  changed the selection — so a selection-only dispatch
+  (`view.dispatch({ selection: view.state.selection.main,
+  scrollIntoView: true })`) is a safe way to scroll a restored position
+  into view (no doc change → no Yjs step, no undo-clock reset). The
+  scroll is applied in the next measure cycle (rAF), so e2e must
+  `expect.poll` on `scrollTop`. `EditorView.focus()` uses
+  `focusPreventScroll` and NEVER scrolls the selection into view — that,
+  plus "the initial state's selection is not scrolled", is the full
+  account of the item-26 gap.
+- **Playwright `fill()` on a tall contenteditable (run 3, iteration
+  3):** `fill()` leaves the caret at the end of the inserted text and
+  CM6 scrolls it into view — after filling a 40-line note the scroller
+  already reported `scrollTop ≈ maxScroll` (499 of 522). Parking a caret
+  in e2e after a fill therefore needs an explicit `Control+End` for
+  determinism, and the pre-park viewport is already near the bottom, not
+  the top.
 
 - **CDP key dispatch does NOT apply the Shift case mapping (run 3,
   iteration 1):** `page.keyboard.press('Control+Shift+z')` delivers
