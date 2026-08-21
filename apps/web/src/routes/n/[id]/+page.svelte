@@ -13,6 +13,7 @@
 	import { mailtoLink, viewLink } from '$lib/share';
 	import { downloadNote } from '$lib/export';
 	import { forgetCaret } from '$lib/caret-memory';
+	import { forgetUndoManager } from '$lib/undo-memory';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -172,6 +173,8 @@
 	}
 
 	async function removeNoteById(id: string) {
+		const doc = await getNoteDoc(id);
+		forgetUndoManager(doc.ytext);
 		await deleteNote(id);
 		await destroyNoteDoc(id);
 		forgetCaret(id);

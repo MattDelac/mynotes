@@ -6,9 +6,24 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 12)
+## Status (2026-08-21, run 3, iteration 1)
 
-- Iteration 12 shipped item 20 — per-note caret restoration. New
+- Iteration 1 shipped item 21 — per-note undo history across note switches
+  (per-tab `WeakMap<Y.Text, Y.UndoManager>` reused across mounts), plus item 22 —
+  the redo chord fix found while locking item 21's redo side: y-codemirror's
+  `Mod-Shift-z` binding can never match a real Ctrl/Cmd+Shift+Z keypress (CM6
+  key-name case mismatch), so `Editor.svelte` now binds `Mod-Shift-Z`
+  (uppercase) to the shared manager's redo. 8 unit tests
+  (`undo-memory.test.ts`) + 4 sensitivity-verified e2e tests
+  (`e2e/undo-memory.spec.ts`) incl. a faithful real-browser-key-casing probe.
+  Full suite green twice: 331 unit + 134 e2e (5 pre-existing skips). No
+  screenshot impact: no visible change, fixtures never press the affected
+  chords (docker still unavailable in this env — see Parked). Re-audit
+  seeded item 23 (typewriter scrolling — blocked on a product decision)
+  and item 24 (per-note SELECTION restoration, item 20's explicit
+  caret-only boundary) — next unblocked: item 24.
+
+- Iteration 12 (run 2) shipped item 20 — per-note caret restoration. New
   `src/lib/caret-memory.ts` (per-tab `Map<noteId, number>`) records the
   caret head on every editor update and restores it as the initial
   selection on remount, clamped to the current doc length. `Editor.svelte`
@@ -664,29 +679,124 @@ What already works well (do not regress):
   use the server relay (a fresh context + edit link), not a second local
   tab.
 
-### 21. Per-note undo history should survive note switches (iteration-12 discovery)
+### 21. DONE (2026-08-21, run 3, iteration 1): Per-note undo history survives note switches
 
-- Premise (code-verified iteration 12): `Editor.svelte` constructs a fresh
-  `new Y.UndoManager(ytext)` in `onMount` and calls `undoManager.destroy()`
-  in its cleanup. The undo stack lives on the manager instance, so every
-  `{#key noteId}` remount (note switch, preview toggle, new note, import,
-  delete-current-note replacement) throws the note's entire undo/redo
-  history away: type in A, switch to B, come back, and Ctrl+Z does
-  nothing. Docs/Obsidian keep per-note history across switches within a
-  session; losing it makes the safety net of a writing app vanish exactly
-  when the user multitasks between notes.
-- Scope (smallest useful slice): a per-tab registry
-  (`WeakMap<Y.Text, Y.UndoManager>` in a small lib module) that creates a
-  manager on first mount of a note's Y.Text and REUSES it on later mounts
-  instead of destroying it on unmount. Re-verify the details: an
-  un-destroyed manager keeps observing its Y.Text (so it keeps recording
-  edits made while the note is closed, from any origin), and re-passing the
-  same manager to `yCollab` on remount re-registers the tracked origin
-  idempotently.
-- done-when: e2e — type in A, switch to B, switch back, and Ctrl+Z reverts
-  the A-typing (redo re-applies it); a preview-toggle round trip also
-  preserves the stack. `pnpm lint && pnpm check && pnpm test` green;
-  screenshots unaffected.
+- Evidence: new `src/lib/undo-memory.ts` — a per-tab (module-level)
+  `WeakMap<Y.Text, Y.UndoManager>` with `getUndoManager(ytext)`
+  (create-or-reuse) and `forgetUndoManager(ytext)` (destroy + evict).
+  `Editor.svelte` takes the manager from the registry on mount and no
+  longer destroys it on unmount, so every `{#key noteId}` remount (note
+  switch, preview toggle, new note, delete-current-note replacement)
+  re-attaches to the SAME manager and its intact undo/redo stack. Remount
+  safety verified against y-codemirror.next 0.3.5 dist: the per-mount
+  `YUndoManagerPluginValue` registers its `stack-item-added/popped`
+  listeners and tracked origin per instance and unregisters both in
+  `destroy()` (no accumulation), and `addTrackedOrigin` is Set-based
+  (idempotent). `s/[id]` `removeNoteById` forgets the doomed note's
+  manager BEFORE `removeNote` (session docs outlive their notes, so without
+  the forget the manager keeps observing an orphaned Y.Text until reload);
+  `n/[id]` does the same on its delete path (belt-and-braces — yjs also
+  auto-destroys a manager when its Y.Doc is destroyed, pinned by a unit
+  test).
+- Behavior notes: the long-lived manager keeps observing while unmounted,
+  so edits applied to the note's Y.Text while it is closed are recorded
+  (only null-origin and per-mount syncConf edits — relay updates arrive as
+  origin `'collab-remote'` and are NOT tracked, same as before). Side
+  effect: a preview checkbox toggle (a null-origin `doc.transact` while the
+  editor is unmounted) is now undoable — locked by e2e. Per-tab scope:
+  switching SESSIONS within a tab also preserves history (session docs are
+  cached in a module-level map, so the same Y.Text object comes back); a
+  reload starts empty, like caret memory.
+- Tests: 8 unit tests (`undo-memory.test.ts`: identity across remounts,
+  per-text distinctness, stack survives a simulated unmount/remount with a
+  tracked syncConf-style origin, null-origin edit recorded while unmounted,
+  untracked relay origin NOT recorded, forget → fresh history, forget
+  idempotent/no-op, recording stops when the Y.Doc is destroyed) + 4 e2e
+  tests (`e2e/undo-memory.spec.ts`): (a) A→B→A note switch — Ctrl+Z reverts
+  the A-typing to the empty placeholder, Ctrl+Y redo re-applies it; (b)
+  preview-toggle round trip preserves the stack (same assertions); (c) a
+  preview checkbox toggle applied while the editor is unmounted is undoable
+  on return (one Ctrl+Z flips the marker back, with a 600 ms settle so the
+  toggle is its own capture-window step); (d) a faithful real-browser
+  Ctrl+Shift+Z keydown (synthetic `KeyboardEvent` with `key: 'Z'`) is
+  consumed and redoes — see item 22. Sensitivity-verified: reverting to
+  `new Y.UndoManager(ytext)` fails 3 of the 4; removing the item-22 binding
+  fails (d). Full suite green twice: 331 unit + 134 e2e (5 pre-existing
+  skips).
+- Screenshots: no visible change (manager lifecycle + one keymap entry);
+  the fixtures use `fill()`, never switch notes with pending undo, and never
+  press Ctrl+Shift+Z / Ctrl+Y — committed PNGs cannot change (docker still
+  unavailable in this env, see Parked).
+- Learning (parked below): yjs 13.6.31 `Text.insert(index, text, attrs?)`
+  has NO origin parameter — unit tests must set the origin via
+  `doc.transact(fn, origin)`; a 4th argument is silently treated as rich
+  text attributes.
+
+### 22. DONE (2026-08-21, run 3, iteration 1): Redo chord Ctrl/Cmd+Shift+Z is live (was dead on every platform)
+
+- Discovery (item 21's redo side): while locking item 21's done-when, the
+  `Control+Shift+z` e2e press never redid. Root cause, verified against
+  `@codemirror/view` 6.43.7 dist (identical in 6.43.9) and by in-page
+  synthetic-event probes: CM6's keymap lookup builds the event key name
+  from `e.key`, which is UPPERCASE when Shift is held (`'Z'`), while
+  keymap bindings are stored lower-cased by `normalizeKeyName`
+  (`'Shift-Ctrl-z'`). The lookup is a case-sensitive object property, so
+  y-codemirror.next's `Mod-Shift-z` redo binding — and CM6
+  `defaultKeymap`'s own `linux: "Ctrl-Shift-z"` redo entry — can never
+  match a real Ctrl/Cmd+Shift+Z keypress on ANY platform. Observed
+  consequences: Win/Linux fell through to the browser's native
+  contenteditable redo (stale native stack, desyncs the Yjs one); macOS had
+  NO working redo chord at all (`Mod-y` is mac-overridden to the equally
+  dead `Mod-Shift-z`); and under CDP/Playwright dispatch (which does NOT
+  apply the Shift case mapping — `Control+Shift+z` delivers `e.key: 'z'`)
+  the press was silently running UNDO instead (first lookup branch ignores
+  Shift for character keys and matched `Mod-z`).
+- Fix: `Editor.svelte` keymap gains one entry right after
+  `yUndoManagerKeymap`: `{ key: 'Mod-Shift-Z', run: () =>
+  undoManager.redo() != null, preventDefault: true }` — uppercase `Z`
+  normalizes to the exact real-browser event name (`Shift-Ctrl-Z` /
+  `Shift-Meta-Z`), and the command uses the shared manager from the
+  mount closure (y-codemirror does not export its redo command or facet).
+  No new chord: Mod+Shift+Z was already the app's intended redo binding —
+  this makes that intent work; it is not browser-reserved (it is the
+  platform-standard redo).
+- Evidence: e2e (d) above dispatches the faithful real-browser event
+  (`key: 'Z'`, `code: 'KeyZ'`, ctrl+shift) and asserts it is consumed
+  (`defaultPrevented`) AND the document actually redoes; sensitivity
+  verified (fails without the binding). `Ctrl+Y` (the pre-existing
+  `Mod-y` binding) remains the portable fallback and is what e2e (a)/(b)
+  use. Full suite green twice: 331 unit + 134 e2e.
+
+### 24. Restore the per-note SELECTION (not just the caret) on note switch
+
+- Follow-up to item 20, which was deliberately scoped caret-only.
+  `caret-memory.ts` records `head` per note on every editor update; extend
+  it to record `{ anchor, head }` and, on remount, restore the FULL range
+  when it is non-empty (falling back to the caret point when it is empty),
+  clamping both ends into `0..docLength` (a collaborator may have shrunk
+  the note; CRDT-aware position remapping would need awareness — an
+  explicit non-goal — so length-clamping is the v1 semantics, same as the
+  caret). Preserve backward selections (`anchor > head`) as-is.
+- done-when: unit tests (per-note independence, empty selection → caret
+  only, clamp both ends, backward selection preserved) + e2e: select a
+  word in A (Shift+arrow), switch A→B→A, and the selection is back —
+  verified by a selection-consuming action (e.g. Mod+B wraps exactly the
+  selected word) — without regressing the item-20 caret tests.
+- Priority: lowest of the unblocked set — small, local-only, no UI.
+
+### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
+
+- Candidate found by the run-3 writing-experience re-audit: no
+  writing-app default in this codebase keeps the caret vertically centered
+  while scrolling (iA Writer / Typora behavior); today the view scrolls
+  only when the caret hits the bottom edge (CM6 default). A small CM6
+  `ViewPlugin` (scroll the `scrollDOM` so the caret sits ~40% down when it
+  is near the top edge after a change) is the obvious implementation.
+- BLOCKED on a human product decision: it changes default behavior for
+  every session (some users dislike mid-caret scrolling), it interacts
+  with the mobile virtual keyboard and manual scrolling, and it needs a
+  decided default (on-always vs. opt-in). Name the decision before
+  scoping.
 
 ## Chord reservation audit (2026-08-21, run 2, iteration 1)
 
@@ -710,6 +820,7 @@ reserved-shortcut lists. Mod = Ctrl (Win/Linux) / Cmd (macOS).
 | Mod+Alt+0            | free                         | free                     | free                                  | **remove heading** (substitution for Mod+0)           |
 | Mod+N                | **reserved** (new window)    | **reserved** (new window) | **reserved** (new window)           | rejected (old new-session binding; dead in real browsers, see item 12) |
 | Mod+Alt+S            | free                         | free                     | free                                  | **new session** (substitution for the dead Mod+N, item 12) |
+| Mod+Shift+Z          | free (page-level redo, not a browser accelerator) | free (page-level redo) | free (standard text redo) | **redo** — y-codemirror's intended `Mod-Shift-z` binding; added as uppercase `Mod-Shift-Z` so CM6's case-sensitive key-name lookup actually matches a real Shift+Z keypress (item 22) |
 
 Notes: the substitutions follow the Mod+Alt pattern this app already established for
 the rejected Mod+Shift+N / Mod+Shift+P (items 7, 8), keeping all substituted chords in
@@ -720,6 +831,43 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **CDP key dispatch does NOT apply the Shift case mapping (run 3,
+  iteration 1):** `page.keyboard.press('Control+Shift+z')` delivers
+  `e.key: 'z'` (lowercase) even with Shift held, while a real browser
+  delivers `e.key: 'Z'`. CM6 keymap branches behave differently on the two
+  casings (the first lookup branch ignores Shift for character keys, so
+  the CDP press of Ctrl+Shift+z matches the plain `Mod-z` UNDO binding,
+  while the real press matches nothing). E2E tests for Shift+letter chords
+  cannot be trusted in either direction — for the real-browser path,
+  dispatch a synthetic `KeyboardEvent` with the faithful casing
+  (`{ key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true }`) on
+  `.cm-content`; that is what `e2e/undo-memory.spec.ts` does. Extends the
+  existing "CDP bypasses the accelerator layer" note below.
+- **yjs 13.6.31 `Text.insert` has no origin parameter (run 3, iteration
+  1):** the signature is `insert(index, text, attributes?)` — a 4th
+  argument is silently treated as rich-text attributes and the transaction
+  records origin `null`. To record a specific origin in tests, use
+  `doc.transact(() => text.insert(…), origin)`. (`Y.applyUpdate(doc,
+  update, origin)` does take an origin — that is how the relay's
+  `'collab-remote'` origin is set, and such edits are NOT tracked by a
+  default `Y.UndoManager`.)
+- **yjs `UndoManager` lifecycle (run 3, iteration 1):** a manager
+  auto-destroys when its Y.Doc is destroyed (`doc.on('destroy', () =>
+  manager.destroy())`), and `destroy()` is idempotent (lib0
+  `ObservableV2.destroy` just resets the observer map) — so explicit
+  `forgetUndoManager` + later doc-destroy double-destroy is harmless.
+  Memory: there is no stack cap (no `maxStackItems` in 13.6.x), stack
+  items pin deleted items via `keepItem`, and a destroyed manager stays
+  referenced by the doc's `'destroy'` listener closure until the doc
+  itself dies — for local sessions that is tab lifetime. Acceptable at
+  current scale; revisit if long-lived tabs show memory growth.
+- **Frozen `n/[id]` shared view leaks its Y.Doc (pre-existing, run 3,
+  iteration 1):** the shared-note `$effect` creates a fresh `Y.Doc` per
+  mount but only destroys it in the `cancelled` path — a normal leave
+  stops the room and nulls `sharedYtext` but the doc (and, now, its undo
+  manager) leaks until reload. Pre-existing (the doc itself leaked
+  before undo-memory); fixing belongs to a frozen-page pass, if that ever
+  happens.
 - **y-indexeddb is persistence-only — no cross-tab sync (run 2, iteration
   12):** `IndexeddbPersistence` (y-indexeddb 9.0.12) applies stored updates
   exactly ONCE at construction (`fetchUpdates`) and stores local updates on

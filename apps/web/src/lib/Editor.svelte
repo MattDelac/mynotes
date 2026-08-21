@@ -17,6 +17,7 @@
 	import { tableKeymap } from './cm-table';
 	import { taskMarkerClick } from './cm-task-click';
 	import { recordCaret, savedCaret } from './caret-memory';
+	import { getUndoManager } from './undo-memory';
 
 	let {
 		ytext,
@@ -61,7 +62,7 @@
 
 	onMount(() => {
 		if (!container) return;
-		const undoManager = new Y.UndoManager(ytext);
+		const undoManager = getUndoManager(ytext);
 		const docText = ytext.toString();
 		const state = EditorState.create({
 			doc: docText,
@@ -69,6 +70,7 @@
 			extensions: [
 				keymap.of([
 					...yUndoManagerKeymap,
+					{ key: 'Mod-Shift-Z', run: () => undoManager.redo() != null, preventDefault: true },
 					...tableKeymap(undoManager),
 					...indentKeymap(undoManager),
 					...inputRulesKeymap(undoManager),
@@ -118,7 +120,6 @@
 		view = new EditorView({ state, parent: container });
 		if (editable) view.focus();
 		return () => {
-			undoManager.destroy();
 			view?.destroy();
 			view = null;
 		};
