@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { applyFormat, insideFencedCode, type FormatMark, type FormatResult } from './cm-format';
+import {
+	applyFormat,
+	applyHeading,
+	headingBlocked,
+	insideFencedCode,
+	type FormatMark,
+	type FormatResult,
+	type HeadingResult
+} from './cm-format';
 
 const bold: FormatMark = { open: '**', close: '**' };
 const italic: FormatMark = { open: '*', close: '*' };
@@ -190,6 +198,111 @@ describe('applyFormat — inline code (`…`)', () => {
 	});
 });
 
+function heading(doc: string, from: number, to: number, level: number): HeadingResult | null {
+	return applyHeading({ doc, from, to, level });
+}
+
+describe('applyHeading', () => {
+	it('sets level 1 on a plain line and parks the cursor after the prefix', () => {
+		const r = heading('Hello world', 5, 5, 1)!;
+		expect(apply('Hello world', r)).toBe('# Hello world');
+		expect(r.anchor).toBe(7);
+	});
+
+	it('sets level 2 with the cursor mid-word, keeping it on the same letter', () => {
+		const r = heading('Title body', 3, 3, 2)!;
+		expect(apply('Title body', r)).toBe('## Title body');
+		expect(r.anchor).toBe(6);
+	});
+
+	it('overwrites an existing level', () => {
+		expect(apply('## Hello', heading('## Hello', 7, 7, 3)!)).toBe('### Hello');
+		expect(apply('### Hello', heading('### Hello', 8, 8, 1)!)).toBe('# Hello');
+	});
+
+	it('removes the heading at level 0 and shifts the cursor back', () => {
+		const r = heading('# Hello', 7, 7, 0)!;
+		expect(apply('# Hello', r)).toBe('Hello');
+		expect(r.anchor).toBe(5);
+	});
+
+	it('is a no-op at level 0 on a plain line', () => {
+		expect(heading('Hello', 2, 2, 0)).toBeNull();
+	});
+
+	it('rejects out-of-range levels', () => {
+		expect(heading('Hello', 2, 2, 7)).toBeNull();
+		expect(heading('Hello', 2, 2, -1)).toBeNull();
+	});
+
+	it('does not treat seven hashes as a heading', () => {
+		expect(apply('####### seven', heading('####### seven', 3, 3, 1)!)).toBe('# ####### seven');
+	});
+
+	it('does not treat "#nospace" as a heading', () => {
+		expect(apply('#nospace', heading('#nospace', 3, 3, 1)!)).toBe('# #nospace');
+	});
+
+	it('inserts no trailing space on an empty line', () => {
+		const r = heading('', 0, 0, 2)!;
+		expect(apply('', r)).toBe('##');
+		expect(r.anchor).toBe(2);
+	});
+
+	it('keeps an empty heading empty when releveling', () => {
+		expect(apply('##', heading('##', 1, 1, 3)!)).toBe('###');
+	});
+
+	it('collapses extra spaces after the hashes', () => {
+		expect(apply('##   Title', heading('##   Title', 7, 7, 2)!)).toBe('## Title');
+		expect(apply('###   Title', heading('###   Title', 8, 8, 0)!)).toBe('Title');
+	});
+
+	it('drops the indent when releveling an indented heading', () => {
+		expect(apply('  ## T', heading('  ## T', 6, 6, 1)!)).toBe('# T');
+	});
+
+	it('is a no-op on a table row', () => {
+		expect(heading('| a | b |', 4, 4, 1)).toBeNull();
+	});
+
+	it('is a no-op on an indented code line', () => {
+		expect(heading('    code', 6, 6, 1)).toBeNull();
+	});
+
+	it('is a no-op on the setext underline line itself', () => {
+		expect(heading('Title\n====', 7, 7, 1)).toBeNull();
+		expect(heading('Title\n---', 7, 7, 1)).toBeNull();
+	});
+
+	it('is a no-op on the paragraph line above a setext underline', () => {
+		expect(heading('Title\n====', 2, 2, 1)).toBeNull();
+		expect(heading('Title\n---', 2, 2, 0)).toBeNull();
+	});
+
+	it('treats a blank-separated thematic break as not setext', () => {
+		const r = heading('Title\n\n---', 2, 2, 1)!;
+		expect(apply('Title\n\n---', r)).toBe('# Title\n\n---');
+	});
+
+	it('shifts a selection with the new prefix', () => {
+		const r = heading('Title', 0, 4, 2)!;
+		expect(apply('Title', r)).toBe('## Title');
+		expect(r.anchor).toBe(3);
+		expect(r.head).toBe(7);
+	});
+
+	it('works on the first line of the document', () => {
+		const r = heading('hello\nworld', 0, 0, 1)!;
+		expect(apply('hello\nworld', r)).toBe('# hello\nworld');
+	});
+
+	it('works when the document starts with a blank line', () => {
+		const r = heading('\nhello', 0, 0, 1)!;
+		expect(apply('\nhello', r)).toBe('#\nhello');
+	});
+});
+
 function makeState(doc: string, anchor: number): EditorState {
 	return EditorState.create({
 		doc,
@@ -221,5 +334,51 @@ describe('insideFencedCode', () => {
 
 	it('is false for plain text', () => {
 		expect(insideFencedCode(makeState('just text', 4), 4)).toBe(false);
+	});
+});
+
+describe('headingBlocked', () => {
+	function lineAt(doc: string, pos: number) {
+		return makeState(doc, pos).doc.lineAt(pos);
+	}
+
+	it('blocks a line inside a fenced code block', () => {
+		expect(headingBlocked(makeState('```\n# h\n```', 6), lineAt('```\n# h\n```', 6))).toBe(true);
+	});
+
+	it('blocks the opening and closing fence lines', () => {
+		expect(headingBlocked(makeState('```\n# h\n```', 0), lineAt('```\n# h\n```', 0))).toBe(true);
+		expect(headingBlocked(makeState('```\n# h\n```', 10), lineAt('```\n# h\n```', 10))).toBe(true);
+	});
+
+	it('blocks a line inside an indented code block', () => {
+		expect(headingBlocked(makeState('para\n\n    code', 13), lineAt('para\n\n    code', 13))).toBe(
+			true
+		);
+	});
+
+	it('blocks a table row', () => {
+		const doc = '| a | b |\n| --- | --- |\n| c | d |';
+		expect(headingBlocked(makeState(doc, 30), lineAt(doc, 30))).toBe(true);
+	});
+
+	it('blocks a pipe-less line directly after a table (a table row per GFM)', () => {
+		const doc = '| a | b |\n| --- | --- |\n| c | d |\nafter';
+		expect(headingBlocked(makeState(doc, 38), lineAt(doc, 38))).toBe(true);
+	});
+
+	it('allows a plain line', () => {
+		expect(headingBlocked(makeState('just text', 4), lineAt('just text', 4))).toBe(false);
+	});
+
+	it('allows the line after a fenced block', () => {
+		expect(
+			headingBlocked(makeState('```\ncode\n```\nafter', 18), lineAt('```\ncode\n```\nafter', 18))
+		).toBe(false);
+	});
+
+	it('allows the line after a table when a blank line separates them', () => {
+		const doc = '| a | b |\n| --- | --- |\n| c | d |\n\nafter';
+		expect(headingBlocked(makeState(doc, 39), lineAt(doc, 39))).toBe(false);
 	});
 });

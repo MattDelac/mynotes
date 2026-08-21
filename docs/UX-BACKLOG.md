@@ -6,12 +6,12 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 2)
+## Status (2026-08-21, run 2, iteration 3)
 
-- Iteration 2 shipped item 14 (Mod+Alt+X strikethrough, Mod+Alt+C inline code) on
-  item 13's mark-agnostic format engine. Next unblocked: item 15 (heading toggles
-  Mod+Alt+1..6 / Mod+Alt+0), then 16 (Mod+K link), 17 (task lists), 18 (undo
-  granularity for the other keymaps), 12 (rebind Mod+N), 11 (chore).
+- Iteration 3 shipped item 15 (heading toggles Mod+Alt+1..6 / Mod+Alt+0) as a
+  pure `applyHeading` + tree-aware `headingBlocked` in `cm-format.ts`. Next
+  unblocked: item 16 (Mod+K link), then 17 (task lists), 18 (undo granularity
+  for the other keymaps), 12 (rebind Mod+N), 11 (chore).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -356,17 +356,33 @@ What already works well (do not regress):
 - Screenshots: keymap-only change, fixtures never press the new chords — committed PNGs
   cannot change; no regeneration needed (docker still unavailable here, see Parked).
 
-### 15. Heading toggles: Mod+Alt+1..6 set the line's level, Mod+Alt+0 removes it
+### 15. DONE (2026-08-21): Heading toggles — Mod+Alt+1..6 set the line's level, Mod+Alt+0 removes it
 
-- Evidence: no heading shortcuts exist; lezer tags ATX headings
-  (`ATXHeading1..6`, verified in item 6's work).
-- Scope: `headingCommand(level)` in `cm-format.ts` (or a sibling module): on the cursor
-  line, replace an existing ATX prefix with `#`×level, strip it when level is 0
-  (Mod+Alt+0), no-op inside fenced code / on table rows; cursor/selection preserved on
-  the line. Setext headings: out of scope for v1 (document; ATX only — the app's own
-  title treatment and concealment are ATX-centric).
-- done-when: unit tests for set/remove/replace/no-op cases; e2e for Mod+Alt+1,
-  Mod+Alt+3 overwrite, Mod+Alt+0 removes; full suite green.
+- Evidence: `applyHeading` (pure) + `headingBlocked` (syntax-tree guard) +
+  `headingCommand(level, undoManager)` in `src/lib/cm-format.ts`, plus 7 new
+  `formatKeymap` bindings (`Mod-Alt-1..6` / `Mod-Alt-0`), already wired in
+  `Editor.svelte`. 20 unit tests (`cm-format.test.ts`: set/overwrite/remove,
+  cursor + selection shifting, empty line / empty heading, `#######` and `#nospace`
+  not treated as headings, table / indented-code / setext no-ops) + 8 e2e tests
+  (`e2e/headings.spec.ts`: set, overwrite, remove, concealment invariant on the
+  `#` mark, fenced-code no-op, table-row no-op, own-undo-step, read-only no-op).
+  Full suite green: 232 unit + 96 e2e (5 pre-existing skips).
+- Semantics: acts on the cursor's line only. An existing ATX prefix
+  (`^ {0,3}#{1,6}` + space) is replaced with `#`×level + one space (extra spaces
+  collapsed); level 0 strips the prefix; a plain line gets the prefix inserted at
+  column 0; an empty line gets a bare `#`×level (no trailing space). The cursor /
+  single-line selection shifts with the content. No-op: multi-line selection,
+  fenced code, indented `CodeBlock`, table rows, and setext (see below).
+- Tree guard (`headingBlocked`): resolves the line's first non-space char and walks
+  up for `FencedCode` / `CodeBlock` / `Table`. GFM gotcha pinned by a unit test: a
+  pipe-less line *directly* under a table (no blank line) parses as a table row, so
+  it is blocked too — a blank line is required for the line to be free.
+- Setext headings: ATX-only for v1, per scope. The command no-ops both on the
+  underline line and on the paragraph line directly above a `=`/`-` underline,
+  rather than converting setext→ATX (documented in Parked).
+- Screenshots: keymap-only change; the committed fixture never presses the new
+  chords and headings already render styled, so no PNG can change (docker still
+  unavailable in this env — see Parked).
 
 ### 16. Link command: Mod+K
 
@@ -473,6 +489,12 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **Setext headings vs heading toggles (run 2, iteration 3):** item 15 no-ops on a
+  setext heading — both the paragraph line above a `=`/`-` underline and the underline
+  line itself — instead of converting it. A conversion is lossless and small (level N:
+  replace the underline line with an ATX prefix on the line above; level 0: delete the
+  underline), so it is a good next slice only if real notes turn out to use setext
+  headings. Until then the no-op is the safe behavior (it never mangles a document).
 - **CM6 arrow keys collapse before moving (run 2, iteration 1):** with a non-empty
   selection, `ArrowDown`/`ArrowUp` (`cursorByLine` in `@codemirror/commands`)
   collapse the selection to its end/start instead of moving — e2e tests that wrap a
