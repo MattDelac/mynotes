@@ -196,6 +196,26 @@ test('tab outside a table still indents', async ({ page }) => {
 	await expect(editor).toBeFocused();
 });
 
+test('preview renders :---: column alignment from the separator row', async ({ page }) => {
+	await showPreview(page, '| L | C | R | P |\n| :--- | :-: | ---: | --- |\n| 1 | 2 | 3 | 4 |');
+	const head = await page.locator('article.preview thead th').evaluateAll((ths) =>
+		ths.map((th) => ({
+			align: th.getAttribute('align'),
+			computed: getComputedStyle(th).textAlign.replace(/^-webkit-/, '')
+		}))
+	);
+	expect(head).toEqual([
+		{ align: 'left', computed: 'left' },
+		{ align: 'center', computed: 'center' },
+		{ align: 'right', computed: 'right' },
+		{ align: null, computed: 'center' }
+	]);
+	const body = await page
+		.locator('article.preview tbody td')
+		.evaluateAll((tds) => tds.map((td) => getComputedStyle(td).textAlign.replace(/^-webkit-/, '')));
+	expect(body).toEqual(['left', 'center', 'right', 'start']);
+});
+
 test('preview table cells have borders and comfortable padding', async ({ page }) => {
 	await showPreview(page, TABLE_MD);
 	for (const selector of ['article.preview th', 'article.preview td']) {

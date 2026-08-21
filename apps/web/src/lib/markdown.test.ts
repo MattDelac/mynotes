@@ -47,3 +47,15 @@ describe('titleWrappedHtml', () => {
 		expect(titleWrappedHtml('a\n\nb')).toBe('<p class="note-title">a</p>\n<p>b</p>\n');
 	});
 });
+
+describe('table alignment', () => {
+	it('keeps column alignment attributes on th and td', () => {
+		const html = titleWrappedHtml('| L | C | R |\n| :--- | :-: | ---: |\n| 1 | 2 | 3 |');
+		expect(html).toContain('<th align="left">L</th>');
+		expect(html).toContain('<th align="center">C</th>');
+		expect(html).toContain('<th align="right">R</th>');
+		expect(html).toContain('<td align="left">1</td>');
+		expect(html).toContain('<td align="center">2</td>');
+		expect(html).toContain('<td align="right">3</td>');
+	});
+});

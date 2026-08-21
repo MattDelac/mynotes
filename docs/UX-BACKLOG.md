@@ -27,6 +27,8 @@ What already works well (do not regress):
 - Table cell navigation (`cm-table.ts`): Tab to the next cell / new row at row end
   (separator added when needed), Shift+Tab to the previous cell, Backspace on an
   empty cell merges with the previous cell (see item 9)
+- Table column alignment in preview: `:---` / `:-:` / `---:` separator cells render
+  left/center/right aligned (see item 9 slice c)
 - Input rules (`cm-input-rules.ts`): Enter after an opening ```/~~~ fence auto-closes it
   (cursor parked between the fences); `]` after an empty `[` yields `[]()` with the
   cursor inside; both no-ops inside fenced code
@@ -224,7 +226,7 @@ What already works well (do not regress):
 - Screenshots: none regenerated — a keydown handler has no visual effect and the
   fixtures never press the new chord (docker still unavailable in this env, see Parked).
 
-### 9. DONE (2026-08-20, slices a+b): Table cell navigation — Tab/Shift+Tab between cells, Backspace merges empty cells
+### 9. DONE (2026-08-20, all slices): Table cell navigation — Tab/Shift+Tab between cells, Backspace merges empty cells, `:---:` alignment renders in preview
 
 - Evidence: `tableTab`/`tableShiftTab` in `src/lib/cm-table.ts` + Tab/Shift+Tab
   bindings in `tableKeymap`; `Editor.svelte` now lists `tableKeymap` before
@@ -253,8 +255,17 @@ What already works well (do not regress):
   12 unit tests (`cm-table.test.ts`) + 4 e2e tests (`e2e/tables.spec.ts`); full suite
   green: 160 unit + 76 e2e passed (5 pre-existing skips). Screenshots unaffected —
   keydown-only change and the fixtures never press Backspace in a table.
-- Remaining slice: (c) `:---:` alignment renders aligned in preview (needs screenshot
-  regeneration in a docker-capable env — see Parked).
+- Slice (c) evidence (2026-08-20): `:---:` alignment **already rendered** in preview with
+  zero code changes — `marked` v18 emits the deprecated-but-supported `align="left|center|right"`
+  attribute on `th`/`td` from the separator row, DOMPurify's default allow list keeps `align`,
+  and Chromium applies it. Locked with 1 unit test (`markdown.test.ts`, pins marked's
+  `align`-attribute output — note `renderMarkdown` is not unit-testable in node, the
+  dompurify default export there is a factory with no `sanitize`) and 1 e2e test
+  (`e2e/tables.spec.ts`: computed `text-align` left/center/right on th and td, unaligned
+  columns fall back to UA defaults `center`/`start`). Full suite: 161 unit + 77 e2e
+  passed (5 pre-existing skips). Screenshots unaffected — the committed fixture has no
+  tables, so no docker regeneration was needed (the earlier "blocked on docker" note
+  conflated *showing* alignment in the PNGs with the feature itself working).
 
 ### 10. Images: committed design doc first (implementation later)
 
@@ -378,6 +389,18 @@ What already works well (do not regress):
   Input-time behavior belongs in keymap bindings (`key: 'Enter'`, `key: ']'`) or view
   plugins; a keymap `run` returning true also suppresses the typed character, so the
   binding must insert it itself (e.g. `]` pairing inserts `]()`, not just `()`).
+- **Table alignment plumbing (iteration 12):** `marked` v18 renders GFM column alignment
+  as the deprecated `align="left|center|right"` **attribute** (not an inline style);
+  DOMPurify's default `html` attribute allow list includes `align`, so it survives
+  sanitization untouched, and Chromium applies the attribute to layout. Two computed-style
+  gotchas when asserting on it in e2e: (a) Chromium reports attribute-derived
+  `text-align` as `-webkit-left` / `-webkit-center` / `-webkit-right` (CSS-derived values
+  come back plain), so normalize with `.replace(/^-webkit-/, '')`; (b) the UA default for
+  an unaligned `td` is the logical value `start` (not `left`) in current Chromium, while
+  an unaligned `th` is `center`. Also: `renderMarkdown` is not unit-testable in node — the
+  `dompurify` default export outside a browser is a factory function with `isSupported:
+  false` and no `sanitize`, so unit tests must target `titleWrappedHtml` (pre-sanitize
+  marked output) and leave the sanitize step to e2e.
 - **Audit gotcha (iteration 3):** `@codemirror/lang-markdown`'s dist does not
   contain the GFM node names (Strikethrough, Subscript, …) — they come from the
   transitive `@lezer/markdown` package. Grep the whole `node_modules/.pnpm` tree
