@@ -25,7 +25,8 @@ What already works well (do not regress):
   Backspace on an empty item dedents/removes the marker
 - Table Enter keymap (`cm-table.ts`): separator insert, row continuation, empty-row delete
 - Table cell navigation (`cm-table.ts`): Tab to the next cell / new row at row end
-  (separator added when needed), Shift+Tab to the previous cell (see item 9)
+  (separator added when needed), Shift+Tab to the previous cell, Backspace on an
+  empty cell merges with the previous cell (see item 9)
 - Input rules (`cm-input-rules.ts`): Enter after an opening ```/~~~ fence auto-closes it
   (cursor parked between the fences); `]` after an empty `[` yields `[]()` with the
   cursor inside; both no-ops inside fenced code
@@ -223,7 +224,7 @@ What already works well (do not regress):
 - Screenshots: none regenerated — a keydown handler has no visual effect and the
   fixtures never press the new chord (docker still unavailable in this env, see Parked).
 
-### 9. DONE (2026-08-20, slice a): Table cell navigation — Tab/Shift+Tab move between cells
+### 9. DONE (2026-08-20, slices a+b): Table cell navigation — Tab/Shift+Tab between cells, Backspace merges empty cells
 
 - Evidence: `tableTab`/`tableShiftTab` in `src/lib/cm-table.ts` + Tab/Shift+Tab
   bindings in `tableKeymap`; `Editor.svelte` now lists `tableKeymap` before
@@ -241,9 +242,19 @@ What already works well (do not regress):
 - e2e note: after Enter in a header row the cursor lands on the second space of the
   first cell of the new `|  |  |` row (`rowStart + 2`), so typed text lands there —
   table e2e expectations must account for the 2-space empty cells.
-- Remaining slices (next iterations, same order): (b) Backspace on an empty cell
-  merges with the previous cell; (c) `:---:` alignment renders aligned in preview
-  (needs screenshot regeneration in a docker-capable env — see Parked).
+- Slice (b) evidence (2026-08-20): `tableBackspace` in `src/lib/cm-table.ts` + a
+  Backspace binding in `tableKeymap`. When the cursor is in an empty cell (not the
+  first), Backspace moves the cursor to the end of the previous cell's content — or
+  just before the following pipe when the previous cell is also empty — leaving all
+  pipes intact: markdown pipe tables cannot express column spans, so a "merge" is a
+  selection-only move (Word/Docs-style), and typing continues in the previous cell.
+  No-op (falls through to default Backspace) in the first cell, on a pipe, in a
+  non-empty cell, in a single-cell row, on non-pipe lines, and inside fenced code.
+  12 unit tests (`cm-table.test.ts`) + 4 e2e tests (`e2e/tables.spec.ts`); full suite
+  green: 160 unit + 76 e2e passed (5 pre-existing skips). Screenshots unaffected —
+  keydown-only change and the fixtures never press Backspace in a table.
+- Remaining slice: (c) `:---:` alignment renders aligned in preview (needs screenshot
+  regeneration in a docker-capable env — see Parked).
 
 ### 10. Images: committed design doc first (implementation later)
 

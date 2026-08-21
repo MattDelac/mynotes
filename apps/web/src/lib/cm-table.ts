@@ -101,6 +101,29 @@ export function tableShiftTab(state: EditorState): TransactionSpec | null {
 	return { selection: { anchor: target, head: target } };
 }
 
+export function tableBackspace(state: EditorState): TransactionSpec | null {
+	const pos = state.selection.main.head;
+	const line = state.doc.lineAt(pos);
+	const text = state.sliceDoc(line.from, line.to);
+	if (isInsideFencedCode(state, pos)) return null;
+	const ranges = cellRanges(text);
+	if (ranges.length < 2) return null;
+	const rel = pos - line.from;
+	const idx = ranges.findIndex(([start, end]) => start <= rel && rel < end);
+	if (idx <= 0) return null;
+	const [start, end] = ranges[idx];
+	if (text.slice(start, end).trim()) return null;
+	const [pStart, pEnd] = ranges[idx - 1];
+	let target = pEnd;
+	for (let i = pEnd - 1; i >= pStart; i--) {
+		if (text[i].trim()) {
+			target = i + 1;
+			break;
+		}
+	}
+	return { selection: { anchor: line.from + target, head: line.from + target } };
+}
+
 export function tableEnter(state: EditorState): TransactionSpec | null {
 	const pos = state.selection.main.head;
 	const line = state.doc.lineAt(pos);
@@ -165,6 +188,17 @@ export const tableKeymap: KeyBinding[] = [
 		run(view) {
 			if (!view.state.facet(EditorView.editable)) return false;
 			const change = tableShiftTab(view.state);
+			if (!change) return false;
+			view.dispatch(change);
+			return true;
+		}
+	},
+	{
+		key: 'Backspace',
+		preventDefault: true,
+		run(view) {
+			if (!view.state.facet(EditorView.editable)) return false;
+			const change = tableBackspace(view.state);
 			if (!change) return false;
 			view.dispatch(change);
 			return true;

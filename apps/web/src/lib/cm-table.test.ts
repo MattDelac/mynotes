@@ -4,6 +4,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import {
 	isEmptyTableRow,
 	isSeparatorRow,
+	tableBackspace,
 	tableColumns,
 	tableEnter,
 	tableShiftTab,
@@ -37,6 +38,16 @@ function shiftTab(doc: string, pos: number): EditorState {
 		selection: { anchor: pos }
 	});
 	const spec = tableShiftTab(state);
+	return spec ? state.update(spec).state : state;
+}
+
+function backspace(doc: string, pos: number): EditorState {
+	const state = EditorState.create({
+		doc,
+		extensions: [markdown({ base: markdownLanguage })],
+		selection: { anchor: pos }
+	});
+	const spec = tableBackspace(state);
 	return spec ? state.update(spec).state : state;
 }
 
@@ -244,5 +255,85 @@ describe('tableShiftTab (Shift+Tab in a table)', () => {
 		const next = shiftTab('hello world', 2);
 		expect(next.doc.toString()).toBe('hello world');
 		expect(next.selection.main.anchor).toBe(2);
+	});
+});
+
+describe('tableBackspace (Backspace in a table)', () => {
+	it('merges an empty cell with the previous cell, landing after its content', () => {
+		const doc = '| a | b |\n| --- | --- |\n| x |  |';
+		const next = backspace(doc, 29);
+		expect(next.doc.toString()).toBe(doc);
+		expect(next.selection.main.anchor).toBe(27);
+	});
+
+	it('lands after multi-character previous-cell content', () => {
+		const doc = '| a | b |\n| --- | --- |\n| xy |  |';
+		const next = backspace(doc, 30);
+		expect(next.doc.toString()).toBe(doc);
+		expect(next.selection.main.anchor).toBe(28);
+	});
+
+	it('merges into an empty previous cell, landing before its closing pipe', () => {
+		const doc = '| a | b |\n| --- | --- |\n|  |  |';
+		const next = backspace(doc, 29);
+		expect(next.doc.toString()).toBe(doc);
+		expect(next.selection.main.anchor).toBe(27);
+	});
+
+	it('also merges when the cursor sits mid-cell in an empty cell', () => {
+		const doc = '| a | b |\n| --- | --- |\n| x |  |';
+		const next = backspace(doc, 30);
+		expect(next.selection.main.anchor).toBe(27);
+	});
+
+	it('is a no-op in the first cell', () => {
+		const doc = '| a | b |\n| --- | --- |\n|  |  |';
+		const next = backspace(doc, 25);
+		expect(next.doc.toString()).toBe(doc);
+		expect(next.selection.main.anchor).toBe(25);
+	});
+
+	it('is a no-op in a non-empty cell', () => {
+		const next = backspace(TBL, 30);
+		expect(next.doc.toString()).toBe(TBL);
+		expect(next.selection.main.anchor).toBe(30);
+	});
+
+	it('is a no-op with the cursor on a pipe', () => {
+		const next = backspace(TBL, 28);
+		expect(next.doc.toString()).toBe(TBL);
+		expect(next.selection.main.anchor).toBe(28);
+	});
+
+	it('works in header rows', () => {
+		const doc = '| a |  |\n| --- | --- |';
+		const next = backspace(doc, 5);
+		expect(next.doc.toString()).toBe(doc);
+		expect(next.selection.main.anchor).toBe(3);
+	});
+
+	it('handles rows without a leading pipe', () => {
+		const next = backspace('x |  |', 4);
+		expect(next.doc.toString()).toBe('x |  |');
+		expect(next.selection.main.anchor).toBe(1);
+	});
+
+	it('leaves a single-cell row untouched', () => {
+		const next = backspace('| x |', 2);
+		expect(next.doc.toString()).toBe('| x |');
+		expect(next.selection.main.anchor).toBe(2);
+	});
+
+	it('leaves non-table lines untouched', () => {
+		const next = backspace('hello world', 2);
+		expect(next.doc.toString()).toBe('hello world');
+		expect(next.selection.main.anchor).toBe(2);
+	});
+
+	it('ignores pipe lines inside a fenced code block', () => {
+		const doc = '```\n| a | b |\n```';
+		const next = backspace(doc, 6);
+		expect(next.doc.toString()).toBe(doc);
+		expect(next.selection.main.anchor).toBe(6);
 	});
 });

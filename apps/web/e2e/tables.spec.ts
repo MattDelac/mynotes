@@ -131,6 +131,61 @@ test('shift+tab in the first cell keeps the cursor in place', async ({ page }) =
 	await expect(editor).toBeFocused();
 });
 
+test('backspace in an empty cell merges with the previous cell', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('x');
+	await page.keyboard.press('Tab');
+	await page.keyboard.type('y');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.type('z');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n| xz |  |');
+	await expect(editor).toBeFocused();
+});
+
+test('backspace in an empty cell with an empty previous cell lands before its pipe', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Tab');
+	await page.keyboard.type('y');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.type('x');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n|  x|  |');
+	await expect(editor).toBeFocused();
+});
+
+test('backspace in a table cell with content deletes the character', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('| a | b |');
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Tab');
+	await page.keyboard.type('y');
+	await page.keyboard.press('Backspace');
+	await expect.poll(() => editorText(page)).toBe('| a | b |\n| --- | --- |\n|  |  |');
+});
+
+test('backspace outside a table still deletes a character', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.click();
+	await page.keyboard.type('hello');
+	await page.keyboard.press('Backspace');
+	await expect.poll(() => editorText(page)).toBe('hell');
+	await expect(editor).toBeFocused();
+});
+
 test('tab outside a table still indents', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
