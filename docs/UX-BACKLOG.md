@@ -6,7 +6,12 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 1)
+## Status (2026-08-21, run 2, iteration 2)
+
+- Iteration 2 shipped item 14 (Mod+Alt+X strikethrough, Mod+Alt+C inline code) on
+  item 13's mark-agnostic format engine. Next unblocked: item 15 (heading toggles
+  Mod+Alt+1..6 / Mod+Alt+0), then 16 (Mod+K link), 17 (task lists), 18 (undo
+  granularity for the other keymaps), 12 (rebind Mod+N), 11 (chore).
 
 - Former item 10 (images) is **CLOSED by product decision** — pruned per the mandate.
   The record is `docs/adr/0001-documents-stay-pure-markdown.md`; no image/blob work may
@@ -332,15 +337,24 @@ What already works well (do not regress):
 - Screenshots: keymap-only change, fixtures never press Mod+B/Mod+I — committed PNGs
   cannot change; no regeneration needed (docker still unavailable here, see Parked).
 
-### 14. Formatting commands: Mod+Alt+X strikethrough, Mod+Alt+C inline code
+### 14. DONE (2026-08-21): Formatting commands: Mod+Alt+X strikethrough, Mod+Alt+C inline code
 
-- Evidence: item 13's engine is mark-agnostic (`open`/`close` strings); the two
-  bindings are a few lines + tests.
-- Scope: extend `formatKeymap` with `Mod-Alt-x` → `~~` and `Mod-Alt-c` → `` ` ``;
-  e2e: word-wrap + toggle for each, and the existing concealment keeps applying
-  (inactive-line tildes stay hidden — `cm-conceal.ts` already conceals `~~`; verify
-  inline code marks are also concealed and add them if not).
-- done-when: both commands work with selection-or-word semantics, unit + e2e green.
+- Evidence: `formatKeymap` in `src/lib/cm-format.ts` gained `Mod-Alt-x` → `~~` and
+  `Mod-Alt-c` → `` ` `` on item 13's mark-agnostic engine (no engine change); 16 unit
+  tests (`cm-format.test.ts`, both marks across selection/word/empty/unwrap cases incl.
+  backtick-as-word-boundary) + 5 e2e tests (`e2e/formatting.spec.ts`: word wrap + toggle
+  per chord, selection wrap per chord, concealment of both mark types on inactive lines
+  with document unchanged). Full suite green: 204 unit + 88 e2e (5 pre-existing skips).
+- Concealment: verified `cm-conceal.ts` already conceals `StrikethroughMark` and
+  `CodeMark` (grammar premises pinned in `cm-conceal.test.ts`) — no concealment change
+  needed, e2e locks it.
+- Key parsing: verified in `@codemirror/view`'s `normalizeKeyName` that `Mod-Alt-x`
+  normalizes to `Ctrl-Alt-x` (Win/Linux) / `Alt-Meta-x` (mac), and CM6's keyCode-based
+  fallback (`w3c-keyname` + `base[]` table) resolves macOS Option-mangled `e.key`
+  (e.g. `∩`) back to the chord — unlike the raw DOM handlers in `AppHeader.svelte`, CM6
+  keymap bindings need no `e.code` workaround for Option chords.
+- Screenshots: keymap-only change, fixtures never press the new chords — committed PNGs
+  cannot change; no regeneration needed (docker still unavailable here, see Parked).
 
 ### 15. Heading toggles: Mod+Alt+1..6 set the line's level, Mod+Alt+0 removes it
 

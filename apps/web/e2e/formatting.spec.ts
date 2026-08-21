@@ -8,16 +8,16 @@ async function shareCurrentSession(page: Page): Promise<string> {
 	return linkInput.inputValue();
 }
 
-async function selectLastFive(page: Page): Promise<void> {
+async function selectLast(page: Page, count: number): Promise<void> {
 	await page.keyboard.press('End');
-	for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowLeft');
+	for (let i = 0; i < count; i++) await page.keyboard.press('Shift+ArrowLeft');
 }
 
 test('Ctrl+B wraps a selection and toggles back off', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
 	await editor.fill('Hello world');
-	await selectLastFive(page);
+	await selectLast(page, 5);
 	await page.keyboard.press('Control+b');
 	await expect.poll(() => editorText(page)).toBe('Hello **world**');
 	await page.keyboard.press('Control+b');
@@ -46,7 +46,7 @@ test('Ctrl+I italicizes a selection and toggles back off', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
 	await editor.fill('Hello world');
-	await selectLastFive(page);
+	await selectLast(page, 5);
 	await page.keyboard.press('Control+i');
 	await expect.poll(() => editorText(page)).toBe('Hello *world*');
 	await page.keyboard.press('Control+i');
@@ -68,6 +68,66 @@ test('wrapping is undoable and the concealment invariant survives', async ({ pag
 	await expect.poll(() => editorText(page)).toBe('Hello world\nsecond line');
 	await page.keyboard.press('Control+z');
 	await expect.poll(() => editorText(page)).toBe('Hello world\nsecond line');
+});
+
+test('Ctrl+Alt+X strikes through the word under the cursor and toggles back off', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('Hello gone');
+	await page.keyboard.press('Home');
+	for (let i = 0; i < 8; i++) await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Control+Alt+x');
+	await expect.poll(() => editorText(page)).toBe('Hello ~~gone~~');
+	await page.keyboard.press('Control+Alt+x');
+	await expect.poll(() => editorText(page)).toBe('Hello gone');
+});
+
+test('Ctrl+Alt+X wraps a selection', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('Hello gone');
+	await selectLast(page, 4);
+	await page.keyboard.press('Control+Alt+x');
+	await expect.poll(() => editorText(page)).toBe('Hello ~~gone~~');
+});
+
+test('Ctrl+Alt+C wraps the word under the cursor in backticks and toggles back off', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('run npm now');
+	await page.keyboard.press('Home');
+	for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Control+Alt+c');
+	await expect.poll(() => editorText(page)).toBe('run `npm` now');
+	await page.keyboard.press('Control+Alt+c');
+	await expect.poll(() => editorText(page)).toBe('run npm now');
+});
+
+test('Ctrl+Alt+C wraps a selection', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('run npm now');
+	await page.keyboard.press('Home');
+	for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+	for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowRight');
+	await page.keyboard.press('Control+Alt+c');
+	await expect.poll(() => editorText(page)).toBe('run `npm` now');
+});
+
+test('strike and code marks stay concealed on inactive lines', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('~~gone~~ and `code` here\nsecond line');
+	await page.locator('.cm-line', { hasText: 'second line' }).click();
+	const line = page.locator('.cm-line').first();
+	await expect(line).toHaveText('gone and code here');
+	await line.click();
+	await expect(line).toHaveText('~~gone~~ and `code` here');
+	await expect.poll(() => editorText(page)).toBe('~~gone~~ and `code` here\nsecond line');
 });
 
 test('Ctrl+B is a no-op in a read-only shared session', async ({ page, browser }) => {

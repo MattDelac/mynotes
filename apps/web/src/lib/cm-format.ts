@@ -155,6 +155,8 @@ export function formatCommand(
 export function formatKeymap(undoManager?: UndoManager): readonly KeyBinding[] {
 	return [
 		{ key: 'Mod-b', run: formatCommand({ open: '**', close: '**' }, undoManager) },
-		{ key: 'Mod-i', run: formatCommand({ open: '*', close: '*' }, undoManager) }
+		{ key: 'Mod-i', run: formatCommand({ open: '*', close: '*' }, undoManager) },
+		{ key: 'Mod-Alt-x', run: formatCommand({ open: '~~', close: '~~' }, undoManager) },
+		{ key: 'Mod-Alt-c', run: formatCommand({ open: '`', close: '`' }, undoManager) }
 	];
 }

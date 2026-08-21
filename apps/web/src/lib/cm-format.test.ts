@@ -111,6 +111,85 @@ describe('applyFormat — italic (*…*)', () => {
 	});
 });
 
+const strike: FormatMark = { open: '~~', close: '~~' };
+const code: FormatMark = { open: '`', close: '`' };
+
+describe('applyFormat — strikethrough (~~…~~)', () => {
+	it('wraps a non-empty selection', () => {
+		expect(fmt('Hello gone', 6, 10, strike)).toBe('Hello ~~gone~~');
+	});
+
+	it('selects the wrapped content so a repeat press toggles', () => {
+		const r = applyFormat({ doc: 'Hello gone', from: 6, to: 10, ...strike });
+		expect(r.anchor).toBe(8);
+		expect(r.head).toBe(12);
+	});
+
+	it('unwraps a selection already flanked by the marks', () => {
+		expect(fmt('Hello ~~gone~~', 8, 12, strike)).toBe('Hello gone');
+	});
+
+	it('unwraps a selection that includes the marks', () => {
+		expect(fmt('Hello ~~gone~~', 6, 14, strike)).toBe('Hello gone');
+	});
+
+	it('wraps the word under the cursor with no selection', () => {
+		expect(fmt('Hello gone', 8, 8, strike)).toBe('Hello ~~gone~~');
+	});
+
+	it('unwraps a word when the cursor sits inside it', () => {
+		expect(fmt('Hello ~~gone~~', 9, 9, strike)).toBe('Hello gone');
+	});
+
+	it('inserts the mark pair with the cursor between on an empty document', () => {
+		const r = applyFormat({ doc: '', from: 0, to: 0, ...strike });
+		expect(apply('', r)).toBe('~~~~');
+		expect(r.anchor).toBe(2);
+		expect(r.head).toBe(2);
+	});
+
+	it('removes an empty mark pair at the cursor', () => {
+		expect(fmt('~~~~', 2, 2, strike)).toBe('');
+	});
+});
+
+describe('applyFormat — inline code (`…`)', () => {
+	it('wraps a non-empty selection', () => {
+		expect(fmt('run npm now', 4, 7, code)).toBe('run `npm` now');
+	});
+
+	it('unwraps a selection already flanked by the marks', () => {
+		expect(fmt('run `npm` now', 5, 8, code)).toBe('run npm now');
+	});
+
+	it('unwraps a selection that includes the marks', () => {
+		expect(fmt('run `npm`', 4, 9, code)).toBe('run npm');
+	});
+
+	it('wraps the word under the cursor with no selection', () => {
+		expect(fmt('run npm now', 5, 5, code)).toBe('run `npm` now');
+	});
+
+	it('unwraps a word when the cursor sits inside it', () => {
+		expect(fmt('run `npm` now', 6, 6, code)).toBe('run npm now');
+	});
+
+	it('treats backticks as word boundaries', () => {
+		expect(fmt('a `b` c', 3, 3, code)).toBe('a b c');
+	});
+
+	it('inserts a single backtick pair on an empty document', () => {
+		const r = applyFormat({ doc: '', from: 0, to: 0, ...code });
+		expect(apply('', r)).toBe('``');
+		expect(r.anchor).toBe(1);
+		expect(r.head).toBe(1);
+	});
+
+	it('removes an empty code pair at the cursor', () => {
+		expect(fmt('``', 1, 1, code)).toBe('');
+	});
+});
+
 function makeState(doc: string, anchor: number): EditorState {
 	return EditorState.create({
 		doc,
