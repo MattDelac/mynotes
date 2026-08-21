@@ -31,7 +31,7 @@
 	import { mailtoLink, sessionOwnerLink, sessionViewLink } from '$lib/share';
 	import { downloadNote } from '$lib/export';
 	import { scanTaskLines } from '$lib/task-lines';
-	import { forgetCaret } from '$lib/caret-memory';
+	import { forgetSelection } from '$lib/selection-memory';
 	import { forgetUndoManager } from '$lib/undo-memory';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
@@ -294,7 +294,7 @@
 		if (doomed) forgetUndoManager(doomed);
 		await removeNote(docId(), id);
 		await deleteNote(id);
-		forgetCaret(id);
+		forgetSelection(id);
 		await syncMetadata();
 		if (id === noteId) {
 			if (notes.length > 0) {

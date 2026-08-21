@@ -12,7 +12,7 @@
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, viewLink } from '$lib/share';
 	import { downloadNote } from '$lib/export';
-	import { forgetCaret } from '$lib/caret-memory';
+	import { forgetSelection } from '$lib/selection-memory';
 	import { forgetUndoManager } from '$lib/undo-memory';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
@@ -177,7 +177,7 @@
 		forgetUndoManager(doc.ytext);
 		await deleteNote(id);
 		await destroyNoteDoc(id);
-		forgetCaret(id);
+		forgetSelection(id);
 		notes = await listNotes();
 		if (id === note.id) {
 			if (notes.length > 0) {

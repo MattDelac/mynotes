@@ -6,7 +6,30 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 3, iteration 1)
+## Status (2026-08-21, run 3, iteration 2)
+
+- Iteration 2 shipped item 24 — per-note SELECTION restoration on note
+  switch: `caret-memory.ts` is now `selection-memory.ts` and records the
+  full `{ anchor, head }` per note (same per-tab map, same on-every-update
+  recording); `Editor.svelte` seeds the remounted EditorState with the
+  restored range — an empty range is a caret point, backward selections
+  are preserved, both ends are independently clamped into `0..docLength`.
+  14 unit tests (`selection-memory.test.ts`) + 1 sensitivity-verified e2e
+  (`e2e/selection-memory.spec.ts`, renamed from `caret-memory.spec.ts`):
+  select the whole of `hello world` with Shift+arrows (backward
+  selection), A→B→A, Mod+B wraps exactly the restored range to `**hello
+  world**` — under caret-only restoration the same press wraps only
+  `hello` (`**hello** world`), so the test locks the fix. The item-20
+  caret tests are unchanged and green. Full suite green: 336 unit +
+  135 e2e (5 pre-existing skips). No screenshot impact: no fixture
+  switches notes with a pending selection and the fixtures pass
+  `caret: 'hide'` (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 26 (scroll the viewport to the restored position
+  on remount — gap verified by probe: a remounted 40-line note with the
+  saved caret on the last line reports `scrollTop = 0`) and item 25
+  (persist the per-note position across reloads via the local note
+  metadata — item 20's explicit in-memory boundary). Next unblocked:
+  item 26.
 
 - Iteration 1 shipped item 21 — per-note undo history across note switches
   (per-tab `WeakMap<Y.Text, Y.UndoManager>` reused across mounts), plus item 22 —
@@ -767,22 +790,95 @@ What already works well (do not regress):
   `Mod-y` binding) remains the portable fallback and is what e2e (a)/(b)
   use. Full suite green twice: 331 unit + 134 e2e.
 
-### 24. Restore the per-note SELECTION (not just the caret) on note switch
+### 24. DONE (2026-08-21, run 3, iteration 2): Restore the per-note SELECTION (not just the caret) on note switch
 
-- Follow-up to item 20, which was deliberately scoped caret-only.
-  `caret-memory.ts` records `head` per note on every editor update; extend
-  it to record `{ anchor, head }` and, on remount, restore the FULL range
-  when it is non-empty (falling back to the caret point when it is empty),
-  clamping both ends into `0..docLength` (a collaborator may have shrunk
-  the note; CRDT-aware position remapping would need awareness — an
-  explicit non-goal — so length-clamping is the v1 semantics, same as the
-  caret). Preserve backward selections (`anchor > head`) as-is.
-- done-when: unit tests (per-note independence, empty selection → caret
-  only, clamp both ends, backward selection preserved) + e2e: select a
-  word in A (Shift+arrow), switch A→B→A, and the selection is back —
-  verified by a selection-consuming action (e.g. Mod+B wraps exactly the
-  selected word) — without regressing the item-20 caret tests.
-- Priority: lowest of the unblocked set — small, local-only, no UI.
+- Evidence: `src/lib/caret-memory.ts` → `src/lib/selection-memory.ts` — a
+  per-tab (module-level) `Map<noteId, { anchor, head }>` with
+  `recordSelection(noteId, anchor, head)`, `savedSelection(noteId,
+  docLength)` (unknown note → `{ anchor: 0, head: 0 }`; both ends
+  independently clamped into `0..docLength` — a shrunken doc keeps a
+  backward selection backward and converges to a point when both ends
+  clamp together), and `forgetSelection(noteId)`. `Editor.svelte` seeds
+  `selection: savedSelection(noteId, docText.length)` — an empty range
+  is a caret point, so the item-20 semantics fall out of the same code
+  path — and records the full main selection (`anchor` + `head`) on
+  EVERY `updateListener` update (same deliberate not-gated-on-
+  `selectionSet` choice as item 20, so remote-change-driven selection
+  shifts are recorded too). Both routes' delete paths now call
+  `forgetSelection`. 14 unit tests (`selection-memory.test.ts`:
+  unknown→zero point, caret point, forward, backward, per-note
+  independence, overwrite, clamp-both/clamp-one/clamped-backward/
+  collapse-together, empty doc, negative, forget, forget-only-named) +
+  1 e2e (`e2e/selection-memory.spec.ts`, renamed from
+  `caret-memory.spec.ts`): `selection is restored after switching notes`
+  — type `hello world`, select the whole line with End +
+  11×Shift+ArrowLeft (backward selection, anchor 11 head 0), A→B→A,
+  `Control+b` wraps exactly the restored range → `**hello world**`;
+  sensitivity-verified — with the seed reduced to the caret-only
+  `{ anchor: head }` the same press wraps only `hello`
+  (`**hello** world`) and the test fails. The pre-existing caret tests
+  (a)/(b) are unchanged and green. Full suite green: 336 unit + 135 e2e
+  (5 pre-existing skips).
+- Why a multi-word selection in the e2e: a single-word selection is NOT
+  a discriminator — the item-20 caret-only behavior restores the head
+  (the word's start), and a Mod+B word-wrap from that caret wraps the
+  same word; only a range a caret cannot reproduce (multi-word or
+  partial-word) separates the two behaviors.
+- Scope notes: in-memory / per-tab only, exactly like item 20 (a reload
+  starts empty — item 25 will persist it); length-clamping, not CRDT
+  position mapping (explicit non-goal); the frozen `n/[id]` page
+  benefits too (SPA navigation, module-level map). No screenshot impact:
+  no fixture switches notes with a pending selection and the fixtures
+  pass `caret: 'hide'` (docker still unavailable in this env — see
+  Parked).
+
+### 26. Scroll the viewport to the restored caret/selection on remount
+
+- Verified gap (run 3, iteration 2 probe, removed after the finding):
+  a remounted 40-line note with the saved caret on the LAST line
+  (`Control+End` before switching) reports `scrollTop = 0`
+  (scrollHeight 1224, clientHeight 676) — CM6 scrolls the selection into
+  view on selection CHANGES but not for the INITIAL state's selection,
+  so the restored position (items 20/24) is invisible: the user returns
+  to the top of a long note with the caret somewhere deep.
+- Fix direction: in `Editor.svelte` onMount, after `new EditorView`,
+  when a non-default position was restored, dispatch the current main
+  selection with `scrollIntoView: true` (a selection-only transaction —
+  no doc change, so no Yjs step and no undo-clock reset). Applies to
+  every mount, which also covers the initial load once item 25 persists
+  positions across reloads.
+- done-when: e2e — type 40 lines, `Control+End`, A→B→A, the scroller's
+  `scrollTop` is > 0 (sensitivity: fails with the dispatch removed); a
+  short note that fits the viewport stays put. No UI change — the
+  committed fixtures are short of one screen and never switch notes with
+  a deep caret, so no PNG can change (docker still unavailable here —
+  see Parked).
+- Priority: top unblocked — completes the restoration story items 20/24
+  started; small, local-only, no UI.
+
+### 25. Persist the per-note work position across reloads
+
+- Item 20's scope note ("in-memory / per-tab only — a reload starts at
+  0") and the item-21 note ("a reload starts empty, like caret memory")
+  leave this boundary: an accidental refresh / tab restore / crash lands
+  the user at the top of a long note. Docs/Obsidian/Typora all restore
+  the working position across reloads.
+- Fix direction: extend the local `Note` record in `src/lib/db.ts` with
+  an optional `lastSelection: { anchor, head }` — local UI metadata only;
+  the document bytes, export, and sync payloads are untouched (the relay
+  only ever sees Yjs updates, ADR 0001 intact). Record on the same
+  on-every-update path as `selection-memory.ts`, but DEBOUNCED (IndexedDB
+  must not be written per keystroke) and flushed on `visibilitychange:
+  hidden` / `pagehide`; on mount, prefer the in-tab `selection-memory`
+  and fall back to the persisted record (clamped, same semantics). The
+  note-delete paths already drop the record with the note.
+- done-when: unit tests for the persist/restore clamp + e2e — type a long
+  note, park the caret deep, `page.reload()`, the position is back
+  (verified by a selection-consuming action like the item-24 test) —
+  without regressing the in-tab restore tests.
+- Priority: second unblocked — small, local-only; benefits from item
+  26's scroll dispatch (a restored position that doesn't scroll is
+  half-useful).
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 

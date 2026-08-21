@@ -16,7 +16,7 @@
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
 	import { taskMarkerClick } from './cm-task-click';
-	import { recordCaret, savedCaret } from './caret-memory';
+	import { recordSelection, savedSelection } from './selection-memory';
 	import { getUndoManager } from './undo-memory';
 
 	let {
@@ -66,7 +66,7 @@
 		const docText = ytext.toString();
 		const state = EditorState.create({
 			doc: docText,
-			selection: { anchor: savedCaret(noteId, docText.length) },
+			selection: savedSelection(noteId, docText.length),
 			extensions: [
 				keymap.of([
 					...yUndoManagerKeymap,
@@ -87,7 +87,8 @@
 				taskMarkerClick(undoManager),
 				cmPlaceholder('Start typing…'),
 				EditorView.updateListener.of((update) => {
-					recordCaret(noteId, update.state.selection.main.head);
+					const main = update.state.selection.main;
+					recordSelection(noteId, main.anchor, main.head);
 				}),
 				EditorView.lineWrapping,
 				EditorView.editable.of(editable),
