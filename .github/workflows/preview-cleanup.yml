@@ -1,0 +1,16 @@
+name: Cleanup preview deployment
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  cleanup:
+    uses: ./.github/workflows/_preview-cleanup.yml
+    with:
+      pr-number: ${{ github.event.number }}
+    secrets: inherit
