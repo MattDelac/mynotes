@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import * as Y from 'yjs';
-	import { EditorState } from '@codemirror/state';
+	import { EditorState, Prec } from '@codemirror/state';
 	import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view';
 	import { defaultKeymap } from '@codemirror/commands';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
@@ -17,6 +17,7 @@
 	import { tableKeymap } from './cm-table';
 	import { taskMarkerClick } from './cm-task-click';
 	import { taskToggleKeymap } from './cm-task-toggle';
+	import { orderedTaskNewlineKeymap } from './cm-task-newline';
 	import { getNoteSelection } from './db';
 	import {
 		clampSelection,
@@ -78,6 +79,7 @@
 			doc: docText,
 			selection: savedSelection(noteId, docText.length),
 			extensions: [
+				Prec.highest(keymap.of(orderedTaskNewlineKeymap(undoManager))),
 				keymap.of([
 					...yUndoManagerKeymap,
 					{ key: 'Mod-Shift-Z', run: () => undoManager.redo() != null, preventDefault: true },

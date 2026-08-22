@@ -95,6 +95,65 @@ test('Enter inside a fenced code block does not continue the task marker', async
 	await expect.poll(() => editorText(page)).toBe('```\n- [ ] x\n\n```');
 });
 
+test('Enter on an ordered task item continues the marker, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line', { hasText: 'buy milk' }).click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] ');
+	await page.keyboard.type('eggs');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] eggs');
+
+	await openPreview(page);
+	const boxes = page.locator('article.preview input[data-task-line]');
+	await expect(boxes).toHaveCount(2);
+	await expect(boxes.nth(0)).toHaveAttribute('data-task-line', '1');
+	await expect(boxes.nth(1)).toHaveAttribute('data-task-line', '2');
+});
+
+test('Enter on an empty ordered task item exits the list', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] ');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('fresh start');
+	await expect.poll(() => editorText(page)).toBe('fresh start');
+});
+
+test('an empty ordered task item in a tight list takes a blank line before it exits', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line', { hasText: 'buy milk' }).click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] ');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n\n2.  ');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n\n');
+});
+
+test('ordered task continuation is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] ');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk');
+});
+
 test('clicking the bracket toggles an unchecked task to checked and back', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });

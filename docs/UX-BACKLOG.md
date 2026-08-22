@@ -6,7 +6,38 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 3, iteration 6)
+## Status (2026-08-21, run 3, iteration 7)
+
+- Iteration 7 shipped item 29 — Enter-continuation on ordered task items now
+  keeps the `[ ] ` marker (`1. [ ] x` + Enter → `1. [ ] x\n2. [ ] `), and an
+  empty ordered task exits the list exactly like a bullet (single empty item →
+  plain line; tight second item → blank line first, then exit). New
+  `src/lib/cm-task-newline.ts`: a pure `orderedTaskNewlineChanges(state)` +
+  `Enter` keymap command wired in `Editor.svelte` at `Prec.highest` (ahead of
+  `markdownKeymap`'s `Prec.high` Enter). Two paths, both reusing the upstream
+  `insertNewlineContinueMarkup` via a captured dispatch: (a) ordered task WITH
+  content (tree `TaskMarker` whose innermost list is `OrderedList`) — the
+  built-in runs, then a composed `ChangeSet` patch splices `[ ] ` right after
+  the fresh `N.`/`N)` marker (quote prefixes and nested indents handled; a
+  mid-line split puts the marker before the remainder); (b) EMPTY ordered task
+  (marker present or not — probe: `1. [ ] ` parses WITH a `TaskMarker`,
+  `1. [ ]` as a marker-less `Paragraph`) — the bare `[x]` token is deleted
+  first (composed locally), then the built-in runs on the stripped state, so
+  ITS OWN empty-item logic (exit / tight→loose / renumber / quote handling)
+  executes on a plain empty ordered item — bullet semantics with zero
+  duplication of upstream code. Bullet tasks (incl. nested in ordered), plain
+  ordered lines, fences, and non-list lines all fall through to the built-in
+  unchanged. 18 unit tests (`cm-task-newline.test.ts`) + 4 e2e
+  (`e2e/task-lists.spec.ts`: continuation with the preview checkbox count
+  1→2, empty exit, the tight-list Enter ladder, own undo step) — all 4
+  sensitivity-verified (each fails with the keymap wiring removed). Full suite
+  green: 438 unit + 152 e2e (5 pre-existing skips). No new chord (Enter). No
+  screenshot impact: fixtures never press Enter on an ordered task list
+  (docker still unavailable in this env — see Parked). Re-audit seeded item 30
+  (Mod+Alt+L insert direction for ordered/blockquoted tasks — the one form the
+  toggle still cannot make) and item 31 (Backspace on an empty ordered task
+  does not exit the list — probe-verified bullet asymmetry). Next unblocked:
+  item 30.
 
 - Iteration 6 shipped item 28 — the Mod+Alt+L task toggle now also strips the
   marker from the two remaining GFM task forms: ordered (`1. [ ] x` → `1. x`,
@@ -1141,43 +1172,114 @@ What already works well (do not regress):
 - Priority: consumed — see item 29 (ordered task continuation, found by the
   iteration-6 re-audit).
 
-### 29. Task continuation: ordered task items drop the `[ ] ` marker on Enter (upstream gap)
+### 29. DONE (2026-08-21, run 3, iteration 7): Ordered task continuation keeps the `[ ] ` marker on Enter (upstream gap)
 
 - Gap (run 3, iteration 6, probe-verified against the installed
-  `@codemirror/lang-markdown` 6.5.1 dist): Enter-continuation treats the
+  `@codemirror/lang-markdown` 6.5.1 dist): Enter-continuation treated the
   three GFM task forms asymmetrically. Bullets: `- [ ] x` + Enter →
   `- [ ] x\n- [ ] ` (marker continued, unchecked — item 17a). Blockquotes:
   `> - [ ] x` + Enter → `> - [ ] x\n> - [ ] ` (quote + bullet + marker all
-  continued; empty `> - [ ] ` exits to `> `). **Ordered**: `1. [ ] x` +
-  Enter → `1. [ ] x\n2. ` — the `[ ] ` marker is DROPPED (the user retypes
-  it for every new ordered task), and an empty `1. [ ] ` + Enter →
-  `1. [ ]\n2. ` — it does NOT exit the list (the bullet equivalent deletes
-  the empty item and exits).
+  continued). **Ordered**: `1. [ ] x` + Enter → `1. [ ] x\n2. ` — the
+  `[ ] ` marker was DROPPED, an empty `1. [ ] ` + Enter did NOT exit the
+  list, and an empty SECOND item of a tight list CORRUPTED the marker
+  (`1. [ ] a\n2. [ ] ` + Enter → `1. [ ] a\n2. [\n3. ] ` — the built-in
+  split mid-marker).
 - Root cause (verified in the dist): `insertNewlineContinueMarkup` builds
   its continuation context in `getContext`, whose per-form regexes capture
   the task marker ONLY for bullets — BulletList:
   `/^( *)([-+*])( {1,4}\[[ xX]\])?( +)/` (marker = group 3) vs OrderedList:
   `/^( *)\d+([.)])( *)/` (no marker group). The re-emitted continuation line
-  therefore never carries the ordered task marker.
-- Direction: an app-level Enter wrapper (new keymap entry BEFORE
-  `markdownKeymap`, or a command that runs `insertNewlineContinueMarkup`
-  first): when the cursor's line is an ordered TASK item (tree:
-  `OrderedList > ListItem > Task`, item-28's probe) and the built-in
-  continuation ran, insert `[ ] ` right after the freshly inserted
-  `2. ` marker (caret after it). Handle the empty-item exit too (mirror the
-  bullet semantics: empty ordered task + Enter removes the marker/item).
-  Route through `ownUndoStep` (item 18). Keep `1.` / `1)` / nested forms
-  consistent. No new chord (Enter).
-- done-when: unit tests driving the real command (ordered task continues
-  WITH marker, checked→unchecked, nested indent kept, empty item exits,
-  plain ordered `1. x` still continues as `2. ` unchanged, blockquote
-  control) + e2e: `1. [ ] a` + Enter + type → `1. [ ] b` with the preview
-  checkbox count 2 (locks marker continuation end-to-end). Screenshots
-  unaffected (Enter-continuation, fixtures never press Enter in an ordered
-  task list).
-- Priority: TOP UNBLOCKED — completes the ordered-task input story
-  (continuation is the one ordered-task input path still missing the marker;
-  item 17a bullets + 17b/17c toggles + item 28 strip are all in place).
+  therefore never carries the ordered task marker; and the built-in's
+  "empty item" test slices the line AFTER the ordered marker (which ends
+  before `[ ] `), so an ordered task's own marker counts as "content" and
+  the exit branch never runs.
+- Evidence (run 3, iteration 7): new `src/lib/cm-task-newline.ts` — pure
+  `orderedTaskNewlineChanges(state)` (gates on a single empty caret, an
+  ordered-task line regex `((?:> ?)*)([ \t]*\d+[.)])[ \t]+(\[[ xX]\])…`, and
+  the tree `TaskMarker`'s INNERMOST list — a bullet task nested in an
+  ordered item must fall through), `orderedTaskNewlineCommand` (via
+  `ownUndoStep`, item 18) and `orderedTaskNewlineKeymap` (`Enter`);
+  `Editor.svelte` wires it at `Prec.highest(keymap.of(…))` — required, since
+  `markdown()`'s `markdownKeymap` is `Prec.high` and would otherwise run
+  first. Path (a) content: run `insertNewlineContinueMarkup` with a
+  CAPTURED dispatch, find the change whose insert carries the newline, take
+  the tail after its last `\n`, match the final `(\d+[.)])` marker, and
+  compose a patch that splices ` [ ] ` over the marker's trailing spaces —
+  one composed transaction, so caret mapping and the undo step are exact
+  (mid-line splits put the marker before the remainder; renumber changes and
+  quote prefixes pass through untouched). Path (b) empty: delete just the
+  `[x]` token into a local `ChangeSet`, run the built-in on the STRIPPED
+  state, then `remove.compose(builtinChanges)` — the built-in's own
+  empty-item logic (exit / tight→loose blank line / renumber / blockquote
+  `> ` exit) then executes on a plain empty ordered item, mirroring the
+  bullet semantics with zero duplication of upstream code. Bullet tasks
+  (top-level and nested-in-ordered — their built-in continuation already
+  carries the marker), plain ordered lines, `1.[ ] x` (not a list), fenced
+  lines, and non-list lines all fall through to the built-in / default
+  Enter unchanged. 18 unit tests (`cm-task-newline.test.ts`: unchecked /
+  checked→unchecked / paren / nested-indent / quoted / renumber / mid-line
+  split; empty single / no-trailing-space / blank-line-preceded /
+  tight-loose / quoted exit; the five fall-through no-ops) + 4 e2e
+  (`e2e/task-lists.spec.ts`: continuation + type with the preview checkbox
+  count 1→2 and `data-task-line` 1/2, empty-item exit to a plain line, the
+  tight-list Enter ladder `2. [ ] ` → `\n2.  ` → exit, own undo step) — all
+  4 sensitivity-verified (each fails with the `Prec.highest` wiring removed,
+  exactly on the missing-marker / missing-exit assertions). Full suite
+  green: 438 unit + 152 e2e (5 pre-existing skips).
+- No new chord (Enter). No screenshot impact: keymap-only, the fixtures
+  never press Enter on an ordered task list (docker still unavailable in
+  this env — see Parked).
+- Scope notes: the *insert* direction (`1. x` → `1. [ ] x`, `> - x` →
+  `> - [ ] x`) stays out of this item (item 28's v1 decision) — seeded as
+  item 30. Backspace on an empty ordered task still deletes char-by-char
+  (bullet asymmetry, probe-verified iteration 7) — seeded as item 31.
+
+### 30. Mod+Alt+L insert direction for ordered and blockquoted tasks (completes item 28's strip-only v1)
+
+- Gap: Mod+Alt+L strips the marker from ordered (`1. [ ] x` → `1. x`) and
+  blockquoted (`> - [ ] x` → `> - x`) tasks (item 28) but can never INSERT
+  it — a plain `1. x` or `> - x` line no-ops, while the top-level bullet
+  line gets `[ ] ` (item 27). The preview checkbox (17c) already toggles
+  every form, so "make it a task" is reachable by mouse; the keyboard path
+  is the parity gap (the north star keeps writing aids in the keyboard).
+- Direction: two regex branches in `applyTaskToggle` — (a) ordered: a line
+  `([ \t]*\d+[.)])[ \t](.*)` with NO `TaskMarker` on the line inserts `[ ] `
+  after the ordered marker (`1. x` → `1. [ ] x`, all of `1.` / `1)` /
+  nested indent); (b) blockquote bullet: `> - x` → `> - [ ] x` (insert
+  after the in-quote bullet marker). A plain quoted line (`> note`) stays a
+  no-op — item 28's deliberate structural-change concern (it would become a
+  quoted list). `taskBlocked` must stop blocking `OrderedList` /
+  `Blockquote` marker-less lines for the new branches (the strip branch
+  already relies on the marker parameter — keep it). Route through
+  `ownUndoStep` as today. No new chord (Mod+Alt+L).
+- done-when: unit tests for both insert branches (+ `> note` no-op, existing
+  strip tests unchanged) + e2e: `1. x` + Mod+Alt+L → `1. [ ] x` with the
+  preview checkbox count 0→1, and `> - x` → `> - [ ] x` likewise.
+  Screenshots unaffected (keymap-only).
+- Priority: TOP UNBLOCKED — completes the Mod+Alt+L story across all three
+  GFM task forms.
+
+### 31. Backspace on an empty ordered task item does not exit the list (bullet asymmetry)
+
+- Gap (run 3, iteration 7, probe-verified against the installed
+  `@codemirror/lang-markdown` 6.5.1): `- [ ] ` + Backspace at line end →
+  the built-in `deleteMarkupBackward` strips the whole marker and exits
+  (doc `''`) — but `1. [ ] ` + Backspace → `handled: false` (the ordered
+  context ends at `1. `, before the task marker — the same item-29 root
+  cause), so the DEFAULT Backspace deletes char-by-char (`]`, ` `, `[`, …)
+  instead of exiting in one press.
+- Direction: an app-level Backspace wrapper (a keymap entry alongside the
+  item-29 Enter one, tried before `markdownKeymap`): when the caret's line
+  is an EMPTY ordered task (item 29's regex, no content) and the caret sits
+  at/after the marker, delete the `[x]` token and re-run
+  `deleteMarkupBackward` on the stripped state (compose like item 29's
+  path (b)); everything else falls through. Route through `ownUndoStep`.
+  No new chord (Backspace).
+- done-when: unit tests (ordered empty exit, bullet control unchanged,
+  non-empty ordered task no-op, fence no-op) + e2e: `1. [ ] ` + Backspace →
+  plain empty line (mirroring the existing bullet test). Screenshots
+  unaffected.
+- Priority: after item 30.
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
@@ -1227,6 +1329,40 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **lezer ordered-task marker presence is trailing-space-dependent
+  (run 3, iteration 7):** `1. [ ] x` AND `1. [ ] ` (with a trailing space)
+  parse as `OrderedList > ListItem > Task > TaskMarker`, but `1. [ ]`
+  (no trailing space, no content) parses as `OrderedList > ListItem >
+  Paragraph` with NO `TaskMarker` (same as the bullet `- [ ]` → `Paragraph`
+  premise of item 17b). Any "is this an empty ordered task" check therefore
+  needs the LINE REGEX, not the tree, as the discriminator (item 29's path
+  (b) keys on the regex; the tree only excludes bullet-nested tasks).
+- **The built-in corrupts an empty ordered task on Enter (run 3, iteration
+  7):** `1. [ ] a\n2. [ ] ` + Enter → `1. [ ] a\n2. [\n3. ] ` — because the
+  ordered context ends before `[ ] `, the "empty item" exit never runs, the
+  continuation inserts at the caret, and the trailing-whitespace back-walk
+  stops at `]`, splitting the marker across two lines. This is why item 29
+  must strip the `[x]` token BEFORE running the built-in for empty items
+  (never "fix" the built-in's output in that case).
+- **`@codemirror/state` 6.7.1 ChangeSet API traps (run 3, iteration 7):**
+  (1) `ChangeSet.of(changes, length)` / `ChangeSet.empty(length)` take a
+  NUMERIC document length, not a doc — there is no `ChangeSet.single()` or
+  `.replace()` in this version; (2) `X.compose(Y)` = apply X first, then Y
+  (Y expressed in X's OUTPUT coordinates) — verified empirically, the
+  reverse direction throws on length mismatch; (3) `ChangeSet` has no
+  `.includes`-bearing iteration — `iterChangedRanges`'s callback is TYPED
+  with 4 params (no insert), while `iterChanges` exposes the 5th `inserted:
+  Text` (use `.toString()`); (4) `state.update()` takes TransactionSpec
+  OBJECTS — passing a bare ChangeSet silently applies NOTHING (no error);
+  (5) `Transaction.selection` is typed `EditorSelection | undefined`
+  (guard it).
+- **TS closure-assignment narrowing trap (run 3, iteration 7):**
+  `let x: T | null = null` assigned ONLY inside a callback passed to a
+  function call stays narrowed to `null` in control-flow analysis after the
+  call — `if (!x) return` then leaves `x: never` for all later reads.
+  Fix used in `cm-task-newline.ts`: a `const holder = { tr: null }` object
+  (property reads are re-narrowed fresh). Same family as the "TreeCursor is
+  reused and mutated" gotcha below.
 - **lezer markdown node names for line-level guards (run 3, iteration 5):**
   three premises that shaped `taskBlocked` (and any future line-level
   command): (1) a thematic break (`---` / `===`-is-paragraph / `***`)
