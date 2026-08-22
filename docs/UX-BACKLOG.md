@@ -6,7 +6,41 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-22, run 3, iteration 9)
+## Status (2026-08-22, run 3, iteration 10)
+
+- Iteration 10 shipped item 32 — Mod+Alt+L now STRIPS the ordered bare-marker
+  forms instead of double-inserting: `1. [ ]` → `1. ` (also `1. [x]`,
+  `1) [ ]`, `> 1. [ ]`, nested indent) — the last form where the chord
+  behaved asymmetrically with its bullet counterpart. `1. [ ]` / `1. [x]`
+  parse WITHOUT a `TaskMarker` (bare `Paragraph` / shortcut-reference
+  `Link`), so the item-30 INSERT branch matched them with the bracket as
+  "content" and yielded `1. [ ] [ ]`, while `- [ ]` / `- [x]` correctly
+  stripped via `TASK_LINE`. New `ORDERED_TASK_LINE` regex (the ordered
+  variant of `TASK_LINE`: optional quote prefix + indent + `\d{1,9}[.)]` +
+  space + bracket + optional space+content) + a strip branch in
+  `applyTaskToggle` tried BEFORE the insert branches (the item-30 ordering
+  lesson — `taskInsertLine` matches marked lines too, so strip must run
+  first); the strip keeps the ordered marker + its item space (mirrors
+  `- [ ]` → `- `), and `taskBlocked` is unchanged (the line's `insertable`
+  flag already lets it through the `OrderedList`/`Blockquote` ancestor
+  block). 10 unit tests (`cm-task-toggle.test.ts`: all four probed forms +
+  nested indent + following-line isolation + a marked `1. [ ] x` still
+  strips exactly once + two no-steal insert regressions) + 1 e2e
+  (`e2e/task-lists.spec.ts`: `1. [ ]` + Mod+Alt+L → `1. `, a second press
+  re-inserts `1. [ ] `, preview has no checkbox either way) — unit
+  sensitivity-verified (7 strip tests fail with exactly `1. [ ] [ ]` with
+  the branch removed; the 3 passing are the marked-content strip via the
+  tree branch + the two insert regressions) and the e2e sensitivity-
+  verified (fails on the first strip poll without the branch). Full suite
+  green: 499 unit + 161 e2e (5 pre-existing skips). No new chord
+  (Mod+Alt+L). No screenshot impact: keymap-only, fixtures contain no
+  ordered task lists (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 33 (the SIBLING gap, probe-verified: the blockquoted
+  BULLET bare-marker forms `> - [ ]` / `>- [ ]` / `> > - [ ]` / `> - [x]`
+  double-insert identically — `> - [ ] [ ]` — because `TASK_LINE` cannot
+  match a quote prefix and the item-30 `QUOTED_BULLET_LINE` insert matches
+  the bracket as content) as the next unblocked item. Next unblocked:
+  item 33.
 
 - Iteration 9 shipped item 31 — Backspace on an empty ordered task item now
   exits the list like a bullet (`1. [ ] ` → plain empty line; tight second
@@ -1400,7 +1434,7 @@ What already works well (do not regress):
   fence guard, as in item 29).
 - Priority: consumed — see item 32 (found by the iteration-9 re-audit).
 
-### 32. Mod+Alt+L double-inserts the marker on the ordered bare-marker forms (`1. [ ]`, no trailing space)
+### 32. DONE (2026-08-22, run 3, iteration 10): Mod+Alt+L strips the ordered bare-marker forms instead of double-inserting
 
 - Gap (run 3, iteration 9, probe-verified against the installed
   `@lezer/markdown` + `applyTaskToggle`): `1. [ ] ` (WITH trailing space)
@@ -1426,8 +1460,71 @@ What already works well (do not regress):
   `listIsTask` needs ` +\S`), so stripping it as a degenerate task matches
   item 27's top-level posture. Unit tests (all four probed forms + a
   regression that `1. [ ] x` with real content still inserts exactly once)
-  + e2e: `1. [ ]` + Mod+Alt+L → `1. ` (preview shows no checkbox either
-  way). No new chord. Screenshots unaffected.
+   + e2e: `1. [ ]` + Mod+Alt+L → `1. ` (preview shows no checkbox either
+   way). No new chord. Screenshots unaffected.
+- Evidence (run 3, iteration 10): `cm-task-toggle.ts` — new `ORDERED_TASK_LINE`
+  regex (`^((?:> ?)*)([ \t]*\d{1,9}[.)])[ \t]\[[ xX]\](?:[ \t](.*))?$`, the
+  ordered variant of `TASK_LINE`) + a strip branch in `applyTaskToggle` tried
+  AFTER `TASK_LINE`/`BULLET_LINE` and BEFORE the `taskInsertLine` branches
+  (ordering load-bearing — `taskInsertLine('1. [ ]')` matches with content
+  `[ ]`, so the strip must win); the strip yields quote + ordered marker +
+  one space + content (so `1. [ ]` → `1. ` — the marker + item space are
+  kept, mirroring `- [ ]` → `- `; a marked `1. [ ] x` would yield `1. x`,
+  identical to the tree-marker branch, so even a tree miss degrades to the
+  right strip). `taskBlocked` and `taskInsertLine` are UNCHANGED and
+  load-bearing as-is: `taskInsertLine` matching the bare-marker forms is
+  exactly what keeps the `insertable` flag true so the `OrderedList` /
+  `Blockquote` ancestor block lets the line through to the new strip branch.
+  10 unit tests (`cm-task-toggle.test.ts`: the four probed forms `1. [ ]` /
+  `1. [x]` (Link, no marker) / `1) [ ]` / `> 1. [ ]`, nested indent,
+  following-line isolation, marked `1. [ ] x` strips exactly once, two
+  no-steal insert regressions `1. x` → `1. [ ] x` and `> 1. x` → `> 1. [ ] x`)
+  + 1 e2e (`e2e/task-lists.spec.ts`: `1. [ ]` + Mod+Alt+L → `1. `, a second
+  press re-inserts `1. [ ] `, preview checkbox count 0 in every state — a
+  content-less bracket is not a GFM task for marked's `listIsTask`).
+  Sensitivity: unit — with the branch removed 7 of the 10 fail with exactly
+  `1. [ ] [ ]` (the 3 green ones are the tree-branch strip + the two insert
+  regressions, locking that the fix neither double-processes marked lines
+  nor steals the plain insert); e2e — fails on the first strip poll without
+  the branch. Full suite green: 499 unit + 161 e2e (5 pre-existing skips).
+  No new chord (Mod+Alt+L; audit table unchanged). No screenshot impact:
+  keymap-only, fixtures contain no ordered task lists (docker still
+  unavailable in this env — see Parked).
+- Scope notes: the strip keeps the item space (`1. [ ]` → `1. `), so a
+  second press re-inserts `1. [ ] ` — a round trip through a valid empty
+  task, exactly like the bullet counterpart's `- [ ]` → `- ` → `- [ ] `.
+  The QUOTED BULLET bare-marker sibling (`> - [ ]` → `> - [ ] [ ]`, same
+  root cause: `TASK_LINE` cannot match a quote prefix) was probe-verified
+  during the re-audit and seeded as item 33 — deliberately not folded in,
+  to keep this iteration to the seeded item.
+- Priority: consumed — see item 33 (found by the iteration-10 re-audit).
+
+### 33. Mod+Alt+L double-inserts the marker on the blockquoted BULLET bare-marker forms (`> - [ ]`, no trailing space)
+
+- Gap (run 3, iteration 10, probe-verified against the installed
+  `@lezer/markdown` + `applyTaskToggle`): the item-32 fix's regex carries
+  the quote prefix, so `> 1. [ ]` now strips to `> 1. ` — but the QUOTED
+  BULLET form was left behind: `> - [ ]` (no trailing space, no content)
+  parses as `Blockquote > BulletList > ListItem > Paragraph` with NO
+  `TaskMarker` (item 17b's bare-bullet premise under a quote), `TASK_LINE`
+  cannot match it (the line starts with `>`, not a bullet), and the
+  item-30 `QUOTED_BULLET_LINE` INSERT branch matches it with the bracket as
+  "content": `> - [ ]` → `> - [ ] [ ]` (probe: `> - [x]` → `> - [ ] [x]`,
+  the no-space quote `>- [ ]` → `>- [ ] [ ]`, deep `> > - [ ]` →
+  `> > - [ ] [ ]`). The top-level bullet (`- [ ]` → `- ` via `TASK_LINE`)
+  and the ordered (`1. [ ]` → `1. ` via item 32) are both fixed; the quoted
+  bullet is the last double-inserting form.
+- Direction: one more branch in `applyTaskToggle` — a quoted-bullet variant
+  of the new strip regex (`^((?:> ?)+)([ \t]*)([-*+])[ \t]\[[ xX]\](?:[ \t](.*))?$`)
+  tried BEFORE the `QUOTED_BULLET_LINE` insert branch (same ordering lesson
+  as items 30/32); result `> - [ ]` → `> - ` (keep the quote + bullet +
+  space, mirroring `- [ ]` → `- ` and `1. [ ]` → `1. `), with the
+  `insertable` flag for `taskBlocked` already true for these lines (the
+  insert regex matches them) so no gating change is needed. Unit tests
+  (the four probed forms + a no-steal regression `> - x` → `> - [ ] x` + a
+  marked `> - [ ] x` still strips via the tree branch) + e2e: `> - [ ]` +
+  Mod+Alt+L → `> - `, second press re-inserts `> - [ ] `, preview checkbox
+  count 0 in every state. No new chord. Screenshots unaffected.
 - Priority: TOP UNBLOCKED.
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)

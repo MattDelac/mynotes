@@ -194,6 +194,63 @@ describe('applyTaskToggle — ordered task marker strip', () => {
 	});
 });
 
+describe('applyTaskToggle — ordered bare marker strip (no TaskMarker in the tree)', () => {
+	function toggleOrdered(doc: string, pos: number): TaskToggleResult {
+		const st = makeState(doc, pos);
+		const line = st.doc.lineAt(pos);
+		return applyTaskToggle({
+			doc,
+			from: pos,
+			to: pos,
+			marker: taskMarkerOnLine(st, line)
+		});
+	}
+
+	it('strips a bare "1. [ ]" line down to "1. " (keeps the ordered marker + item space)', () => {
+		const r = toggleOrdered('1. [ ]', 6);
+		expect(apply('1. [ ]', r)).toBe('1. ');
+		expect(r.anchor).toBe(3);
+	});
+
+	it('strips a bare "1. [x]" line (parses as a link, no TaskMarker) down to "1. "', () => {
+		expect(apply('1. [x]', toggleOrdered('1. [x]', 3))).toBe('1. ');
+	});
+
+	it('strips a bare "1. [X]" line down to "1. "', () => {
+		expect(apply('1. [X]', toggleOrdered('1. [X]', 3))).toBe('1. ');
+	});
+
+	it('strips a bare paren-marker ordered line "1) [ ]" down to "1) "', () => {
+		expect(apply('1) [ ]', toggleOrdered('1) [ ]', 3))).toBe('1) ');
+	});
+
+	it('strips a blockquoted bare ordered marker, keeping the quote', () => {
+		expect(apply('> 1. [ ]', toggleOrdered('> 1. [ ]', 5))).toBe('> 1. ');
+	});
+
+	it('keeps the indent of a nested bare ordered marker', () => {
+		expect(apply('  1. [ ]', toggleOrdered('  1. [ ]', 4))).toBe('  1. ');
+	});
+
+	it('strips only the bare marker line and leaves a following content line', () => {
+		const doc = '1. [ ]\n2. keep';
+		expect(apply(doc, toggleOrdered(doc, 3))).toBe('1. \n2. keep');
+	});
+
+	it('strips a marked "1. [ ] x" (real content) exactly once, not double-inserted', () => {
+		expect(apply('1. [ ] x', toggleOrdered('1. [ ] x', 4))).toBe('1. x');
+	});
+
+	it('still inserts exactly once on a plain ordered line (strip branch does not steal it)', () => {
+		const r = toggleOrdered('1. x', 3);
+		expect(apply('1. x', r)).toBe('1. [ ] x');
+	});
+
+	it('still inserts exactly once on a plain quoted ordered line', () => {
+		expect(apply('> 1. x', toggleOrdered('> 1. x', 5))).toBe('> 1. [ ] x');
+	});
+});
+
 describe('applyTaskToggle — blockquoted task marker strip', () => {
 	function toggleQuoted(doc: string, pos: number): TaskToggleResult {
 		const st = makeState(doc, pos);

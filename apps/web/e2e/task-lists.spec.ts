@@ -460,6 +460,22 @@ test('Mod+Alt+L inserts the marker on a plain ordered line, and a second press s
 	await expect.poll(() => editorText(page)).toBe('1) step one');
 });
 
+test('Mod+Alt+L strips a bare ordered marker (no trailing space) instead of double-inserting', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ]');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. ');
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] ');
+
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+});
+
 test('Mod+Alt+L turns a blockquoted bullet line into a task, visible in the preview', async ({
 	page
 }) => {
