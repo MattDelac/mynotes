@@ -4,6 +4,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import {
 	applyTaskToggle,
 	taskBlocked,
+	taskInsertLine,
 	taskMarkerOnLine,
 	type TaskToggleResult
 } from './cm-task-toggle';
@@ -229,6 +230,127 @@ describe('applyTaskToggle — blockquoted task marker strip', () => {
 	});
 });
 
+describe('applyTaskToggle — plain ordered item to task (insert)', () => {
+	it('inserts "[ ] " after a dot ordered marker, keeping the caret on the same letter', () => {
+		const r = toggle('1. buy milk', 6, 6);
+		expect(apply('1. buy milk', r)).toBe('1. [ ] buy milk');
+		expect(r.anchor).toBe(10);
+	});
+
+	it('inserts "[ ] " after a paren ordered marker', () => {
+		expect(apply('1) buy milk', toggle('1) buy milk', 6, 6))).toBe('1) [ ] buy milk');
+	});
+
+	it('keeps the indent of a nested ordered item', () => {
+		expect(apply('    1. second', toggle('    1. second', 10, 10))).toBe('    1. [ ] second');
+	});
+
+	it('keeps the caret in place when it is before the insertion point', () => {
+		const r = toggle('1. x', 0, 0);
+		expect(apply('1. x', r)).toBe('1. [ ] x');
+		expect(r.anchor).toBe(0);
+	});
+
+	it('shifts a selection with the inserted marker', () => {
+		const r = toggle('1. hello', 3, 8);
+		expect(apply('1. hello', r)).toBe('1. [ ] hello');
+		expect(r.anchor).toBe(7);
+		expect(r.head).toBe(12);
+	});
+
+	it('turns an empty ordered item ("1. ") into "1. [ ] "', () => {
+		expect(apply('1. ', toggle('1. ', 3, 3))).toBe('1. [ ] ');
+	});
+
+	it('leaves a second ordered item on another line untouched', () => {
+		const doc = '1. first\n2. second';
+		expect(apply(doc, toggle(doc, 15, 15))).toBe('1. first\n2. [ ] second');
+	});
+
+	it('inserts inside a single-level blockquote', () => {
+		const r = toggle('> 1. x', 4, 4);
+		expect(apply('> 1. x', r)).toBe('> 1. [ ] x');
+		expect(r.anchor).toBe(8);
+	});
+
+	it('inserts inside a deeply nested blockquote', () => {
+		expect(apply('> > 1. x', toggle('> > 1. x', 6, 6))).toBe('> > 1. [ ] x');
+	});
+
+	it('treats a ten-digit marker as a plain line (not an ordered item)', () => {
+		expect(apply('1234567890. x', toggle('1234567890. x', 5, 5))).toBe('- [ ] 1234567890. x');
+	});
+});
+
+describe('applyTaskToggle — blockquoted bullet to task (insert)', () => {
+	it('inserts "[ ] " after a blockquoted dash bullet, keeping the caret on the same letter', () => {
+		const r = toggle('> - buy milk', 8, 8);
+		expect(apply('> - buy milk', r)).toBe('> - [ ] buy milk');
+		expect(r.anchor).toBe(12);
+	});
+
+	it('inserts "[ ] " after an asterisk bullet in a quote', () => {
+		expect(apply('> * item', toggle('> * item', 6, 6))).toBe('> * [ ] item');
+	});
+
+	it('handles the no-space quote form', () => {
+		const r = toggle('>- x', 2, 2);
+		expect(apply('>- x', r)).toBe('>- [ ] x');
+		expect(r.anchor).toBe(6);
+	});
+
+	it('keeps a nested quote', () => {
+		expect(apply('> > - x', toggle('> > - x', 6, 6))).toBe('> > - [ ] x');
+	});
+
+	it('keeps the indent after the quote', () => {
+		expect(apply('>   - x', toggle('>   - x', 6, 6))).toBe('>   - [ ] x');
+	});
+
+	it('leaves a following plain quoted line untouched', () => {
+		const doc = '> - first\n> note';
+		expect(apply(doc, toggle(doc, 8, 8))).toBe('> - [ ] first\n> note');
+	});
+});
+
+describe('taskInsertLine', () => {
+	it('returns the ordered insert for a dot item', () => {
+		expect(taskInsertLine('1. x')).toEqual({ newLine: '1. [ ] x', insertAt: 2 });
+	});
+
+	it('returns the ordered insert for a paren item', () => {
+		expect(taskInsertLine('1) x')).toEqual({ newLine: '1) [ ] x', insertAt: 2 });
+	});
+
+	it('returns the ordered insert for a blockquoted item, quote included', () => {
+		expect(taskInsertLine('> 1. x')).toEqual({ newLine: '> 1. [ ] x', insertAt: 4 });
+	});
+
+	it('returns the quoted bullet insert', () => {
+		expect(taskInsertLine('> - x')).toEqual({ newLine: '> - [ ] x', insertAt: 3 });
+	});
+
+	it('returns null for a plain quoted line', () => {
+		expect(taskInsertLine('> note')).toBeNull();
+	});
+
+	it('returns null for a top-level bullet (handled by the bullet branch)', () => {
+		expect(taskInsertLine('- x')).toBeNull();
+	});
+
+	it('returns null for a plain line', () => {
+		expect(taskInsertLine('hello')).toBeNull();
+	});
+
+	it('returns null for a bare "1." without a space', () => {
+		expect(taskInsertLine('1.')).toBeNull();
+	});
+
+	it('returns null for a ten-digit marker (not a list item)', () => {
+		expect(taskInsertLine('1234567890. x')).toBeNull();
+	});
+});
+
 describe('taskMarkerOnLine', () => {
 	function onLine(doc: string, pos: number) {
 		const state = makeState(doc, pos);
@@ -394,6 +516,36 @@ describe('taskBlocked', () => {
 		expect(
 			taskBlocked(makeState('> 1. [ ] x', 8), lineAt('> 1. [ ] x', 8), markerAt('> 1. [ ] x', 8))
 		).toBe(false);
+	});
+
+	it('allows a plain ordered line when it is an insert candidate', () => {
+		expect(taskBlocked(makeState('1. item', 4), lineAt('1. item', 4), null, true)).toBe(false);
+	});
+
+	it('allows a paren ordered line when it is an insert candidate', () => {
+		expect(taskBlocked(makeState('1) item', 4), lineAt('1) item', 4), null, true)).toBe(false);
+	});
+
+	it('allows a nested ordered line when it is an insert candidate', () => {
+		const doc = '- a\n    1. b';
+		expect(taskBlocked(makeState(doc, 12), lineAt(doc, 12), null, true)).toBe(false);
+	});
+
+	it('allows a blockquoted bullet line when it is an insert candidate', () => {
+		expect(taskBlocked(makeState('> - item', 4), lineAt('> - item', 4), null, true)).toBe(false);
+	});
+
+	it('allows a blockquoted ordered line when it is an insert candidate', () => {
+		expect(taskBlocked(makeState('> 1. item', 5), lineAt('> 1. item', 5), null, true)).toBe(false);
+	});
+
+	it('still hard-blocks a fenced ordered line for an insert candidate', () => {
+		const doc = '```\n1. x\n```';
+		expect(taskBlocked(makeState(doc, 6), lineAt(doc, 6), null, true)).toBe(true);
+	});
+
+	it('blocks a plain quoted line that is not an insert candidate', () => {
+		expect(taskBlocked(makeState('> note', 4), lineAt('> note', 4), null, false)).toBe(true);
 	});
 
 	it('allows a plain line', () => {

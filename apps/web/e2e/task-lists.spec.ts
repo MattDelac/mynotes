@@ -366,13 +366,70 @@ test('Mod+Alt+L strips the marker from a blockquoted task, visible in the previe
 	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
 });
 
-test('Mod+Alt+L is a no-op on a plain ordered line', async ({ page }) => {
+test('Mod+Alt+L turns a plain ordered line into a task, visible in the preview', async ({
+	page
+}) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
 	await editor.fill('1. first step');
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+
+	await page.keyboard.press('Control+Alt+p');
 	await page.locator('.cm-line').click();
 	await page.keyboard.press('Control+Alt+l');
-	await expect(editorText(page)).resolves.toBe('1. first step');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] first step');
+
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+});
+
+test('Mod+Alt+L inserts the marker on a plain ordered line, and a second press strips it', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1) step one');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1) [ ] step one');
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1) step one');
+});
+
+test('Mod+Alt+L turns a blockquoted bullet line into a task, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('> - buy milk');
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+
+	await page.keyboard.press('Control+Alt+p');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('> - [ ] buy milk');
+
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+});
+
+test('a task insert is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. buy milk');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('1. buy milk');
 });
 
 test('Mod+Alt+L is a no-op on a plain blockquote line', async ({ page }) => {

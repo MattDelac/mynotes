@@ -79,10 +79,11 @@ browser-reservation audit of every chord):
   continue the `[ ]` marker too (an empty ordered task exits the list, like
   bullets); the bracket token toggles on click in the editor and in the preview
   (preview disabled in read-only shares); Mod+Alt+L toggles the current line
-  between a task, a plain bullet, and a prefixed `- [ ] ` line, and strips the
-  marker from ordered (`1. [ ] x` → `1. x`) and blockquoted (`> - [ ] x` →
-  `> - x`) tasks. Insertion is top-level only — a plain ordered/quoted line is a
-  no-op (no-op also in code, tables, setext pairs, and thematic breaks)
+  between a task and its plain form in every GFM task form — top-level
+  (`- x` ↔ `- [ ] x`, any other free line → `- [ ] line`), ordered
+  (`1. x` ↔ `1. [ ] x`, incl. `1)` and nested/quoted) and blockquoted bullet
+  (`> - x` ↔ `> - [ ] x`) — while a plain quoted line stays a no-op (as in
+  code, tables, setext pairs, and thematic breaks)
 - Restored work position: each note's caret/selection survives note switches
   and page reloads (restored scroll included); per-note undo history survives
   switches

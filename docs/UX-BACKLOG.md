@@ -6,7 +6,28 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 3, iteration 7)
+## Status (2026-08-21, run 3, iteration 8)
+
+- Iteration 8 shipped item 30 — Mod+Alt+L now INSERTS the `[ ] ` marker in
+  the two GFM task forms item 28 could only strip: ordered (`1. x` →
+  `1. [ ] x`, all of `1.` / `1)` / nested) and blockquoted bullet
+  (`> - x` → `> - [ ] x`, incl. `> >` and the no-space `>-` quote form) —
+  plus a deliberate scope extension of the seeded direction: the ordered
+  branch takes a quote prefix, so `> 1. x` → `> 1. [ ] x` too, the exact
+  inverse of item 28's quoted-ordered strip (keeps Mod+Alt+L a true toggle
+  in every form the strip covers). Plain quoted lines (`> note`) stay a
+  no-op, as in code, tables, setext pairs, and thematic breaks. New pure
+  `taskInsertLine(line)` + an `insertable` parameter on `taskBlocked`
+  (the `OrderedList` / `Blockquote` ancestor block now applies only to
+  marker-less, non-insertable lines). Caret mapping in `applyTaskToggle`
+  refined to insert-point-aware (a caret parked before the marker no longer
+  jumps into the inserted `[ ] `). 32 unit tests + 4 sensitivity-verified
+  e2e (insert with the preview checkbox count 0→1 in both forms, a `1)`
+  insert/strip round trip, own undo step). Full suite green: 470 unit +
+  155 e2e (5 pre-existing skips). No new chord. No screenshot impact:
+  keymap-only, fixtures contain no ordered/blockquoted task lists (docker
+  still unavailable in this env — see Parked). Next unblocked: item 31
+  (Backspace on an empty ordered task does not exit the list).
 
 - Iteration 7 shipped item 29 — Enter-continuation on ordered task items now
   keeps the `[ ] ` marker (`1. [ ] x` + Enter → `1. [ ] x\n2. [ ] `), and an
@@ -1234,7 +1255,7 @@ What already works well (do not regress):
   item 30. Backspace on an empty ordered task still deletes char-by-char
   (bullet asymmetry, probe-verified iteration 7) — seeded as item 31.
 
-### 30. Mod+Alt+L insert direction for ordered and blockquoted tasks (completes item 28's strip-only v1)
+### 30. DONE (2026-08-21, run 3, iteration 8): Mod+Alt+L insert direction for ordered and blockquoted tasks (completes item 28's strip-only v1)
 
 - Gap: Mod+Alt+L strips the marker from ordered (`1. [ ] x` → `1. x`) and
   blockquoted (`> - [ ] x` → `> - x`) tasks (item 28) but can never INSERT
@@ -1256,8 +1277,48 @@ What already works well (do not regress):
   strip tests unchanged) + e2e: `1. x` + Mod+Alt+L → `1. [ ] x` with the
   preview checkbox count 0→1, and `> - x` → `> - [ ] x` likewise.
   Screenshots unaffected (keymap-only).
-- Priority: TOP UNBLOCKED — completes the Mod+Alt+L story across all three
-  GFM task forms.
+- Evidence (run 3, iteration 8): `cm-task-toggle.ts` — new pure
+  `taskInsertLine(line)` (ordered: optional quote prefix `((?:> ?)*)` +
+  `[ \t]*\d{1,9}[.)]` + space → splice `[ ] ` after the marker; blockquoted
+  bullet: `((?:> ?)+)` + optional indent + `[-*+]` + space → splice after
+  the bullet; anything else → `null`), an `insertable = false` parameter on
+  `taskBlocked` (the `OrderedList` / `Blockquote` ancestor block now applies
+  only when the line has neither a `TaskMarker` nor an insert match — the
+  hard blocks are checked first and unchanged), and two new
+  `applyTaskToggle` branches tried AFTER the strip branches (order is
+  load-bearing: `taskInsertLine('1. [ ] x')` would match with content
+  `[ ] x`, so a marked line must strip, never double-insert). Deliberate
+  scope extension of the seeded direction: the ordered branch carries the
+  quote prefix, so `> 1. x` → `> 1. [ ] x` — the inverse of item 28's
+  quoted-ordered strip. Caret mapping refined while in there: `place()` now
+  shifts only positions at/after the line-relative insert point (the strip
+  branch keeps the uniform delta shift) — a caret parked before the marker
+  no longer jumps into the inserted `[ ] ` (also improves the pre-existing
+  bullet branch; no test locked the old jump). 32 unit tests
+  (`cm-task-toggle.test.ts`: both insert forms incl. paren / nested-indent /
+  single- + deep-quote / no-space-quote / post-quote-indent variants,
+  caret-in-place and selection shift, empty `1. ` item, ten-digit marker
+  falling through to the plain prefix, `taskInsertLine` null cases,
+  `taskBlocked` insertable gating incl. the fence hard-block override and
+  the plain-quoted-line block) + 4 e2e (`e2e/task-lists.spec.ts`: `1. x` →
+  `1. [ ] x` with the preview checkbox count 0→1, `1) x` insert +
+  second-press strip round trip, `> - x` → `> - [ ] x` with checkbox 0→1,
+  own undo step) — all 4 sensitivity-verified (each fails with the
+  `insertable` gating removed). The former "no-op on a plain ordered line"
+  e2e is replaced by the ordered insert test; the plain-quoted-line no-op
+  e2e is unchanged and still green. Full suite green: 470 unit + 155 e2e
+  (5 pre-existing skips). No new chord (Mod+Alt+L; audit row unchanged). No
+  screenshot impact: keymap-only, fixtures contain no ordered/blockquoted
+  task lists (docker still unavailable in this env — see Parked).
+- Scope notes: a bare `1.` line (no space, no content) stays a no-op — the
+  regex requires the GFM item space (a bare `-` still takes the plain-line
+  prefix, item 27's degenerate case); `1. ` (trailing space) inserts fine;
+  a ten-digit `1234567890. x` is not a CommonMark list item (`\d{1,9}`
+  matches the 1–9 digit rule and the parser agrees) and takes the plain-line
+  prefix; 4+ post-quote spaces (`>     - x`) are an indented code block,
+  hard-blocked by the tree.
+- Priority: consumed — next unblocked: item 31 (Backspace on an empty
+  ordered task).
 
 ### 31. Backspace on an empty ordered task item does not exit the list (bullet asymmetry)
 
@@ -1279,7 +1340,7 @@ What already works well (do not regress):
   non-empty ordered task no-op, fence no-op) + e2e: `1. [ ] ` + Backspace →
   plain empty line (mirroring the existing bullet test). Screenshots
   unaffected.
-- Priority: after item 30.
+- Priority: TOP UNBLOCKED.
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
@@ -1329,6 +1390,12 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **`pkill -f` matches its own command line (run 3, iteration 8):** the
+  stale-proc kill step `pkill -f "vite preview"` matches the shell running
+  the command itself (the pattern appears in its argv), kills it, and the
+  bash call hangs until the 120 s timeout. Use a self-excluding pattern
+  (`pkill -f "[v]ite preview"`), check with `pgrep -a -f` first, or just
+  confirm `ss -ltn | grep -E ':(3000|4173)'` is empty before an e2e run.
 - **lezer ordered-task marker presence is trailing-space-dependent
   (run 3, iteration 7):** `1. [ ] x` AND `1. [ ] ` (with a trailing space)
   parse as `OrderedList > ListItem > Task > TaskMarker`, but `1. [ ]`

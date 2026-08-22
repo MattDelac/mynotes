@@ -17,7 +17,12 @@ const BLOCKED_ANCESTORS = new Set([
 
 const TASK_FORM_ANCESTORS = new Set(['OrderedList', 'Blockquote']);
 
-export function taskBlocked(state: EditorState, line: Line, marker: MarkerRange | null): boolean {
+export function taskBlocked(
+	state: EditorState,
+	line: Line,
+	marker: MarkerRange | null,
+	insertable = false
+): boolean {
 	const tree = syntaxTree(state);
 	const first = line.text.search(/\S/);
 	const node =
@@ -27,7 +32,7 @@ export function taskBlocked(state: EditorState, line: Line, marker: MarkerRange 
 	let current: SyntaxNode | null = node;
 	while (current) {
 		if (BLOCKED_ANCESTORS.has(current.name)) return true;
-		if (!marker && TASK_FORM_ANCESTORS.has(current.name)) return true;
+		if (!marker && !insertable && TASK_FORM_ANCESTORS.has(current.name)) return true;
 		current = current.parent;
 	}
 	return false;
@@ -61,6 +66,31 @@ export interface TaskToggleResult {
 
 const TASK_LINE = /^(\s*)([-*+])[ \t]\[[ xX]\](?:[ \t](.*))?$/;
 const BULLET_LINE = /^(\s*)([-*+])[ \t](.*)$/;
+const ORDERED_ITEM_LINE = /^((?:> ?)*)([ \t]*\d{1,9}[.)])[ \t](.*)$/;
+const QUOTED_BULLET_LINE = /^((?:> ?)+)([ \t]*)([-*+])[ \t](.*)$/;
+
+export interface TaskInsert {
+	newLine: string;
+	insertAt: number;
+}
+
+export function taskInsertLine(line: string): TaskInsert | null {
+	const ordered = line.match(ORDERED_ITEM_LINE);
+	if (ordered) {
+		return {
+			newLine: ordered[1] + ordered[2] + ' [ ] ' + ordered[3],
+			insertAt: ordered[1].length + ordered[2].length
+		};
+	}
+	const quoted = line.match(QUOTED_BULLET_LINE);
+	if (quoted) {
+		return {
+			newLine: quoted[1] + quoted[2] + quoted[3] + ' [ ] ' + quoted[4],
+			insertAt: quoted[1].length + quoted[2].length + quoted[3].length
+		};
+	}
+	return null;
+}
 
 export function applyTaskToggle(input: TaskToggleInput): TaskToggleResult {
 	const { doc, from, to, marker } = input;
@@ -70,25 +100,35 @@ export function applyTaskToggle(input: TaskToggleInput): TaskToggleResult {
 	const line = doc.slice(start, end);
 
 	let newLine: string;
+	let insertAt: number | null;
 	if (marker) {
 		let removeTo = marker.to;
 		if (removeTo < end && (doc[removeTo] === ' ' || doc[removeTo] === '\t')) removeTo++;
 		newLine = line.slice(0, marker.from - start) + line.slice(removeTo - start);
+		insertAt = null;
 	} else {
 		const task = line.match(TASK_LINE);
+		const bullet = task ? null : line.match(BULLET_LINE);
+		const insert = task || bullet ? null : taskInsertLine(line);
 		if (task) {
 			newLine = task[1] + task[2] + ' ' + (task[3] ?? '');
+			insertAt = null;
+		} else if (bullet) {
+			newLine = bullet[1] + bullet[2] + ' [ ] ' + bullet[3];
+			insertAt = bullet[1].length + bullet[2].length;
+		} else if (insert) {
+			newLine = insert.newLine;
+			insertAt = insert.insertAt;
 		} else {
-			const bullet = line.match(BULLET_LINE);
-			if (bullet) {
-				newLine = bullet[1] + bullet[2] + ' [ ] ' + bullet[3];
-			} else {
-				newLine = '- [ ] ' + line;
-			}
+			newLine = '- [ ] ' + line;
+			insertAt = 0;
 		}
 	}
 	const delta = newLine.length - line.length;
-	const place = (p: number) => Math.max(start, Math.min(start + newLine.length, p + delta));
+	const place = (p: number) => {
+		const shifted = insertAt === null || p - start >= insertAt ? p + delta : p;
+		return Math.max(start, Math.min(start + newLine.length, shifted));
+	};
 	return {
 		changes: [{ from: start, to: end, insert: newLine }],
 		anchor: place(from),
@@ -105,7 +145,7 @@ export function taskToggleCommand(undoManager?: UndoManager): (view: EditorView)
 		const line = state.doc.lineAt(from);
 		if (state.doc.lineAt(to).number !== line.number) return false;
 		const marker = taskMarkerOnLine(state, line);
-		if (taskBlocked(state, line, marker)) return false;
+		if (taskBlocked(state, line, marker, taskInsertLine(line.text) !== null)) return false;
 		const result = applyTaskToggle({ doc: state.doc.toString(), from, to, marker });
 		ownUndoStep(
 			view,
