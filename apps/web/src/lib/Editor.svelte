@@ -16,7 +16,14 @@
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
 	import { taskMarkerClick } from './cm-task-click';
-	import { recordSelection, savedSelection } from './selection-memory';
+	import { getNoteSelection } from './db';
+	import {
+		clampSelection,
+		hasSelection,
+		recordSelection,
+		savedSelection
+	} from './selection-memory';
+	import { scheduleSelectionPersist } from './selection-persist';
 	import { getUndoManager } from './undo-memory';
 
 	let {
@@ -64,6 +71,8 @@
 		if (!container) return;
 		const undoManager = getUndoManager(ytext);
 		const docText = ytext.toString();
+		let touched = false;
+		let restoring = Boolean(noteId) && !hasSelection(noteId);
 		const state = EditorState.create({
 			doc: docText,
 			selection: savedSelection(noteId, docText.length),
@@ -89,6 +98,8 @@
 				EditorView.updateListener.of((update) => {
 					const main = update.state.selection.main;
 					recordSelection(noteId, main.anchor, main.head);
+					if (update.docChanged) touched = true;
+					if (!restoring) scheduleSelectionPersist(noteId, main.anchor, main.head);
 				}),
 				EditorView.lineWrapping,
 				EditorView.editable.of(editable),
@@ -124,6 +135,22 @@
 			view.dispatch({ selection: main, scrollIntoView: true });
 		}
 		if (editable) view.focus();
+		if (restoring) {
+			void (async () => {
+				try {
+					const saved = await getNoteSelection(noteId);
+					const v = view;
+					if (!saved || touched || !v) return;
+					const current = v.state.selection.main;
+					if (current.anchor !== 0 || current.head !== 0) return;
+					const restored = clampSelection(saved, v.state.doc.length);
+					if (restored.anchor === 0 && restored.head === 0) return;
+					v.dispatch({ selection: restored, scrollIntoView: true });
+				} finally {
+					restoring = false;
+				}
+			})();
+		}
 		return () => {
 			view?.destroy();
 			view = null;

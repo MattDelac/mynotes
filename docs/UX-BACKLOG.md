@@ -6,7 +6,30 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 3, iteration 3)
+## Status (2026-08-21, run 3, iteration 4)
+
+- Iteration 4 shipped item 25 — the per-note work position now persists
+  across reloads: a new `selections` object store (IDB v3) holds
+  `{ anchor, head }` per note, written by `src/lib/selection-persist.ts`
+  (single debounced pending slot, 500 ms; flushed on
+  `visibilitychange: hidden` / `pagehide`) from the Editor's
+  on-every-update path; on mount the editor prefers the in-tab
+  `selection-memory` and falls back to a guarded async read (skipped if
+  the doc changed or the selection moved since mount; clamped;
+  `scrollIntoView` so item 26's scroll applies for free). Deliberate
+  deviation from the seeded direction: a separate store instead of a
+  field on the `Note` record — a read-modify-write from the persist path
+  would race `syncMetadata`'s content write (stale `content` put back
+  over a fresher one). 18 unit tests (6 db / 6 selection-memory / 6
+  selection-persist) + 2 e2e (`e2e/selection-persist.spec.ts`), both
+  halves sensitivity-verified (write side off → `**hello** world` +
+  `scrollTop = 0`; restore dispatch off → the backward-selection test
+  fails). Full suite green: 354 unit + 140 e2e (5 pre-existing skips).
+  No screenshot impact: no fixture reloads, parks a deep caret, or
+  changes content (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 27 (task-toggle keyboard command — the keyboard
+  half of the item-17 task-list input trio) as the next unblocked item.
+  Next unblocked: item 27.
 
 - Iteration 3 shipped item 26 — the remounted editor now scrolls the
   viewport to the restored caret/selection: `Editor.svelte` onMount
@@ -886,30 +909,99 @@ What already works well (do not regress):
   viewport and never park a deep caret before switching, so no PNG can
   change (docker still unavailable here — see Parked).
 
-### 25. Persist the per-note work position across reloads
+### 25. DONE (2026-08-21, run 3, iteration 4): Persist the per-note work position across reloads
 
-- Item 20's scope note ("in-memory / per-tab only — a reload starts at
-  0") and the item-21 note ("a reload starts empty, like caret memory")
-  leave this boundary: an accidental refresh / tab restore / crash lands
-  the user at the top of a long note. Docs/Obsidian/Typora all restore
-  the working position across reloads.
-- Fix direction: extend the local `Note` record in `src/lib/db.ts` with
-  an optional `lastSelection: { anchor, head }` — local UI metadata only;
-  the document bytes, export, and sync payloads are untouched (the relay
-  only ever sees Yjs updates, ADR 0001 intact). Record on the same
-  on-every-update path as `selection-memory.ts`, but DEBOUNCED (IndexedDB
-  must not be written per keystroke) and flushed on `visibilitychange:
-  hidden` / `pagehide`; on mount, prefer the in-tab `selection-memory`
-  and fall back to the persisted record (clamped, same semantics). The
-  note-delete paths already drop the record with the note.
-- done-when: unit tests for the persist/restore clamp + e2e — type a long
-  note, park the caret deep, `page.reload()`, the position is back
-  (verified by a selection-consuming action like the item-24 test) —
-  without regressing the in-tab restore tests. Item 26 has landed, so
-  the e2e should also assert the scroller's `scrollTop > 0` after the
-  reload (the mount-time scroll dispatch covers the initial load for
-  free) — remember the `.cm-gap` culling gotcha (Parked) when asserting
-  on the editor DOM of a tall note.
+- Premise (item 20's "in-memory / per-tab only" boundary): an accidental
+  refresh / tab restore / crash landed the user at the top of a long
+  note; Docs/Obsidian/Typora restore the working position across reloads.
+- Evidence: new `src/lib/selection-persist.ts` — one per-tab pending
+  slot + 500 ms debounce (`scheduleSelectionPersist`), idempotent
+  `flushSelectionPersist` (clears the pending timer), module-scope
+  browser-guarded flush on `visibilitychange: hidden` and `pagehide`.
+  `db.ts` v3: a dedicated `selections` object store
+  (`saveNoteSelection` / `getNoteSelection` / `deleteNoteSelection`).
+  **Deviation from the seeded direction** (a field on the `Note`
+  record): the persist path's read-modify-write would race
+  `syncMetadata`'s debounced content write and could put a STALE
+  `content` back over a fresher one; a separate store removes that race
+  class by construction and keeps the document record purely document
+  (local UI metadata in its own store — ADR 0001 intact: document
+  bytes, export, and sync payloads untouched). `Editor.svelte`: the
+  on-every-update listener also calls `scheduleSelectionPersist`; when
+  the in-tab `selection-memory` has no entry for the note, a guarded
+  async restore reads `getNoteSelection` and dispatches the clamped
+  selection with `scrollIntoView: true` — skipped when the doc changed
+  (`touched`) or the selection moved off the 0-point since mount (user
+  already worked; a remote change moving the doc suppresses it too); a
+  `restoring` flag keeps the mount-time {0,0} update from scheduling a
+  persist that would overwrite the saved position while the read is in
+  flight. `selection-memory.ts` gained `hasSelection` + `clampSelection`
+  (shared clamp, now used by both restore paths). Both routes' delete
+  paths call `deleteNoteSelection`. Side effect (intended, not gated on
+  `editable`): read-only shared views persist their READING position
+  too — "continue reading where you left off" on a shared link (the
+  frozen `n/[id]` view keys it by the remote room id — a tiny orphaned
+  record, never deleted locally; acceptable).
+- Tests: 18 new unit — 6 `db.test.ts` (round trip, per-note
+  independence, overwrite, unknown, delete, notes-store isolation), 6
+  `selection-memory.test.ts` (`hasSelection`, `clampSelection`), 6
+  `selection-persist.test.ts` (debounce boundary, coalescing,
+  supersede, flush-cancels-timer, flush no-op, re-arm) — with fake
+  timers restricted via `toFake: ['setTimeout', 'clearTimeout']`
+  because fake-indexeddb's `queueTask` runs on `setImmediate`, which
+  the default fake-timers set stalls (see Parked). 2 e2e
+  (`e2e/selection-persist.spec.ts`): (a) type `hello world`, select the
+  whole line BACKWARD (End + 11×Shift+ArrowLeft), 700 ms settle,
+  `page.reload()`, Control+b wraps exactly the restored range →
+  `**hello world**` (the item-24 discriminator across a reload); (b)
+  40-line note + `Control+End` + settle + reload → `scrollTop > 0`
+  (poll; item 26's scroll rides on the restore dispatch) and a typed
+  char lands on `line 40X` (visible-tail assertion per the `.cm-gap`
+  gotcha). Both halves sensitivity-verified: write side disabled → both
+  fail with exactly `**hello** world` and `scrollTop = 0`; restore
+  dispatch disabled → (a) fails, (b) still passes (its saved point is
+  non-zero on both ends, so the toggle is not a discriminator there).
+  Full suite green: 354 unit + 140 e2e (5 pre-existing skips).
+- Scope notes: in-tab `selection-memory` always wins (no async dispatch
+  when it has an entry); persistence is best-effort at crash time (the
+  hide/pagehide flush can lose to a hard kill — the 500 ms debounce
+  covers normal exits, which is what the reload e2e exercises); a shared
+  session whose first remote update lands while the restore read is in
+  flight skips the restore (conservative: the doc moved under the saved
+  position); no screenshot impact (no fixture reloads, parks a deep
+  caret, or changes content; docker still unavailable in this env — see
+  Parked).
+
+### 27. Task-toggle keyboard command (completes the item-17 input trio)
+
+- Gap (run-3, iteration-4 re-audit): task lists have three input paths
+  — type + Enter-continuation (17a), bracket-token click in the editor
+  (17b), preview checkbox (17c) — but NO keyboard command to turn the
+  current line into a task or back. Typing `- [ ] ` by hand is six
+  characters for a frequent writing action, and the app's north star is
+  "writing aids live in the keyboard". The mouse/preview paths exist;
+  the keyboard path is the missing half.
+- Direction: pure `applyTaskToggle(doc, from, to)` + a keymap command
+  routed through `ownUndoStep` (item 18), wired in `Editor.svelte`'s
+  keymap. Line-based semantics like item 15's heading toggles: a line
+  `(\s*)[-*+] \[[ xX]\] …` → strip the marker (task → plain item,
+  bullet kept); a plain bullet line → insert `[ ] ` after the bullet +
+  space; any other free line → prefix `- [ ] ` at column 0. No-ops:
+  fenced code, table rows, setext pairs, ordered-list items (GFM allows
+  ordered tasks, but v1 stays bullet-only — same posture as the setext
+  no-op). Probe the syntax tree (`TaskMarker`, the 17a/17b precedent)
+  where it distinguishes; a line regex is the fallback.
+- Chord: **Mod+Alt+L** ("L for list") — audit row added below: free on
+  Chromium/Firefox/Safari. The Mod+Alt+T alternative is REJECTED:
+  Ctrl+Alt+T is a desktop-level terminal launcher on GNOME/Ubuntu, eaten
+  before the browser (the item-12 Mod+N lesson, one layer up). CM6
+  matches `Mod-Alt-l` through its keyCode fallback, so macOS
+  Option-mangling is safe (item 14's verification of the same family).
+- done-when: unit tests for the pure function (on/off round trip,
+  `[X]`, nested indent, both bullet styles, ordered/fence/table/setext
+  no-ops) + e2e: plain line → task (verified in the preview), task →
+  plain item, own undo step, read-only shared-view no-op. Screenshots
+  unaffected (keymap-only, fixtures contain no task lists).
 - Priority: TOP UNBLOCKED — small, local-only.
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
@@ -949,6 +1041,7 @@ reserved-shortcut lists. Mod = Ctrl (Win/Linux) / Cmd (macOS).
 | Mod+N                | **reserved** (new window)    | **reserved** (new window) | **reserved** (new window)           | rejected (old new-session binding; dead in real browsers, see item 12) |
 | Mod+Alt+S            | free                         | free                     | free                                  | **new session** (substitution for the dead Mod+N, item 12) |
 | Mod+Shift+Z          | free (page-level redo, not a browser accelerator) | free (page-level redo) | free (standard text redo) | **redo** — y-codemirror's intended `Mod-Shift-z` binding; added as uppercase `Mod-Shift-Z` so CM6's case-sensitive key-name lookup actually matches a real Shift+Z keypress (item 22) |
+| Mod+Alt+L            | free                         | free                     | free                                  | **task toggle** (item 27, seeded run 3 iteration 4). Mod+Alt+T rejected: Ctrl+Alt+T is a desktop-level terminal launcher on GNOME/Ubuntu, consumed before the browser (the item-12 Mod+N lesson, one layer up) |
 
 Notes: the substitutions follow the Mod+Alt pattern this app already established for
 the rejected Mod+Shift+N / Mod+Shift+P (items 7, 8), keeping all substituted chords in
@@ -959,6 +1052,30 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **Undo/redo history does not survive reloads (run 3, iteration 4):**
+  item 21's per-tab manager registry is in-memory; after a reload the
+  undo stack is empty even though the work position (item 25) is
+  restored. There is no documented yjs API to serialize an
+  `UndoManager` stack (stack items hold internal `Yjs Item` references
+  with `keepItem` pins), so a scoped item needs a spike first (e.g.
+  persist the pre-step doc state per captured step and rebuild, or
+  accept "undo survives reloads for N steps"). Not started.
+- **Autolink bare URLs on type (run 3, iteration 4):** an input rule
+  that rewrites `scheme://…` tokens into `[url](url)` after a word
+  boundary would complete the link story (item 16 covers paste +
+  Mod+K). BLOCKED on a product decision: it rewrites STORED document
+  content behind the user's back (marks appear on the line, against
+  the concealment philosophy), and needs decided scope — which URL
+  forms (item 16's validation deliberately refuses `www.…`; email?
+  bare-domain TLD heuristics?). Name the decision before scoping.
+- **fake-indexeddb stalls under default `vi.useFakeTimers()` (run 3,
+  iteration 4):** `fake-indexeddb`'s `queueTask` uses
+  `globalThis.setImmediate` in node (falling back to `setTimeout(0)`
+  in jsdom), and vitest's default fake-timers set fakes
+  `setImmediate` too — every IDB op hangs forever. Unit tests that
+  combine fake timers with fake-indexeddb must restrict
+  `vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })` (or
+  whatever the SUT uses) so the IDB task queue keeps flowing.
 - **CM6 6.43.x culls off-viewport lines into `.cm-gap` placeholders
   (run 3, iteration 3):** for a document taller than the viewport,
   `@codemirror/view` 6.43.7 replaces the run of lines outside the

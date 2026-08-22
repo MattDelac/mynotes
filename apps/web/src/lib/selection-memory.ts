@@ -9,11 +9,19 @@ export function recordSelection(noteId: string, anchor: number, head: number): v
 	selections.set(noteId, { anchor, head });
 }
 
+export function hasSelection(noteId: string): boolean {
+	return selections.has(noteId);
+}
+
+export function clampSelection(saved: SavedSelection, docLength: number): SavedSelection {
+	const clamp = (pos: number) => Math.min(Math.max(pos, 0), docLength);
+	return { anchor: clamp(saved.anchor), head: clamp(saved.head) };
+}
+
 export function savedSelection(noteId: string, docLength: number): SavedSelection {
 	const saved = selections.get(noteId);
 	if (!saved) return { anchor: 0, head: 0 };
-	const clamp = (pos: number) => Math.min(Math.max(pos, 0), docLength);
-	return { anchor: clamp(saved.anchor), head: clamp(saved.head) };
+	return clampSelection(saved, docLength);
 }
 
 export function forgetSelection(noteId: string): void {

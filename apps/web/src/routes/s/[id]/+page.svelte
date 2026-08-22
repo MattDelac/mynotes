@@ -13,6 +13,7 @@
 		saveNote,
 		saveSession,
 		deleteNote,
+		deleteNoteSelection,
 		noteTitle,
 		type Note,
 		type ShareInfo
@@ -295,6 +296,7 @@
 		await removeNote(docId(), id);
 		await deleteNote(id);
 		forgetSelection(id);
+		await deleteNoteSelection(id);
 		await syncMetadata();
 		if (id === noteId) {
 			if (notes.length > 0) {

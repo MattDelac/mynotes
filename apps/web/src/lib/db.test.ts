@@ -62,3 +62,53 @@ describe('db', () => {
 		expect(await db.getNote(note.id)).toBeUndefined();
 	});
 });
+
+describe('note selections', () => {
+	beforeEach(() => {
+		vi.resetModules();
+		indexedDB = new IDBFactory();
+	});
+
+	it('saves and fetches a selection', async () => {
+		const db = await freshDb();
+		await db.saveNoteSelection('n1', 4, 9);
+		expect(await db.getNoteSelection('n1')).toEqual({ id: 'n1', anchor: 4, head: 9 });
+	});
+
+	it('keeps selections independent per note', async () => {
+		const db = await freshDb();
+		await db.saveNoteSelection('a', 1, 2);
+		await db.saveNoteSelection('b', 7, 8);
+		expect(await db.getNoteSelection('a')).toEqual({ id: 'a', anchor: 1, head: 2 });
+		expect(await db.getNoteSelection('b')).toEqual({ id: 'b', anchor: 7, head: 8 });
+	});
+
+	it('overwrites an existing selection', async () => {
+		const db = await freshDb();
+		await db.saveNoteSelection('n1', 1, 2);
+		await db.saveNoteSelection('n1', 5, 7);
+		expect(await db.getNoteSelection('n1')).toEqual({ id: 'n1', anchor: 5, head: 7 });
+	});
+
+	it('returns undefined for a note that was never saved', async () => {
+		const db = await freshDb();
+		expect(await db.getNoteSelection('nope')).toBeUndefined();
+	});
+
+	it('deletes a selection', async () => {
+		const db = await freshDb();
+		await db.saveNoteSelection('n1', 1, 2);
+		await db.deleteNoteSelection('n1');
+		expect(await db.getNoteSelection('n1')).toBeUndefined();
+	});
+
+	it('does not touch the notes store', async () => {
+		const db = await freshDb();
+		const note = db.createNote();
+		await db.saveNote(note);
+		await db.saveNoteSelection(note.id, 3, 5);
+		expect(await db.getNote(note.id)).toEqual(note);
+		await db.deleteNoteSelection(note.id);
+		expect(await db.getNote(note.id)).toEqual(note);
+	});
+});

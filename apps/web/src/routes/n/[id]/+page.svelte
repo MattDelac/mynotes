@@ -6,7 +6,15 @@
 	import { RoomSession, type SessionState } from '$lib/collab';
 	import { encryptBytes, exportKey, generateKey, importKey } from '$lib/crypto';
 	import { pushBlob, pushSnapshot } from '$lib/api';
-	import { listNotes, saveNote, deleteNote, createNote, noteTitle, type Note } from '$lib/db';
+	import {
+		listNotes,
+		saveNote,
+		deleteNote,
+		deleteNoteSelection,
+		createNote,
+		noteTitle,
+		type Note
+	} from '$lib/db';
 	import { destroyNoteDoc, getNoteDoc, migrateLegacyContent, setDocContent } from '$lib/docs';
 	import * as Y from 'yjs';
 	import { debounce } from '$lib/debounce';
@@ -178,6 +186,7 @@
 		await deleteNote(id);
 		await destroyNoteDoc(id);
 		forgetSelection(id);
+		await deleteNoteSelection(id);
 		notes = await listNotes();
 		if (id === note.id) {
 			if (notes.length > 0) {

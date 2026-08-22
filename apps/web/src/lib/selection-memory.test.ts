@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { forgetSelection, recordSelection, savedSelection } from './selection-memory';
+import {
+	clampSelection,
+	forgetSelection,
+	hasSelection,
+	recordSelection,
+	savedSelection
+} from './selection-memory';
 
 describe('selection-memory', () => {
 	it('returns a zero caret for a note that was never recorded', () => {
@@ -76,5 +82,32 @@ describe('selection-memory', () => {
 		forgetSelection('a');
 		expect(savedSelection('a', 100)).toEqual({ anchor: 0, head: 0 });
 		expect(savedSelection('b', 100)).toEqual({ anchor: 3, head: 8 });
+	});
+
+	it('hasSelection is false for an unrecorded note', () => {
+		expect(hasSelection('fresh-note')).toBe(false);
+	});
+
+	it('hasSelection is true after a record and false after forget', () => {
+		recordSelection('a', 0, 3);
+		expect(hasSelection('a')).toBe(true);
+		forgetSelection('a');
+		expect(hasSelection('a')).toBe(false);
+	});
+
+	it('clampSelection clamps both ends into the doc', () => {
+		expect(clampSelection({ anchor: 8, head: 11 }, 5)).toEqual({ anchor: 5, head: 5 });
+	});
+
+	it('clampSelection keeps a backward selection backward', () => {
+		expect(clampSelection({ anchor: 11, head: 8 }, 9)).toEqual({ anchor: 9, head: 8 });
+	});
+
+	it('clampSelection clamps negatives to 0', () => {
+		expect(clampSelection({ anchor: -3, head: -1 }, 10)).toEqual({ anchor: 0, head: 0 });
+	});
+
+	it('clampSelection leaves an in-range selection unchanged', () => {
+		expect(clampSelection({ anchor: 2, head: 7 }, 100)).toEqual({ anchor: 2, head: 7 });
 	});
 });

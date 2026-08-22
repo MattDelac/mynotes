@@ -22,6 +22,12 @@ interface Session {
 	share?: ShareInfo;
 }
 
+export interface NoteSelection {
+	id: string;
+	anchor: number;
+	head: number;
+}
+
 interface NotesDB extends DBSchema {
 	notes: {
 		key: string;
@@ -33,13 +39,17 @@ interface NotesDB extends DBSchema {
 		value: Session;
 		indexes: { 'by-updated': number };
 	};
+	selections: {
+		key: string;
+		value: NoteSelection;
+	};
 }
 
 let dbPromise: Promise<IDBPDatabase<NotesDB>> | null = null;
 
 function db(): Promise<IDBPDatabase<NotesDB>> {
 	if (!dbPromise) {
-		dbPromise = openDB<NotesDB>('mynotes', 2, {
+		dbPromise = openDB<NotesDB>('mynotes', 3, {
 			upgrade(database, oldVersion) {
 				if (oldVersion < 1) {
 					const store = database.createObjectStore('notes', { keyPath: 'id' });
@@ -48,6 +58,9 @@ function db(): Promise<IDBPDatabase<NotesDB>> {
 				if (oldVersion < 2) {
 					const store = database.createObjectStore('sessions', { keyPath: 'id' });
 					store.createIndex('by-updated', 'updatedAt');
+				}
+				if (oldVersion < 3) {
+					database.createObjectStore('selections', { keyPath: 'id' });
 				}
 			}
 		});
@@ -82,6 +95,21 @@ export async function saveNote(note: Note): Promise<void> {
 export async function deleteNote(id: string): Promise<void> {
 	const database = await db();
 	await database.delete('notes', id);
+}
+
+export async function saveNoteSelection(id: string, anchor: number, head: number): Promise<void> {
+	const database = await db();
+	await database.put('selections', { id, anchor, head });
+}
+
+export async function getNoteSelection(id: string): Promise<NoteSelection | undefined> {
+	const database = await db();
+	return database.get('selections', id);
+}
+
+export async function deleteNoteSelection(id: string): Promise<void> {
+	const database = await db();
+	await database.delete('selections', id);
 }
 
 export function createNote(): Note {
