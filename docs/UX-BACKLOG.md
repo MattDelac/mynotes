@@ -6,7 +6,33 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 3, iteration 8)
+## Status (2026-08-22, run 3, iteration 9)
+
+- Iteration 9 shipped item 31 — Backspace on an empty ordered task item now
+  exits the list like a bullet (`1. [ ] ` → plain empty line; tight second
+  item → `1. [ ] a\n   `; `> 1. [ ] ` → `> `), closing the last asymmetry of
+  the ordered-task trio left by the same upstream `getContext` gap as item 29
+  (the ordered context ends before `[ ] `, so `deleteMarkupBackward` never
+  recognized the marker and default Backspace deleted char-by-char). New
+  `src/lib/cm-task-backspace.ts`: a pure `orderedTaskBackspaceChanges(state)`
+  that deletes the `[x]` token **plus its trailing spaces** and composes the
+  result with `deleteMarkupBackward` re-run on the STRIPPED state (item 29
+  path-(b) pattern: `remove.compose(builtinChanges)`, `Prec.highest` ahead of
+  `markdownKeymap`); everything else (non-empty tasks, fences, bullets, plain
+  lines, mid-line caret, non-list lines) falls through untouched. 19 unit
+  tests (`cm-task-backspace.test.ts`) + 5 e2e (`e2e/task-lists.spec.ts`:
+  exit + type, bullet built-in control, tight-list marker→spaces, own undo
+  step, non-empty char-delete no-op) — the three ordered behavioral e2e
+  sensitivity-verified (each fails exactly on the exit assertion with the
+  wiring removed). Full suite green: 489 unit + 160 e2e (5 pre-existing
+  skips). No new chord (Backspace). No screenshot impact: keymap-only,
+  fixtures contain no ordered task lists and never press Backspace on one
+  (docker still unavailable in this env — see Parked). Re-audit seeded item
+  32 (Mod+Alt+L DOUBLE-INSERTS on the ordered bare-marker forms `1. [ ]` /
+  `1. [x]` — no trailing space parses without a `TaskMarker`, so the item-30
+  insert branch matches them and yields `1. [ ] [ ]`, while the bullet
+  counterparts `- [ ]`/`- [x]` correctly strip — probe-verified) as the next
+  unblocked item. Next unblocked: item 32.
 
 - Iteration 8 shipped item 30 — Mod+Alt+L now INSERTS the `[ ] ` marker in
   the two GFM task forms item 28 could only strip: ordered (`1. x` →
@@ -1320,7 +1346,7 @@ What already works well (do not regress):
 - Priority: consumed — next unblocked: item 31 (Backspace on an empty
   ordered task).
 
-### 31. Backspace on an empty ordered task item does not exit the list (bullet asymmetry)
+### 31. DONE (2026-08-22, run 3, iteration 9): Backspace on an empty ordered task item exits the list (bullet parity)
 
 - Gap (run 3, iteration 7, probe-verified against the installed
   `@codemirror/lang-markdown` 6.5.1): `- [ ] ` + Backspace at line end →
@@ -1329,17 +1355,79 @@ What already works well (do not regress):
   context ends at `1. `, before the task marker — the same item-29 root
   cause), so the DEFAULT Backspace deletes char-by-char (`]`, ` `, `[`, …)
   instead of exiting in one press.
-- Direction: an app-level Backspace wrapper (a keymap entry alongside the
-  item-29 Enter one, tried before `markdownKeymap`): when the caret's line
-  is an EMPTY ordered task (item 29's regex, no content) and the caret sits
-  at/after the marker, delete the `[x]` token and re-run
-  `deleteMarkupBackward` on the stripped state (compose like item 29's
-  path (b)); everything else falls through. Route through `ownUndoStep`.
-  No new chord (Backspace).
-- done-when: unit tests (ordered empty exit, bullet control unchanged,
-  non-empty ordered task no-op, fence no-op) + e2e: `1. [ ] ` + Backspace →
-  plain empty line (mirroring the existing bullet test). Screenshots
-  unaffected.
+- Evidence (run 3, iteration 9): new `src/lib/cm-task-backspace.ts` — pure
+  `orderedTaskBackspaceChanges(state)` (gates: single empty caret, caret at
+  line END — the bullet exit condition, `ORDERED_TASK_LINE` item-29 regex
+  with empty content), which deletes the `[x]` token **plus its trailing
+  spaces** (item-29 path-(b) pattern: local `ChangeSet` remove into a base
+  state, run the built-in `deleteMarkupBackward` on the stripped state with
+  a captured dispatch, return `remove.compose(builtinChanges)` + the
+  captured selection — which is already in final-doc coordinates). The
+  strip of the trailing spaces is load-bearing: stripping only `[ ]` leaves
+  `1.  ` and the built-in's extra-trailing-space branch consumes the press
+  instead of exiting (two presses, breaking bullet parity). `orderedTask-
+  BackspaceCommand` via `ownUndoStep` (`userEvent: 'delete'`, matching the
+  built-in) + `orderedTaskBackspaceKeymap` (`Backspace`); `Editor.svelte`
+  wires it at `Prec.highest` alongside the item-29 Enter wrapper (required —
+  `markdown()`'s `markdownKeymap` is `Prec.high` and would run first).
+  19 unit tests (`cm-task-backspace.test.ts`: single/checked/paren exit,
+  no-trailing-space exit, tight second item → `1. [ ] a\n   `, quoted
+  `> 1. [ ] ` → `> `, deep-quoted → `> > `, quoted tight → `> 1. [ ] a\n>
+   `, nested-under-ordered → `1. a\n     `; fall-throughs: non-empty task,
+  plain empty ordered item, bullet task, bullet-nested-in-ordered, fence,
+  nested-under-bullet lazy-paragraph case, ten-digit marker, mid-line
+  caret, non-empty selection) + 5 e2e (`e2e/task-lists.spec.ts`: exit +
+  type `fresh start`, BULLET built-in control (locks that the wrapper
+  doesn't shadow the working case), tight-list marker→spaces after Enter,
+  own undo step with the emptied state asserted via `.cm-placeholder`
+  visibility (the `editorText` placeholder quirk), non-empty task
+  char-delete no-op) — the three ordered behavioral e2e sensitivity-
+  verified (each fails exactly on the exit assertion with the wiring
+  removed; both controls pass with and without it). Full suite green: 489
+  unit + 160 e2e (5 pre-existing skips). No new chord (Backspace; audit
+  table unchanged). No screenshot impact: keymap-only, fixtures contain no
+  ordered task lists and never press Backspace on one (docker still
+  unavailable in this env — see Parked).
+- Scope notes: a nested empty ordered task under a BULLET (`- a\n  1. [ ]
+  `) falls through to char-by-char — probe-verified: once the marker is
+  stripped the line `  1. ` parses as a LAZY PARAGRAPH continuation (no
+  nested list exists at all), so the built-in finds no context; the SAME
+  happens for the plain `  1. ` form upstream, so the fall-through is
+  consistent, not a new asymmetry. The nested-under-ORDERED form DOES work
+  (`1. a\n  1. [ ] ` → `1. a\n     `, marker→spaces, one more Backspace
+  exits). Ten-digit markers, fence lines, and mid-line carets all fall
+  through unchanged (the built-in's own `isActiveAt`/context checks are the
+  fence guard, as in item 29).
+- Priority: consumed — see item 32 (found by the iteration-9 re-audit).
+
+### 32. Mod+Alt+L double-inserts the marker on the ordered bare-marker forms (`1. [ ]`, no trailing space)
+
+- Gap (run 3, iteration 9, probe-verified against the installed
+  `@lezer/markdown` + `applyTaskToggle`): `1. [ ] ` (WITH trailing space)
+  parses as `OrderedList > ListItem > Task > TaskMarker`, but `1. [ ]`
+  (no trailing space, no content) parses as `OrderedList > ListItem >
+  Paragraph` with NO `TaskMarker` (same premise as item 17b's bullet `- [ ]`
+  and the parked trailing-space note). `applyTaskToggle` therefore takes the
+  item-30 INSERT branch on it: `taskInsertLine('1. [ ]')` matches
+  `ORDERED_ITEM_LINE` with content `[ ]` and yields `1. [ ] [ ]` (probe:
+  `1. [x]` → `1. [ ] [x]`, `1) [ ]` → `1) [ ] [ ]`, `> 1. [ ]` →
+  `> 1. [ ] [ ]`). The BULLET counterparts do the opposite: `- [ ]` /
+  `- [x]` match `TASK_LINE` (whose trailing-space group is optional) and
+  STRIP to `- ` — so the same chord strips a bare bullet marker but
+  double-inserts a bare ordered marker.
+- Direction: add a bare-marker strip branch for the ordered forms — an
+  ordered variant of `TASK_LINE` (optional quote prefix + indent +
+  `\d{1,9}[.)]` + space + `\[[ xX]\]` + optional space+content) tried in
+  `applyTaskToggle` BEFORE the insert branches (item-30 ordering lesson:
+  `taskInsertLine` matches marked lines too, so strip must run first);
+  result `1. [ ]` → `1. ` (keep the ordered marker + its item space, strip
+  the bracket token — mirroring `- [ ]` → `- `). Note the no-content edge:
+  `1. [ ]` with the bracket as the whole content is not a GFM task (marked's
+  `listIsTask` needs ` +\S`), so stripping it as a degenerate task matches
+  item 27's top-level posture. Unit tests (all four probed forms + a
+  regression that `1. [ ] x` with real content still inserts exactly once)
+  + e2e: `1. [ ]` + Mod+Alt+L → `1. ` (preview shows no checkbox either
+  way). No new chord. Screenshots unaffected.
 - Priority: TOP UNBLOCKED.
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
@@ -1390,6 +1478,41 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **Strip-then-recompose generalizes from Enter to Backspace (run 3,
+  iteration 9):** item 29's path-(b) pattern (delete the `[x]` token into a
+  base state, run the built-in on the STRIPPED state with a captured
+  dispatch, return `remove.compose(builtinChanges)` + the captured
+  selection — already in final-doc coordinates) works identically with
+  `deleteMarkupBackward` for Backspace, and the built-in's OWN empty-item
+  logic (exit / tight→loose / renumber / quote exit / nested dedent) all
+  execute for free. Two details that matter: (1) the strip must include the
+  marker's TRAILING SPACES — stripping only `[ ]` leaves `1.  ` and the
+  built-in's "delete extra trailing space" branch consumes the press
+  (caret parks at `1. `, list NOT exited), breaking bullet parity; (2) the
+  built-in's `isActiveAt` + list-context checks are the fence/non-list
+  guards — no explicit tree walk is needed (fenced `1. ` and ten-digit
+  `1234567890. ` stripped states both return `handled: false`, verified by
+  probe).
+- **An empty nested list item under a BULLET is a lazy paragraph, not a
+  list (run 3, iteration 9, probe-verified):** `- a\n  1. ` parses as
+  `BulletList > ListItem > ListMark + Paragraph` spanning BOTH lines (the
+  empty `  1. ` has no content, so it is NOT a nested `OrderedList` — it
+  lazy-continues the bullet's paragraph). Consequences: (a)
+  `deleteMarkupBackward` cannot exit `- a\n  1. [ ] ` (nor the PLAIN
+  `- a\n  1. `) — no list context exists; item 31's wrapper therefore falls
+  through to char-by-char there, which is CONSISTENT with the plain form
+  (no new asymmetry introduced); (b) the same line WITH a task marker
+  (`- a\n  1. [ ] `) DOES parse as a real nested `OrderedList > ListItem >
+  Task > TaskMarker` — the marker's presence is what makes the item "real";
+  stripping it un-makes the list; (c) nesting under an ORDERED parent is
+  fine (`1. a\n  1. ` is a genuine nested list; Backspace works there).
+- **`1. [x]` (no trailing space) parses as a LINK (run 3, iteration 9,
+  probe-verified):** `1. [x]` → `OrderedList > ListItem > Paragraph > Link`
+  (`[x]` is a valid shortcut reference link) while `1. [ ]` → bare
+  `Paragraph` — extends the parked trailing-space TaskMarker note. Any
+  bracket-token logic on ordered items must treat the no-trailing-space
+  forms as CONTENT, not tasks (this is why item 32's double-insert is a
+  bug: the insert branch matched the bracket as content and wrapped it).
 - **`pkill -f` matches its own command line (run 3, iteration 8):** the
   stale-proc kill step `pkill -f "vite preview"` matches the shell running
   the command itself (the pattern appears in its argv), kills it, and the

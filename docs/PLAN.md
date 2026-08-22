@@ -76,8 +76,9 @@ browser-reservation audit of every chord):
 - Link command: Mod+K (clipboard URL auto-fill; pasting a URL over a selection
   already links it via the built-in `pasteURLAsLink`)
 - Task lists: `- [ ]` lines continue on Enter — ordered tasks (`1. [ ] x`)
-  continue the `[ ]` marker too (an empty ordered task exits the list, like
-  bullets); the bracket token toggles on click in the editor and in the preview
+  continue the `[ ]` marker too (an empty ordered task exits the list on Enter
+  or Backspace, like bullets); the bracket token toggles on click in the editor
+  and in the preview
   (preview disabled in read-only shares); Mod+Alt+L toggles the current line
   between a task and its plain form in every GFM task form — top-level
   (`- x` ↔ `- [ ] x`, any other free line → `- [ ] line`), ordered

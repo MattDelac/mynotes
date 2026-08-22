@@ -12,7 +12,7 @@ import type { UndoManager } from 'yjs';
 import { ownUndoStep } from './cm-undo';
 import { taskMarkerOnLine } from './cm-task-toggle';
 
-const ORDERED_TASK_LINE = /^((?:> ?)*)([ \t]*\d+[.)])([ \t]+)(\[[ xX]\])([ \t]*)(.*)$/;
+export const ORDERED_TASK_LINE = /^((?:> ?)*)([ \t]*\d+[.)])([ \t]+)(\[[ xX]\])([ \t]*)(.*)$/;
 const CONTINUED_MARKER = /^(.*?)(\d+[.)])([ \t]*)$/;
 
 export interface TaskNewlineResult {

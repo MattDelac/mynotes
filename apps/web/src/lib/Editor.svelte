@@ -18,6 +18,7 @@
 	import { taskMarkerClick } from './cm-task-click';
 	import { taskToggleKeymap } from './cm-task-toggle';
 	import { orderedTaskNewlineKeymap } from './cm-task-newline';
+	import { orderedTaskBackspaceKeymap } from './cm-task-backspace';
 	import { getNoteSelection } from './db';
 	import {
 		clampSelection,
@@ -80,6 +81,7 @@
 			selection: savedSelection(noteId, docText.length),
 			extensions: [
 				Prec.highest(keymap.of(orderedTaskNewlineKeymap(undoManager))),
+				Prec.highest(keymap.of(orderedTaskBackspaceKeymap(undoManager))),
 				keymap.of([
 					...yUndoManagerKeymap,
 					{ key: 'Mod-Shift-Z', run: () => undoManager.redo() != null, preventDefault: true },

@@ -154,6 +154,66 @@ test('ordered task continuation is its own undo step', async ({ page }) => {
 	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk');
 });
 
+test('Backspace on an empty ordered task item exits the list', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] ');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.type('fresh start');
+	await expect.poll(() => editorText(page)).toBe('fresh start');
+});
+
+test('Backspace on an empty bullet task item exits the list (built-in control)', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [ ] ');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.type('fresh start');
+	await expect.poll(() => editorText(page)).toBe('fresh start');
+});
+
+test('Backspace on an empty ordered task item in a tight list replaces the marker', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line', { hasText: 'buy milk' }).click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] ');
+	await page.keyboard.press('Backspace');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n   ');
+});
+
+test('a Backspace exit on an ordered task is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] ');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Backspace');
+	await expect(page.locator('.cm-placeholder')).toBeVisible();
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] ');
+});
+
+test('Backspace on a non-empty ordered task item deletes one character', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line', { hasText: 'buy milk' }).click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Backspace');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy mil');
+});
+
 test('clicking the bracket toggles an unchecked task to checked and back', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
