@@ -6,9 +6,281 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 2, iteration 12)
+## Status (2026-08-22, run 3, iteration 11)
 
-- Iteration 12 shipped item 20 — per-note caret restoration. New
+- Iteration 11 shipped item 33 — Mod+Alt+L now STRIPS the blockquoted
+  BULLET bare-marker forms instead of double-inserting: `> - [ ]` →
+  `> - ` (also `> - [x]`, the no-space quote `>- [ ]`, deep `> > - [ ]`,
+  post-quote indent) — the LAST GFM task form where the chord behaved
+  asymmetrically with its top-level bullet counterpart. `> - [ ]` (no
+  trailing space) parses WITHOUT a `TaskMarker`, so the item-30
+  `QUOTED_BULLET_LINE` INSERT branch matched the bracket as "content" and
+  yielded `> - [ ] [ ]`. New `QUOTED_BULLET_TASK_LINE` regex (the
+  quoted-bullet variant of item 32's `ORDERED_TASK_LINE`) + a strip
+  branch in `applyTaskToggle` tried BEFORE the insert branches (the
+  items-30/32 ordering lesson); `taskBlocked` unchanged — the
+  `insertable` flag from `taskInsertLine` already lets the line through
+  the `Blockquote` ancestor block (locked by a new unit test). 9 unit
+  tests + 1 e2e, both sensitivity-verified (unit: 6 of the 9 fail with
+  exactly the double-insert without the branch; e2e: fails on the first
+  strip poll receiving `> - [ ] [ ]`). Full suite green: 508 unit + 162
+  e2e (5 pre-existing skips). No new chord (Mod+Alt+L). No screenshot
+  impact: keymap-only, fixtures contain no blockquoted task lists (docker
+  still unavailable in this env — see Parked). Re-audit: with item 33 the
+  double-insert family is closed in all four bare-marker forms, and NO
+  further unblocked writing-experience gap was found — every remaining
+  candidate is a Parked item blocked on a named human product/design
+  decision (see the Parked section and item 33's scope notes). No
+  unblocked items remain in this backlog.
+
+- Iteration 10 shipped item 32 — Mod+Alt+L now STRIPS the ordered bare-marker
+  forms instead of double-inserting: `1. [ ]` → `1. ` (also `1. [x]`,
+  `1) [ ]`, `> 1. [ ]`, nested indent) — the last form where the chord
+  behaved asymmetrically with its bullet counterpart. `1. [ ]` / `1. [x]`
+  parse WITHOUT a `TaskMarker` (bare `Paragraph` / shortcut-reference
+  `Link`), so the item-30 INSERT branch matched them with the bracket as
+  "content" and yielded `1. [ ] [ ]`, while `- [ ]` / `- [x]` correctly
+  stripped via `TASK_LINE`. New `ORDERED_TASK_LINE` regex (the ordered
+  variant of `TASK_LINE`: optional quote prefix + indent + `\d{1,9}[.)]` +
+  space + bracket + optional space+content) + a strip branch in
+  `applyTaskToggle` tried BEFORE the insert branches (the item-30 ordering
+  lesson — `taskInsertLine` matches marked lines too, so strip must run
+  first); the strip keeps the ordered marker + its item space (mirrors
+  `- [ ]` → `- `), and `taskBlocked` is unchanged (the line's `insertable`
+  flag already lets it through the `OrderedList`/`Blockquote` ancestor
+  block). 10 unit tests (`cm-task-toggle.test.ts`: all four probed forms +
+  nested indent + following-line isolation + a marked `1. [ ] x` still
+  strips exactly once + two no-steal insert regressions) + 1 e2e
+  (`e2e/task-lists.spec.ts`: `1. [ ]` + Mod+Alt+L → `1. `, a second press
+  re-inserts `1. [ ] `, preview has no checkbox either way) — unit
+  sensitivity-verified (7 strip tests fail with exactly `1. [ ] [ ]` with
+  the branch removed; the 3 passing are the marked-content strip via the
+  tree branch + the two insert regressions) and the e2e sensitivity-
+  verified (fails on the first strip poll without the branch). Full suite
+  green: 499 unit + 161 e2e (5 pre-existing skips). No new chord
+  (Mod+Alt+L). No screenshot impact: keymap-only, fixtures contain no
+  ordered task lists (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 33 (the SIBLING gap, probe-verified: the blockquoted
+  BULLET bare-marker forms `> - [ ]` / `>- [ ]` / `> > - [ ]` / `> - [x]`
+  double-insert identically — `> - [ ] [ ]` — because `TASK_LINE` cannot
+  match a quote prefix and the item-30 `QUOTED_BULLET_LINE` insert matches
+  the bracket as content) as the next unblocked item. Next unblocked:
+  item 33.
+
+- Iteration 9 shipped item 31 — Backspace on an empty ordered task item now
+  exits the list like a bullet (`1. [ ] ` → plain empty line; tight second
+  item → `1. [ ] a\n   `; `> 1. [ ] ` → `> `), closing the last asymmetry of
+  the ordered-task trio left by the same upstream `getContext` gap as item 29
+  (the ordered context ends before `[ ] `, so `deleteMarkupBackward` never
+  recognized the marker and default Backspace deleted char-by-char). New
+  `src/lib/cm-task-backspace.ts`: a pure `orderedTaskBackspaceChanges(state)`
+  that deletes the `[x]` token **plus its trailing spaces** and composes the
+  result with `deleteMarkupBackward` re-run on the STRIPPED state (item 29
+  path-(b) pattern: `remove.compose(builtinChanges)`, `Prec.highest` ahead of
+  `markdownKeymap`); everything else (non-empty tasks, fences, bullets, plain
+  lines, mid-line caret, non-list lines) falls through untouched. 19 unit
+  tests (`cm-task-backspace.test.ts`) + 5 e2e (`e2e/task-lists.spec.ts`:
+  exit + type, bullet built-in control, tight-list marker→spaces, own undo
+  step, non-empty char-delete no-op) — the three ordered behavioral e2e
+  sensitivity-verified (each fails exactly on the exit assertion with the
+  wiring removed). Full suite green: 489 unit + 160 e2e (5 pre-existing
+  skips). No new chord (Backspace). No screenshot impact: keymap-only,
+  fixtures contain no ordered task lists and never press Backspace on one
+  (docker still unavailable in this env — see Parked). Re-audit seeded item
+  32 (Mod+Alt+L DOUBLE-INSERTS on the ordered bare-marker forms `1. [ ]` /
+  `1. [x]` — no trailing space parses without a `TaskMarker`, so the item-30
+  insert branch matches them and yields `1. [ ] [ ]`, while the bullet
+  counterparts `- [ ]`/`- [x]` correctly strip — probe-verified) as the next
+  unblocked item. Next unblocked: item 32.
+
+- Iteration 8 shipped item 30 — Mod+Alt+L now INSERTS the `[ ] ` marker in
+  the two GFM task forms item 28 could only strip: ordered (`1. x` →
+  `1. [ ] x`, all of `1.` / `1)` / nested) and blockquoted bullet
+  (`> - x` → `> - [ ] x`, incl. `> >` and the no-space `>-` quote form) —
+  plus a deliberate scope extension of the seeded direction: the ordered
+  branch takes a quote prefix, so `> 1. x` → `> 1. [ ] x` too, the exact
+  inverse of item 28's quoted-ordered strip (keeps Mod+Alt+L a true toggle
+  in every form the strip covers). Plain quoted lines (`> note`) stay a
+  no-op, as in code, tables, setext pairs, and thematic breaks. New pure
+  `taskInsertLine(line)` + an `insertable` parameter on `taskBlocked`
+  (the `OrderedList` / `Blockquote` ancestor block now applies only to
+  marker-less, non-insertable lines). Caret mapping in `applyTaskToggle`
+  refined to insert-point-aware (a caret parked before the marker no longer
+  jumps into the inserted `[ ] `). 32 unit tests + 4 sensitivity-verified
+  e2e (insert with the preview checkbox count 0→1 in both forms, a `1)`
+  insert/strip round trip, own undo step). Full suite green: 470 unit +
+  155 e2e (5 pre-existing skips). No new chord. No screenshot impact:
+  keymap-only, fixtures contain no ordered/blockquoted task lists (docker
+  still unavailable in this env — see Parked). Next unblocked: item 31
+  (Backspace on an empty ordered task does not exit the list).
+
+- Iteration 7 shipped item 29 — Enter-continuation on ordered task items now
+  keeps the `[ ] ` marker (`1. [ ] x` + Enter → `1. [ ] x\n2. [ ] `), and an
+  empty ordered task exits the list exactly like a bullet (single empty item →
+  plain line; tight second item → blank line first, then exit). New
+  `src/lib/cm-task-newline.ts`: a pure `orderedTaskNewlineChanges(state)` +
+  `Enter` keymap command wired in `Editor.svelte` at `Prec.highest` (ahead of
+  `markdownKeymap`'s `Prec.high` Enter). Two paths, both reusing the upstream
+  `insertNewlineContinueMarkup` via a captured dispatch: (a) ordered task WITH
+  content (tree `TaskMarker` whose innermost list is `OrderedList`) — the
+  built-in runs, then a composed `ChangeSet` patch splices `[ ] ` right after
+  the fresh `N.`/`N)` marker (quote prefixes and nested indents handled; a
+  mid-line split puts the marker before the remainder); (b) EMPTY ordered task
+  (marker present or not — probe: `1. [ ] ` parses WITH a `TaskMarker`,
+  `1. [ ]` as a marker-less `Paragraph`) — the bare `[x]` token is deleted
+  first (composed locally), then the built-in runs on the stripped state, so
+  ITS OWN empty-item logic (exit / tight→loose / renumber / quote handling)
+  executes on a plain empty ordered item — bullet semantics with zero
+  duplication of upstream code. Bullet tasks (incl. nested in ordered), plain
+  ordered lines, fences, and non-list lines all fall through to the built-in
+  unchanged. 18 unit tests (`cm-task-newline.test.ts`) + 4 e2e
+  (`e2e/task-lists.spec.ts`: continuation with the preview checkbox count
+  1→2, empty exit, the tight-list Enter ladder, own undo step) — all 4
+  sensitivity-verified (each fails with the keymap wiring removed). Full suite
+  green: 438 unit + 152 e2e (5 pre-existing skips). No new chord (Enter). No
+  screenshot impact: fixtures never press Enter on an ordered task list
+  (docker still unavailable in this env — see Parked). Re-audit seeded item 30
+  (Mod+Alt+L insert direction for ordered/blockquoted tasks — the one form the
+  toggle still cannot make) and item 31 (Backspace on an empty ordered task
+  does not exit the list — probe-verified bullet asymmetry). Next unblocked:
+  item 30.
+
+- Iteration 6 shipped item 28 — the Mod+Alt+L task toggle now also strips the
+  marker from the two remaining GFM task forms: ordered (`1. [ ] x` → `1. x`,
+  all of `1.` / `1)` / nested) and blockquoted (`> - [ ] x` → `> - x`, incl.
+  `> >` and `> 1.` nesting). `taskBlocked` splits its ancestor set: the hard
+  blocks (FencedCode / CodeBlock / Table / SetextHeading1-2 / HorizontalRule)
+  always no-op, while `OrderedList` / `Blockquote` are now blocked **only when
+  the line has no `TaskMarker`** (the command computes the marker first and
+  passes it in). So a task line inside those forms takes the existing
+  tree-marker strip branch (which already computed the right change — probe
+  verified lezer emits `Task` / `TaskMarker` for every ordered and blockquoted
+  form), while a plain `1. x` / `> note` line still no-ops. Deliberate v1
+  decision: strip-only for both forms — the *insert* direction (`1. x` →
+  `1. [ ] x`, `> - x` → `> - [ ] x`) is a second regex branch each and is
+  deferred (seeded as item 29); the preview checkbox (item 17c) already toggles
+  every form, so "make it a task" stays reachable. 16 unit tests
+  (`cm-task-toggle.test.ts`: marker-strip for dot/paren/nested ordered and
+  quoted/bullet/deep-nested/quoted-ordered, plus `taskBlocked` allow-with-
+  marker / block-without for each) + 4 e2e (`e2e/task-lists.spec.ts`: ordered
+  strip with the preview checkbox count 1→0, blockquoted strip 1→0, plain
+  ordered no-op, plain blockquote no-op) — the two strip e2e are
+  sensitivity-verified (both fail with the old always-block `taskBlocked`).
+  Full suite green: 420 unit + 148 e2e (5 pre-existing skips). No screenshot
+  impact: keymap-only, fixtures contain no ordered/blockquoted tasks and never
+  press the new path (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 29 (ordered task continuation drops the `[ ] ` marker —
+  probe-verified upstream gap in `@codemirror/lang-markdown` `getContext`) as
+  the next unblocked item. Next unblocked: item 29.
+
+- Iteration 5 shipped item 27 — the task-toggle keyboard command
+  (Mod+Alt+L): `src/lib/cm-task-toggle.ts` adds `taskBlocked` (syntax-tree
+  ancestor walk over FencedCode / CodeBlock / Table / OrderedList /
+  SetextHeading1/2 / HorizontalRule / Blockquote — top-level lines only),
+  `taskMarkerOnLine` (line-range `TaskMarker` probe, the 17a/17b precedent),
+  pure `applyTaskToggle({ doc, from, to, marker })` and
+  `taskToggleCommand`/`taskToggleKeymap` (one `Mod-Alt-l` binding, routed
+  through `ownUndoStep`), wired in `Editor.svelte` after `formatKeymap`.
+  Semantics: a line with a tree `TaskMarker` → strip the marker + its
+  trailing separator; else a task line (regex — covers the bare `- [x]` /
+  `- [ ]` forms the tree parses as Link/Paragraph without a marker) →
+  strip; else a bullet line `(\s*)([-*+])␣…` → insert `[ ] ` after the
+  bullet; else prefix `- [ ] ` at column 0 (an empty line yields `- [ ] `
+  WITH a trailing space, unlike item 15's bare `##`, so the next typed
+  character already forms a valid GFM task). 50 unit tests
+  (`cm-task-toggle.test.ts`: all transformation branches + the regex
+  fallbacks + `taskMarkerOnLine` + `taskBlocked`) + 4 e2e
+  (`e2e/task-lists.spec.ts`: plain line → task with the interactive preview
+  checkbox appearing on `data-task-line=1`; task → plain bullet → task
+  round trip; own undo step; read-only shared view no-op) — the three
+  behavioral e2e are sensitivity-verified (each fails without the keymap
+  wiring; the read-only one locks the editable guard). Full suite green:
+  404 unit + 144 e2e (5 pre-existing skips). No screenshot impact:
+  keymap-only change, the fixtures contain no task lists and never press
+  the new chord (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 28 (extend the keyboard toggle to ordered and
+  blockquote tasks — probe-verified: lezer DOES emit `Task`/`TaskMarker`
+  for both forms, so item 27's strip branch already works for them once
+  the `OrderedList`/`Blockquote` ancestor block is lifted) as the next
+  unblocked item. Next unblocked: item 28.
+
+- Iteration 4 shipped item 25 — the per-note work position now persists
+  across reloads: a new `selections` object store (IDB v3) holds
+  `{ anchor, head }` per note, written by `src/lib/selection-persist.ts`
+  (single debounced pending slot, 500 ms; flushed on
+  `visibilitychange: hidden` / `pagehide`) from the Editor's
+  on-every-update path; on mount the editor prefers the in-tab
+  `selection-memory` and falls back to a guarded async read (skipped if
+  the doc changed or the selection moved since mount; clamped;
+  `scrollIntoView` so item 26's scroll applies for free). Deliberate
+  deviation from the seeded direction: a separate store instead of a
+  field on the `Note` record — a read-modify-write from the persist path
+  would race `syncMetadata`'s content write (stale `content` put back
+  over a fresher one). 18 unit tests (6 db / 6 selection-memory / 6
+  selection-persist) + 2 e2e (`e2e/selection-persist.spec.ts`), both
+  halves sensitivity-verified (write side off → `**hello** world` +
+  `scrollTop = 0`; restore dispatch off → the backward-selection test
+  fails). Full suite green: 354 unit + 140 e2e (5 pre-existing skips).
+  No screenshot impact: no fixture reloads, parks a deep caret, or
+  changes content (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 27 (task-toggle keyboard command — the keyboard
+  half of the item-17 task-list input trio) as the next unblocked item.
+  Next unblocked: item 27.
+
+- Iteration 3 shipped item 26 — the remounted editor now scrolls the
+  viewport to the restored caret/selection: `Editor.svelte` onMount
+  dispatches the seeded main selection with `scrollIntoView: true` when
+  it is a non-default position (selection-only transaction — no Yjs step,
+  no undo-clock reset). 3 e2e tests (`e2e/scroll-restore.spec.ts`), all
+  sensitivity-verified: 40-line note + `Control+End` + A→B→A →
+  `scrollTop > 0` and a typed char lands on line 40 (fails without the
+  dispatch); a 5-line note that fits the viewport stays at `scrollTop =
+  0`; preview toggle round trip also restores the scroll. Full suite
+  green: 336 unit + 138 e2e (5 pre-existing skips). No screenshot impact:
+  no visible change in the committed fixtures (they are shorter than one
+  viewport and never park a deep caret before switching — see Parked for
+  the CM6 `.cm-gap` culling gotcha that shaped the test assertions).
+  Next unblocked: item 25 (persist the per-note position across reloads).
+
+- Iteration 2 shipped item 24 — per-note SELECTION restoration on note
+  switch: `caret-memory.ts` is now `selection-memory.ts` and records the
+  full `{ anchor, head }` per note (same per-tab map, same on-every-update
+  recording); `Editor.svelte` seeds the remounted EditorState with the
+  restored range — an empty range is a caret point, backward selections
+  are preserved, both ends are independently clamped into `0..docLength`.
+  14 unit tests (`selection-memory.test.ts`) + 1 sensitivity-verified e2e
+  (`e2e/selection-memory.spec.ts`, renamed from `caret-memory.spec.ts`):
+  select the whole of `hello world` with Shift+arrows (backward
+  selection), A→B→A, Mod+B wraps exactly the restored range to `**hello
+  world**` — under caret-only restoration the same press wraps only
+  `hello` (`**hello** world`), so the test locks the fix. The item-20
+  caret tests are unchanged and green. Full suite green: 336 unit +
+  135 e2e (5 pre-existing skips). No screenshot impact: no fixture
+  switches notes with a pending selection and the fixtures pass
+  `caret: 'hide'` (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 26 (scroll the viewport to the restored position
+  on remount — gap verified by probe: a remounted 40-line note with the
+  saved caret on the last line reports `scrollTop = 0`) and item 25
+  (persist the per-note position across reloads via the local note
+  metadata — item 20's explicit in-memory boundary). Next unblocked:
+  item 26.
+
+- Iteration 1 shipped item 21 — per-note undo history across note switches
+  (per-tab `WeakMap<Y.Text, Y.UndoManager>` reused across mounts), plus item 22 —
+  the redo chord fix found while locking item 21's redo side: y-codemirror's
+  `Mod-Shift-z` binding can never match a real Ctrl/Cmd+Shift+Z keypress (CM6
+  key-name case mismatch), so `Editor.svelte` now binds `Mod-Shift-Z`
+  (uppercase) to the shared manager's redo. 8 unit tests
+  (`undo-memory.test.ts`) + 4 sensitivity-verified e2e tests
+  (`e2e/undo-memory.spec.ts`) incl. a faithful real-browser-key-casing probe.
+  Full suite green twice: 331 unit + 134 e2e (5 pre-existing skips). No
+  screenshot impact: no visible change, fixtures never press the affected
+  chords (docker still unavailable in this env — see Parked). Re-audit
+  seeded item 23 (typewriter scrolling — blocked on a product decision)
+  and item 24 (per-note SELECTION restoration, item 20's explicit
+  caret-only boundary) — next unblocked: item 24.
+
+- Iteration 12 (run 2) shipped item 20 — per-note caret restoration. New
   `src/lib/caret-memory.ts` (per-tab `Map<noteId, number>`) records the
   caret head on every editor update and restores it as the initial
   selection on remount, clamped to the current doc length. `Editor.svelte`
@@ -664,29 +936,668 @@ What already works well (do not regress):
   use the server relay (a fresh context + edit link), not a second local
   tab.
 
-### 21. Per-note undo history should survive note switches (iteration-12 discovery)
+### 21. DONE (2026-08-21, run 3, iteration 1): Per-note undo history survives note switches
 
-- Premise (code-verified iteration 12): `Editor.svelte` constructs a fresh
-  `new Y.UndoManager(ytext)` in `onMount` and calls `undoManager.destroy()`
-  in its cleanup. The undo stack lives on the manager instance, so every
-  `{#key noteId}` remount (note switch, preview toggle, new note, import,
-  delete-current-note replacement) throws the note's entire undo/redo
-  history away: type in A, switch to B, come back, and Ctrl+Z does
-  nothing. Docs/Obsidian keep per-note history across switches within a
-  session; losing it makes the safety net of a writing app vanish exactly
-  when the user multitasks between notes.
-- Scope (smallest useful slice): a per-tab registry
-  (`WeakMap<Y.Text, Y.UndoManager>` in a small lib module) that creates a
-  manager on first mount of a note's Y.Text and REUSES it on later mounts
-  instead of destroying it on unmount. Re-verify the details: an
-  un-destroyed manager keeps observing its Y.Text (so it keeps recording
-  edits made while the note is closed, from any origin), and re-passing the
-  same manager to `yCollab` on remount re-registers the tracked origin
-  idempotently.
-- done-when: e2e — type in A, switch to B, switch back, and Ctrl+Z reverts
-  the A-typing (redo re-applies it); a preview-toggle round trip also
-  preserves the stack. `pnpm lint && pnpm check && pnpm test` green;
-  screenshots unaffected.
+- Evidence: new `src/lib/undo-memory.ts` — a per-tab (module-level)
+  `WeakMap<Y.Text, Y.UndoManager>` with `getUndoManager(ytext)`
+  (create-or-reuse) and `forgetUndoManager(ytext)` (destroy + evict).
+  `Editor.svelte` takes the manager from the registry on mount and no
+  longer destroys it on unmount, so every `{#key noteId}` remount (note
+  switch, preview toggle, new note, delete-current-note replacement)
+  re-attaches to the SAME manager and its intact undo/redo stack. Remount
+  safety verified against y-codemirror.next 0.3.5 dist: the per-mount
+  `YUndoManagerPluginValue` registers its `stack-item-added/popped`
+  listeners and tracked origin per instance and unregisters both in
+  `destroy()` (no accumulation), and `addTrackedOrigin` is Set-based
+  (idempotent). `s/[id]` `removeNoteById` forgets the doomed note's
+  manager BEFORE `removeNote` (session docs outlive their notes, so without
+  the forget the manager keeps observing an orphaned Y.Text until reload);
+  `n/[id]` does the same on its delete path (belt-and-braces — yjs also
+  auto-destroys a manager when its Y.Doc is destroyed, pinned by a unit
+  test).
+- Behavior notes: the long-lived manager keeps observing while unmounted,
+  so edits applied to the note's Y.Text while it is closed are recorded
+  (only null-origin and per-mount syncConf edits — relay updates arrive as
+  origin `'collab-remote'` and are NOT tracked, same as before). Side
+  effect: a preview checkbox toggle (a null-origin `doc.transact` while the
+  editor is unmounted) is now undoable — locked by e2e. Per-tab scope:
+  switching SESSIONS within a tab also preserves history (session docs are
+  cached in a module-level map, so the same Y.Text object comes back); a
+  reload starts empty, like caret memory.
+- Tests: 8 unit tests (`undo-memory.test.ts`: identity across remounts,
+  per-text distinctness, stack survives a simulated unmount/remount with a
+  tracked syncConf-style origin, null-origin edit recorded while unmounted,
+  untracked relay origin NOT recorded, forget → fresh history, forget
+  idempotent/no-op, recording stops when the Y.Doc is destroyed) + 4 e2e
+  tests (`e2e/undo-memory.spec.ts`): (a) A→B→A note switch — Ctrl+Z reverts
+  the A-typing to the empty placeholder, Ctrl+Y redo re-applies it; (b)
+  preview-toggle round trip preserves the stack (same assertions); (c) a
+  preview checkbox toggle applied while the editor is unmounted is undoable
+  on return (one Ctrl+Z flips the marker back, with a 600 ms settle so the
+  toggle is its own capture-window step); (d) a faithful real-browser
+  Ctrl+Shift+Z keydown (synthetic `KeyboardEvent` with `key: 'Z'`) is
+  consumed and redoes — see item 22. Sensitivity-verified: reverting to
+  `new Y.UndoManager(ytext)` fails 3 of the 4; removing the item-22 binding
+  fails (d). Full suite green twice: 331 unit + 134 e2e (5 pre-existing
+  skips).
+- Screenshots: no visible change (manager lifecycle + one keymap entry);
+  the fixtures use `fill()`, never switch notes with pending undo, and never
+  press Ctrl+Shift+Z / Ctrl+Y — committed PNGs cannot change (docker still
+  unavailable in this env, see Parked).
+- Learning (parked below): yjs 13.6.31 `Text.insert(index, text, attrs?)`
+  has NO origin parameter — unit tests must set the origin via
+  `doc.transact(fn, origin)`; a 4th argument is silently treated as rich
+  text attributes.
+
+### 22. DONE (2026-08-21, run 3, iteration 1): Redo chord Ctrl/Cmd+Shift+Z is live (was dead on every platform)
+
+- Discovery (item 21's redo side): while locking item 21's done-when, the
+  `Control+Shift+z` e2e press never redid. Root cause, verified against
+  `@codemirror/view` 6.43.7 dist (identical in 6.43.9) and by in-page
+  synthetic-event probes: CM6's keymap lookup builds the event key name
+  from `e.key`, which is UPPERCASE when Shift is held (`'Z'`), while
+  keymap bindings are stored lower-cased by `normalizeKeyName`
+  (`'Shift-Ctrl-z'`). The lookup is a case-sensitive object property, so
+  y-codemirror.next's `Mod-Shift-z` redo binding — and CM6
+  `defaultKeymap`'s own `linux: "Ctrl-Shift-z"` redo entry — can never
+  match a real Ctrl/Cmd+Shift+Z keypress on ANY platform. Observed
+  consequences: Win/Linux fell through to the browser's native
+  contenteditable redo (stale native stack, desyncs the Yjs one); macOS had
+  NO working redo chord at all (`Mod-y` is mac-overridden to the equally
+  dead `Mod-Shift-z`); and under CDP/Playwright dispatch (which does NOT
+  apply the Shift case mapping — `Control+Shift+z` delivers `e.key: 'z'`)
+  the press was silently running UNDO instead (first lookup branch ignores
+  Shift for character keys and matched `Mod-z`).
+- Fix: `Editor.svelte` keymap gains one entry right after
+  `yUndoManagerKeymap`: `{ key: 'Mod-Shift-Z', run: () =>
+  undoManager.redo() != null, preventDefault: true }` — uppercase `Z`
+  normalizes to the exact real-browser event name (`Shift-Ctrl-Z` /
+  `Shift-Meta-Z`), and the command uses the shared manager from the
+  mount closure (y-codemirror does not export its redo command or facet).
+  No new chord: Mod+Shift+Z was already the app's intended redo binding —
+  this makes that intent work; it is not browser-reserved (it is the
+  platform-standard redo).
+- Evidence: e2e (d) above dispatches the faithful real-browser event
+  (`key: 'Z'`, `code: 'KeyZ'`, ctrl+shift) and asserts it is consumed
+  (`defaultPrevented`) AND the document actually redoes; sensitivity
+  verified (fails without the binding). `Ctrl+Y` (the pre-existing
+  `Mod-y` binding) remains the portable fallback and is what e2e (a)/(b)
+  use. Full suite green twice: 331 unit + 134 e2e.
+
+### 24. DONE (2026-08-21, run 3, iteration 2): Restore the per-note SELECTION (not just the caret) on note switch
+
+- Evidence: `src/lib/caret-memory.ts` → `src/lib/selection-memory.ts` — a
+  per-tab (module-level) `Map<noteId, { anchor, head }>` with
+  `recordSelection(noteId, anchor, head)`, `savedSelection(noteId,
+  docLength)` (unknown note → `{ anchor: 0, head: 0 }`; both ends
+  independently clamped into `0..docLength` — a shrunken doc keeps a
+  backward selection backward and converges to a point when both ends
+  clamp together), and `forgetSelection(noteId)`. `Editor.svelte` seeds
+  `selection: savedSelection(noteId, docText.length)` — an empty range
+  is a caret point, so the item-20 semantics fall out of the same code
+  path — and records the full main selection (`anchor` + `head`) on
+  EVERY `updateListener` update (same deliberate not-gated-on-
+  `selectionSet` choice as item 20, so remote-change-driven selection
+  shifts are recorded too). Both routes' delete paths now call
+  `forgetSelection`. 14 unit tests (`selection-memory.test.ts`:
+  unknown→zero point, caret point, forward, backward, per-note
+  independence, overwrite, clamp-both/clamp-one/clamped-backward/
+  collapse-together, empty doc, negative, forget, forget-only-named) +
+  1 e2e (`e2e/selection-memory.spec.ts`, renamed from
+  `caret-memory.spec.ts`): `selection is restored after switching notes`
+  — type `hello world`, select the whole line with End +
+  11×Shift+ArrowLeft (backward selection, anchor 11 head 0), A→B→A,
+  `Control+b` wraps exactly the restored range → `**hello world**`;
+  sensitivity-verified — with the seed reduced to the caret-only
+  `{ anchor: head }` the same press wraps only `hello`
+  (`**hello** world`) and the test fails. The pre-existing caret tests
+  (a)/(b) are unchanged and green. Full suite green: 336 unit + 135 e2e
+  (5 pre-existing skips).
+- Why a multi-word selection in the e2e: a single-word selection is NOT
+  a discriminator — the item-20 caret-only behavior restores the head
+  (the word's start), and a Mod+B word-wrap from that caret wraps the
+  same word; only a range a caret cannot reproduce (multi-word or
+  partial-word) separates the two behaviors.
+- Scope notes: in-memory / per-tab only, exactly like item 20 (a reload
+  starts empty — item 25 will persist it); length-clamping, not CRDT
+  position mapping (explicit non-goal); the frozen `n/[id]` page
+  benefits too (SPA navigation, module-level map). No screenshot impact:
+  no fixture switches notes with a pending selection and the fixtures
+  pass `caret: 'hide'` (docker still unavailable in this env — see
+  Parked).
+
+### 26. DONE (2026-08-21, run 3, iteration 3): Scroll the viewport to the restored caret/selection on remount
+
+- Verified gap (run 3, iteration 2 probe, removed after the finding):
+  a remounted 40-line note with the saved caret on the LAST line
+  (`Control+End` before switching) reported `scrollTop = 0`
+  (scrollHeight 1224, clientHeight 676) — CM6 scrolls the selection into
+  view on selection CHANGES but not for the INITIAL state's selection,
+  and `EditorView.focus()` uses `focusPreventScroll` (verified in the
+  6.43.7 dist), so the restored position (items 20/24) was invisible:
+  the user returned to the top of a long note with the caret somewhere
+  deep.
+- Evidence: `Editor.svelte` onMount now dispatches the seeded main
+  selection with `scrollIntoView: true` when it is a non-default
+  position (`main.anchor !== 0 || main.head !== 0` — a restored
+  position at the very top needs no scroll). The dispatch is a
+  selection-only transaction: no doc change, so no Yjs step and no
+  undo-clock reset (and no awareness sync — `yCollab` is wired with a
+  null awareness here). It applies to EVERY mount (note switch,
+  preview toggle, first load) and to read-only shared views alike.
+  3 e2e tests (`e2e/scroll-restore.spec.ts`), all sensitivity-verified
+  (with the dispatch removed, both scroll tests fail exactly on the
+  `scrollTop > 0` assertion): (a) 40-line note + `Control+End` +
+  A→B→A → `scrollTop > 0` and a typed `X` lands on `line 40X`;
+  (b) a 5-line note that fits the viewport stays at `scrollTop = 0`
+  (the dispatch still runs but `scrollIntoView` is "nearest", so an
+  already-visible position does not move the view); (c) preview toggle
+  round trip restores the scroll too, with the model's integrity
+  checked via `article.preview br` count (39) while the editor is
+  unmounted. Full suite green: 336 unit + 138 e2e (5 pre-existing
+  skips).
+- Test-shaping gotcha (also in Parked): CM6 6.43.x culls off-viewport
+  lines into a `.cm-gap` placeholder, so the DOM-based `editorText`
+  helper cannot read a tall note in full — the assertions target the
+  visible tail (`endsWith('line 40X')`) and the preview (model) instead
+  of the full editor text.
+- No screenshot impact: the committed fixtures are shorter than one
+  viewport and never park a deep caret before switching, so no PNG can
+  change (docker still unavailable here — see Parked).
+
+### 25. DONE (2026-08-21, run 3, iteration 4): Persist the per-note work position across reloads
+
+- Premise (item 20's "in-memory / per-tab only" boundary): an accidental
+  refresh / tab restore / crash landed the user at the top of a long
+  note; Docs/Obsidian/Typora restore the working position across reloads.
+- Evidence: new `src/lib/selection-persist.ts` — one per-tab pending
+  slot + 500 ms debounce (`scheduleSelectionPersist`), idempotent
+  `flushSelectionPersist` (clears the pending timer), module-scope
+  browser-guarded flush on `visibilitychange: hidden` and `pagehide`.
+  `db.ts` v3: a dedicated `selections` object store
+  (`saveNoteSelection` / `getNoteSelection` / `deleteNoteSelection`).
+  **Deviation from the seeded direction** (a field on the `Note`
+  record): the persist path's read-modify-write would race
+  `syncMetadata`'s debounced content write and could put a STALE
+  `content` back over a fresher one; a separate store removes that race
+  class by construction and keeps the document record purely document
+  (local UI metadata in its own store — ADR 0001 intact: document
+  bytes, export, and sync payloads untouched). `Editor.svelte`: the
+  on-every-update listener also calls `scheduleSelectionPersist`; when
+  the in-tab `selection-memory` has no entry for the note, a guarded
+  async restore reads `getNoteSelection` and dispatches the clamped
+  selection with `scrollIntoView: true` — skipped when the doc changed
+  (`touched`) or the selection moved off the 0-point since mount (user
+  already worked; a remote change moving the doc suppresses it too); a
+  `restoring` flag keeps the mount-time {0,0} update from scheduling a
+  persist that would overwrite the saved position while the read is in
+  flight. `selection-memory.ts` gained `hasSelection` + `clampSelection`
+  (shared clamp, now used by both restore paths). Both routes' delete
+  paths call `deleteNoteSelection`. Side effect (intended, not gated on
+  `editable`): read-only shared views persist their READING position
+  too — "continue reading where you left off" on a shared link (the
+  frozen `n/[id]` view keys it by the remote room id — a tiny orphaned
+  record, never deleted locally; acceptable).
+- Tests: 18 new unit — 6 `db.test.ts` (round trip, per-note
+  independence, overwrite, unknown, delete, notes-store isolation), 6
+  `selection-memory.test.ts` (`hasSelection`, `clampSelection`), 6
+  `selection-persist.test.ts` (debounce boundary, coalescing,
+  supersede, flush-cancels-timer, flush no-op, re-arm) — with fake
+  timers restricted via `toFake: ['setTimeout', 'clearTimeout']`
+  because fake-indexeddb's `queueTask` runs on `setImmediate`, which
+  the default fake-timers set stalls (see Parked). 2 e2e
+  (`e2e/selection-persist.spec.ts`): (a) type `hello world`, select the
+  whole line BACKWARD (End + 11×Shift+ArrowLeft), 700 ms settle,
+  `page.reload()`, Control+b wraps exactly the restored range →
+  `**hello world**` (the item-24 discriminator across a reload); (b)
+  40-line note + `Control+End` + settle + reload → `scrollTop > 0`
+  (poll; item 26's scroll rides on the restore dispatch) and a typed
+  char lands on `line 40X` (visible-tail assertion per the `.cm-gap`
+  gotcha). Both halves sensitivity-verified: write side disabled → both
+  fail with exactly `**hello** world` and `scrollTop = 0`; restore
+  dispatch disabled → (a) fails, (b) still passes (its saved point is
+  non-zero on both ends, so the toggle is not a discriminator there).
+  Full suite green: 354 unit + 140 e2e (5 pre-existing skips).
+- Scope notes: in-tab `selection-memory` always wins (no async dispatch
+  when it has an entry); persistence is best-effort at crash time (the
+  hide/pagehide flush can lose to a hard kill — the 500 ms debounce
+  covers normal exits, which is what the reload e2e exercises); a shared
+  session whose first remote update lands while the restore read is in
+  flight skips the restore (conservative: the doc moved under the saved
+  position); no screenshot impact (no fixture reloads, parks a deep
+  caret, or changes content; docker still unavailable in this env — see
+  Parked).
+
+### 27. DONE (2026-08-21, run 3, iteration 5): Task-toggle keyboard command — Mod+Alt+L (completes the item-17 input trio)
+
+- Gap (run-3, iteration-4 re-audit): task lists have three input paths
+  — type + Enter-continuation (17a), bracket-token click in the editor
+  (17b), preview checkbox (17c) — but NO keyboard command to turn the
+  current line into a task or back. Typing `- [ ] ` by hand is six
+  characters for a frequent writing action, and the app's north star is
+  "writing aids live in the keyboard". The mouse/preview paths exist;
+  the keyboard path is the missing half.
+- Direction: pure `applyTaskToggle(doc, from, to)` + a keymap command
+  routed through `ownUndoStep` (item 18), wired in `Editor.svelte`'s
+  keymap. Line-based semantics like item 15's heading toggles: a line
+  `(\s*)[-*+] \[[ xX]\] …` → strip the marker (task → plain item,
+  bullet kept); a plain bullet line → insert `[ ] ` after the bullet +
+  space; any other free line → prefix `- [ ] ` at column 0. No-ops:
+  fenced code, table rows, setext pairs, ordered-list items (GFM allows
+  ordered tasks, but v1 stays bullet-only — same posture as the setext
+  no-op). Probe the syntax tree (`TaskMarker`, the 17a/17b precedent)
+  where it distinguishes; a line regex is the fallback.
+- Chord: **Mod+Alt+L** ("L for list") — audit row added below: free on
+  Chromium/Firefox/Safari. The Mod+Alt+T alternative is REJECTED:
+  Ctrl+Alt+T is a desktop-level terminal launcher on GNOME/Ubuntu, eaten
+  before the browser (the item-12 Mod+N lesson, one layer up). CM6
+  matches `Mod-Alt-l` through its keyCode fallback, so macOS
+  Option-mangling is safe (item 14's verification of the same family).
+- done-when: unit tests for the pure function (on/off round trip,
+  `[X]`, nested indent, both bullet styles, ordered/fence/table/setext
+  no-ops) + e2e: plain line → task (verified in the preview), task →
+  plain item, own undo step, read-only shared-view no-op. Screenshots
+  unaffected (keymap-only, fixtures contain no task lists).
+- Evidence (run 3, iteration 5): new `src/lib/cm-task-toggle.ts` —
+  `taskBlocked` (ancestor walk: FencedCode / CodeBlock / Table /
+  OrderedList / SetextHeading1 / SetextHeading2 / HorizontalRule /
+  Blockquote), `taskMarkerOnLine` (line-range `TaskMarker` probe), pure
+  `applyTaskToggle`, `taskToggleCommand` via `ownUndoStep`,
+  `taskToggleKeymap` (`Mod-Alt-l`); wired in `Editor.svelte` after
+  `formatKeymap`. 50 unit tests (`cm-task-toggle.test.ts`) + 4 e2e
+  (`e2e/task-lists.spec.ts`), the three behavioral ones
+  sensitivity-verified (each fails without the keymap wiring). Full suite
+  green: 404 unit + 144 e2e (5 pre-existing skips).
+- Scope notes (v1, top-level only): ordered tasks (`1. [ ] x`) and
+  blockquote tasks (`> - [ ] x`) are no-ops — lezer parses both WITH a
+  `TaskMarker` (probe-verified iteration 5), so item 28 lifts the
+  `OrderedList`/`Blockquote` ancestor block; the preview checkboxes
+  (item 17c) already toggle those forms. An empty line toggles to
+  `- [ ] ` WITH a trailing space (item 15's heading command yields a
+  bare `##` without — deliberately different: GFM task detection
+  requires a space after `]`, so the next typed character must already
+  land in a valid task). A lone `-`/`*`/`+` character line is treated as
+  a plain line (prefixed, like item 15's degenerate lines).
+- Priority: consumed — see item 28 (its direct extension).
+
+### 28. DONE (2026-08-21, run 3, iteration 6): Task toggle: ordered + blockquote tasks (extends item 27 to the remaining GFM task forms)
+
+- Gap (run 3, iteration 5, probe-verified): GFM tasks exist in three
+  forms — top-level bullets (item 27), ordered lists (`1. [ ] x`) and
+  blockquotes (`> - [ ] x`). Lezer emits `OrderedList > ListItem > Task
+  > TaskMarker` for the ordered forms (all of `1.` / `1)` / nested) and
+  `Blockquote > … > Task > TaskMarker` for the quoted forms, so item 27's
+  TREE-MARKER strip branch already computes the right change for both —
+  `taskBlocked`'s `OrderedList` / `Blockquote` ancestor block is what
+  turns them into no-ops today. The preview checkboxes (item 17c,
+  `task-lines.ts` scanner covers ordered + blockquote) already toggle
+  every form; the keyboard path is the last missing one.
+- Direction: (a) ordered — lift `OrderedList` from `taskBlocked` ONLY for
+  the marker-strip branch (a plain `1. x` line still no-ops in v1 —
+  inserting `[ ] ` after an ordered marker is a second regex branch,
+  `(\s*)(\d{1,9})[.)][ \t]`, and can land as a follow-up slice if wanted);
+  (b) blockquote — lift `Blockquote` for the marker-strip branch AND add a
+  `>␣` prefix variant of the bullet/free-line regexes so `> - x` →
+  `> - [ ] x` and `> hello` → `> - [ ] hello` (or decide quoted tasks are
+  strip-only — the preview checkbox already covers the other direction
+  there). Keep fenced code / tables / setext / thematic breaks blocked.
+- No new chord (same Mod+Alt+L; audit row unchanged).
+- done-when: unit tests for the new branches (ordered strip, blockquote
+  strip, blockquote bullet insert if included, both inside existing
+  `taskBlocked`/`applyTaskToggle` suites) + e2e: `1. [ ] x` → `1. x` and
+  `> - [ ] x` → `> - x` (verified in the preview checkbox state), plus the
+  plain `1. x` no-op if ordered insert is not included. Screenshots
+  unaffected (keymap-only).
+- Evidence (run 3, iteration 6): `cm-task-toggle.ts` — `BLOCKED_ANCESTORS`
+  loses `OrderedList` / `Blockquote` in favor of a new `TASK_FORM_ANCESTORS`
+  set that is only consulted when the line has **no** `TaskMarker`;
+  `taskBlocked(state, line, marker)` gains the marker parameter and the
+  command computes `taskMarkerOnLine` before the block check (the strip
+  branch of `applyTaskToggle` is unchanged — it already computed the right
+  change for both forms, probe-verified: lezer emits
+  `OrderedList > ListItem > Task > TaskMarker` for `1.` / `1)` / nested and
+  `Blockquote > … > Task > TaskMarker` for `> -` / `> > -` / `> 1.`, with the
+  marker at the same relative offset in every case). 16 new unit tests
+  (`cm-task-toggle.test.ts`: ordered strip dot/checked/paren/nested/second-
+  item-untouched; blockquoted strip bullet/checked/deep-nested/ordered/
+  following-line-untouched; `taskBlocked` allow-with-marker vs
+  block-without-marker per form, fence still hard-blocks) + 4 e2e
+  (`e2e/task-lists.spec.ts`), the two strip tests sensitivity-verified (fail
+  exactly with the old always-block behavior; the no-op tests pass both ways,
+  locking the no-op contract). Full suite green: 420 unit + 148 e2e
+  (5 pre-existing skips).
+- Scope notes (v1, strip-only for both forms): the *insert* direction —
+  `1. x` → `1. [ ] x` and `> - x` / `> note` → task — is NOT included: it is
+  a second regex branch per form and changes document structure more
+  (a quoted plain line becomes a quoted list); the preview checkbox (17c)
+  already toggles every form, so "make it a task" stays reachable there.
+  Seeded as item 29. A bare marker-only line (`1. [ ]` with no content)
+  parses without a `TaskMarker` like its top-level counterpart, so it is a
+  no-op here (top-level strips it via the regex fallback) — degenerate case,
+  consistent with the no-op posture.
+- Priority: consumed — see item 29 (ordered task continuation, found by the
+  iteration-6 re-audit).
+
+### 29. DONE (2026-08-21, run 3, iteration 7): Ordered task continuation keeps the `[ ] ` marker on Enter (upstream gap)
+
+- Gap (run 3, iteration 6, probe-verified against the installed
+  `@codemirror/lang-markdown` 6.5.1 dist): Enter-continuation treated the
+  three GFM task forms asymmetrically. Bullets: `- [ ] x` + Enter →
+  `- [ ] x\n- [ ] ` (marker continued, unchecked — item 17a). Blockquotes:
+  `> - [ ] x` + Enter → `> - [ ] x\n> - [ ] ` (quote + bullet + marker all
+  continued). **Ordered**: `1. [ ] x` + Enter → `1. [ ] x\n2. ` — the
+  `[ ] ` marker was DROPPED, an empty `1. [ ] ` + Enter did NOT exit the
+  list, and an empty SECOND item of a tight list CORRUPTED the marker
+  (`1. [ ] a\n2. [ ] ` + Enter → `1. [ ] a\n2. [\n3. ] ` — the built-in
+  split mid-marker).
+- Root cause (verified in the dist): `insertNewlineContinueMarkup` builds
+  its continuation context in `getContext`, whose per-form regexes capture
+  the task marker ONLY for bullets — BulletList:
+  `/^( *)([-+*])( {1,4}\[[ xX]\])?( +)/` (marker = group 3) vs OrderedList:
+  `/^( *)\d+([.)])( *)/` (no marker group). The re-emitted continuation line
+  therefore never carries the ordered task marker; and the built-in's
+  "empty item" test slices the line AFTER the ordered marker (which ends
+  before `[ ] `), so an ordered task's own marker counts as "content" and
+  the exit branch never runs.
+- Evidence (run 3, iteration 7): new `src/lib/cm-task-newline.ts` — pure
+  `orderedTaskNewlineChanges(state)` (gates on a single empty caret, an
+  ordered-task line regex `((?:> ?)*)([ \t]*\d+[.)])[ \t]+(\[[ xX]\])…`, and
+  the tree `TaskMarker`'s INNERMOST list — a bullet task nested in an
+  ordered item must fall through), `orderedTaskNewlineCommand` (via
+  `ownUndoStep`, item 18) and `orderedTaskNewlineKeymap` (`Enter`);
+  `Editor.svelte` wires it at `Prec.highest(keymap.of(…))` — required, since
+  `markdown()`'s `markdownKeymap` is `Prec.high` and would otherwise run
+  first. Path (a) content: run `insertNewlineContinueMarkup` with a
+  CAPTURED dispatch, find the change whose insert carries the newline, take
+  the tail after its last `\n`, match the final `(\d+[.)])` marker, and
+  compose a patch that splices ` [ ] ` over the marker's trailing spaces —
+  one composed transaction, so caret mapping and the undo step are exact
+  (mid-line splits put the marker before the remainder; renumber changes and
+  quote prefixes pass through untouched). Path (b) empty: delete just the
+  `[x]` token into a local `ChangeSet`, run the built-in on the STRIPPED
+  state, then `remove.compose(builtinChanges)` — the built-in's own
+  empty-item logic (exit / tight→loose blank line / renumber / blockquote
+  `> ` exit) then executes on a plain empty ordered item, mirroring the
+  bullet semantics with zero duplication of upstream code. Bullet tasks
+  (top-level and nested-in-ordered — their built-in continuation already
+  carries the marker), plain ordered lines, `1.[ ] x` (not a list), fenced
+  lines, and non-list lines all fall through to the built-in / default
+  Enter unchanged. 18 unit tests (`cm-task-newline.test.ts`: unchecked /
+  checked→unchecked / paren / nested-indent / quoted / renumber / mid-line
+  split; empty single / no-trailing-space / blank-line-preceded /
+  tight-loose / quoted exit; the five fall-through no-ops) + 4 e2e
+  (`e2e/task-lists.spec.ts`: continuation + type with the preview checkbox
+  count 1→2 and `data-task-line` 1/2, empty-item exit to a plain line, the
+  tight-list Enter ladder `2. [ ] ` → `\n2.  ` → exit, own undo step) — all
+  4 sensitivity-verified (each fails with the `Prec.highest` wiring removed,
+  exactly on the missing-marker / missing-exit assertions). Full suite
+  green: 438 unit + 152 e2e (5 pre-existing skips).
+- No new chord (Enter). No screenshot impact: keymap-only, the fixtures
+  never press Enter on an ordered task list (docker still unavailable in
+  this env — see Parked).
+- Scope notes: the *insert* direction (`1. x` → `1. [ ] x`, `> - x` →
+  `> - [ ] x`) stays out of this item (item 28's v1 decision) — seeded as
+  item 30. Backspace on an empty ordered task still deletes char-by-char
+  (bullet asymmetry, probe-verified iteration 7) — seeded as item 31.
+
+### 30. DONE (2026-08-21, run 3, iteration 8): Mod+Alt+L insert direction for ordered and blockquoted tasks (completes item 28's strip-only v1)
+
+- Gap: Mod+Alt+L strips the marker from ordered (`1. [ ] x` → `1. x`) and
+  blockquoted (`> - [ ] x` → `> - x`) tasks (item 28) but can never INSERT
+  it — a plain `1. x` or `> - x` line no-ops, while the top-level bullet
+  line gets `[ ] ` (item 27). The preview checkbox (17c) already toggles
+  every form, so "make it a task" is reachable by mouse; the keyboard path
+  is the parity gap (the north star keeps writing aids in the keyboard).
+- Direction: two regex branches in `applyTaskToggle` — (a) ordered: a line
+  `([ \t]*\d+[.)])[ \t](.*)` with NO `TaskMarker` on the line inserts `[ ] `
+  after the ordered marker (`1. x` → `1. [ ] x`, all of `1.` / `1)` /
+  nested indent); (b) blockquote bullet: `> - x` → `> - [ ] x` (insert
+  after the in-quote bullet marker). A plain quoted line (`> note`) stays a
+  no-op — item 28's deliberate structural-change concern (it would become a
+  quoted list). `taskBlocked` must stop blocking `OrderedList` /
+  `Blockquote` marker-less lines for the new branches (the strip branch
+  already relies on the marker parameter — keep it). Route through
+  `ownUndoStep` as today. No new chord (Mod+Alt+L).
+- done-when: unit tests for both insert branches (+ `> note` no-op, existing
+  strip tests unchanged) + e2e: `1. x` + Mod+Alt+L → `1. [ ] x` with the
+  preview checkbox count 0→1, and `> - x` → `> - [ ] x` likewise.
+  Screenshots unaffected (keymap-only).
+- Evidence (run 3, iteration 8): `cm-task-toggle.ts` — new pure
+  `taskInsertLine(line)` (ordered: optional quote prefix `((?:> ?)*)` +
+  `[ \t]*\d{1,9}[.)]` + space → splice `[ ] ` after the marker; blockquoted
+  bullet: `((?:> ?)+)` + optional indent + `[-*+]` + space → splice after
+  the bullet; anything else → `null`), an `insertable = false` parameter on
+  `taskBlocked` (the `OrderedList` / `Blockquote` ancestor block now applies
+  only when the line has neither a `TaskMarker` nor an insert match — the
+  hard blocks are checked first and unchanged), and two new
+  `applyTaskToggle` branches tried AFTER the strip branches (order is
+  load-bearing: `taskInsertLine('1. [ ] x')` would match with content
+  `[ ] x`, so a marked line must strip, never double-insert). Deliberate
+  scope extension of the seeded direction: the ordered branch carries the
+  quote prefix, so `> 1. x` → `> 1. [ ] x` — the inverse of item 28's
+  quoted-ordered strip. Caret mapping refined while in there: `place()` now
+  shifts only positions at/after the line-relative insert point (the strip
+  branch keeps the uniform delta shift) — a caret parked before the marker
+  no longer jumps into the inserted `[ ] ` (also improves the pre-existing
+  bullet branch; no test locked the old jump). 32 unit tests
+  (`cm-task-toggle.test.ts`: both insert forms incl. paren / nested-indent /
+  single- + deep-quote / no-space-quote / post-quote-indent variants,
+  caret-in-place and selection shift, empty `1. ` item, ten-digit marker
+  falling through to the plain prefix, `taskInsertLine` null cases,
+  `taskBlocked` insertable gating incl. the fence hard-block override and
+  the plain-quoted-line block) + 4 e2e (`e2e/task-lists.spec.ts`: `1. x` →
+  `1. [ ] x` with the preview checkbox count 0→1, `1) x` insert +
+  second-press strip round trip, `> - x` → `> - [ ] x` with checkbox 0→1,
+  own undo step) — all 4 sensitivity-verified (each fails with the
+  `insertable` gating removed). The former "no-op on a plain ordered line"
+  e2e is replaced by the ordered insert test; the plain-quoted-line no-op
+  e2e is unchanged and still green. Full suite green: 470 unit + 155 e2e
+  (5 pre-existing skips). No new chord (Mod+Alt+L; audit row unchanged). No
+  screenshot impact: keymap-only, fixtures contain no ordered/blockquoted
+  task lists (docker still unavailable in this env — see Parked).
+- Scope notes: a bare `1.` line (no space, no content) stays a no-op — the
+  regex requires the GFM item space (a bare `-` still takes the plain-line
+  prefix, item 27's degenerate case); `1. ` (trailing space) inserts fine;
+  a ten-digit `1234567890. x` is not a CommonMark list item (`\d{1,9}`
+  matches the 1–9 digit rule and the parser agrees) and takes the plain-line
+  prefix; 4+ post-quote spaces (`>     - x`) are an indented code block,
+  hard-blocked by the tree.
+- Priority: consumed — next unblocked: item 31 (Backspace on an empty
+  ordered task).
+
+### 31. DONE (2026-08-22, run 3, iteration 9): Backspace on an empty ordered task item exits the list (bullet parity)
+
+- Gap (run 3, iteration 7, probe-verified against the installed
+  `@codemirror/lang-markdown` 6.5.1): `- [ ] ` + Backspace at line end →
+  the built-in `deleteMarkupBackward` strips the whole marker and exits
+  (doc `''`) — but `1. [ ] ` + Backspace → `handled: false` (the ordered
+  context ends at `1. `, before the task marker — the same item-29 root
+  cause), so the DEFAULT Backspace deletes char-by-char (`]`, ` `, `[`, …)
+  instead of exiting in one press.
+- Evidence (run 3, iteration 9): new `src/lib/cm-task-backspace.ts` — pure
+  `orderedTaskBackspaceChanges(state)` (gates: single empty caret, caret at
+  line END — the bullet exit condition, `ORDERED_TASK_LINE` item-29 regex
+  with empty content), which deletes the `[x]` token **plus its trailing
+  spaces** (item-29 path-(b) pattern: local `ChangeSet` remove into a base
+  state, run the built-in `deleteMarkupBackward` on the stripped state with
+  a captured dispatch, return `remove.compose(builtinChanges)` + the
+  captured selection — which is already in final-doc coordinates). The
+  strip of the trailing spaces is load-bearing: stripping only `[ ]` leaves
+  `1.  ` and the built-in's extra-trailing-space branch consumes the press
+  instead of exiting (two presses, breaking bullet parity). `orderedTask-
+  BackspaceCommand` via `ownUndoStep` (`userEvent: 'delete'`, matching the
+  built-in) + `orderedTaskBackspaceKeymap` (`Backspace`); `Editor.svelte`
+  wires it at `Prec.highest` alongside the item-29 Enter wrapper (required —
+  `markdown()`'s `markdownKeymap` is `Prec.high` and would run first).
+  19 unit tests (`cm-task-backspace.test.ts`: single/checked/paren exit,
+  no-trailing-space exit, tight second item → `1. [ ] a\n   `, quoted
+  `> 1. [ ] ` → `> `, deep-quoted → `> > `, quoted tight → `> 1. [ ] a\n>
+   `, nested-under-ordered → `1. a\n     `; fall-throughs: non-empty task,
+  plain empty ordered item, bullet task, bullet-nested-in-ordered, fence,
+  nested-under-bullet lazy-paragraph case, ten-digit marker, mid-line
+  caret, non-empty selection) + 5 e2e (`e2e/task-lists.spec.ts`: exit +
+  type `fresh start`, BULLET built-in control (locks that the wrapper
+  doesn't shadow the working case), tight-list marker→spaces after Enter,
+  own undo step with the emptied state asserted via `.cm-placeholder`
+  visibility (the `editorText` placeholder quirk), non-empty task
+  char-delete no-op) — the three ordered behavioral e2e sensitivity-
+  verified (each fails exactly on the exit assertion with the wiring
+  removed; both controls pass with and without it). Full suite green: 489
+  unit + 160 e2e (5 pre-existing skips). No new chord (Backspace; audit
+  table unchanged). No screenshot impact: keymap-only, fixtures contain no
+  ordered task lists and never press Backspace on one (docker still
+  unavailable in this env — see Parked).
+- Scope notes: a nested empty ordered task under a BULLET (`- a\n  1. [ ]
+  `) falls through to char-by-char — probe-verified: once the marker is
+  stripped the line `  1. ` parses as a LAZY PARAGRAPH continuation (no
+  nested list exists at all), so the built-in finds no context; the SAME
+  happens for the plain `  1. ` form upstream, so the fall-through is
+  consistent, not a new asymmetry. The nested-under-ORDERED form DOES work
+  (`1. a\n  1. [ ] ` → `1. a\n     `, marker→spaces, one more Backspace
+  exits). Ten-digit markers, fence lines, and mid-line carets all fall
+  through unchanged (the built-in's own `isActiveAt`/context checks are the
+  fence guard, as in item 29).
+- Priority: consumed — see item 32 (found by the iteration-9 re-audit).
+
+### 32. DONE (2026-08-22, run 3, iteration 10): Mod+Alt+L strips the ordered bare-marker forms instead of double-inserting
+
+- Gap (run 3, iteration 9, probe-verified against the installed
+  `@lezer/markdown` + `applyTaskToggle`): `1. [ ] ` (WITH trailing space)
+  parses as `OrderedList > ListItem > Task > TaskMarker`, but `1. [ ]`
+  (no trailing space, no content) parses as `OrderedList > ListItem >
+  Paragraph` with NO `TaskMarker` (same premise as item 17b's bullet `- [ ]`
+  and the parked trailing-space note). `applyTaskToggle` therefore takes the
+  item-30 INSERT branch on it: `taskInsertLine('1. [ ]')` matches
+  `ORDERED_ITEM_LINE` with content `[ ]` and yields `1. [ ] [ ]` (probe:
+  `1. [x]` → `1. [ ] [x]`, `1) [ ]` → `1) [ ] [ ]`, `> 1. [ ]` →
+  `> 1. [ ] [ ]`). The BULLET counterparts do the opposite: `- [ ]` /
+  `- [x]` match `TASK_LINE` (whose trailing-space group is optional) and
+  STRIP to `- ` — so the same chord strips a bare bullet marker but
+  double-inserts a bare ordered marker.
+- Direction: add a bare-marker strip branch for the ordered forms — an
+  ordered variant of `TASK_LINE` (optional quote prefix + indent +
+  `\d{1,9}[.)]` + space + `\[[ xX]\]` + optional space+content) tried in
+  `applyTaskToggle` BEFORE the insert branches (item-30 ordering lesson:
+  `taskInsertLine` matches marked lines too, so strip must run first);
+  result `1. [ ]` → `1. ` (keep the ordered marker + its item space, strip
+  the bracket token — mirroring `- [ ]` → `- `). Note the no-content edge:
+  `1. [ ]` with the bracket as the whole content is not a GFM task (marked's
+  `listIsTask` needs ` +\S`), so stripping it as a degenerate task matches
+  item 27's top-level posture. Unit tests (all four probed forms + a
+  regression that `1. [ ] x` with real content still inserts exactly once)
+   + e2e: `1. [ ]` + Mod+Alt+L → `1. ` (preview shows no checkbox either
+   way). No new chord. Screenshots unaffected.
+- Evidence (run 3, iteration 10): `cm-task-toggle.ts` — new `ORDERED_TASK_LINE`
+  regex (`^((?:> ?)*)([ \t]*\d{1,9}[.)])[ \t]\[[ xX]\](?:[ \t](.*))?$`, the
+  ordered variant of `TASK_LINE`) + a strip branch in `applyTaskToggle` tried
+  AFTER `TASK_LINE`/`BULLET_LINE` and BEFORE the `taskInsertLine` branches
+  (ordering load-bearing — `taskInsertLine('1. [ ]')` matches with content
+  `[ ]`, so the strip must win); the strip yields quote + ordered marker +
+  one space + content (so `1. [ ]` → `1. ` — the marker + item space are
+  kept, mirroring `- [ ]` → `- `; a marked `1. [ ] x` would yield `1. x`,
+  identical to the tree-marker branch, so even a tree miss degrades to the
+  right strip). `taskBlocked` and `taskInsertLine` are UNCHANGED and
+  load-bearing as-is: `taskInsertLine` matching the bare-marker forms is
+  exactly what keeps the `insertable` flag true so the `OrderedList` /
+  `Blockquote` ancestor block lets the line through to the new strip branch.
+  10 unit tests (`cm-task-toggle.test.ts`: the four probed forms `1. [ ]` /
+  `1. [x]` (Link, no marker) / `1) [ ]` / `> 1. [ ]`, nested indent,
+  following-line isolation, marked `1. [ ] x` strips exactly once, two
+  no-steal insert regressions `1. x` → `1. [ ] x` and `> 1. x` → `> 1. [ ] x`)
+  + 1 e2e (`e2e/task-lists.spec.ts`: `1. [ ]` + Mod+Alt+L → `1. `, a second
+  press re-inserts `1. [ ] `, preview checkbox count 0 in every state — a
+  content-less bracket is not a GFM task for marked's `listIsTask`).
+  Sensitivity: unit — with the branch removed 7 of the 10 fail with exactly
+  `1. [ ] [ ]` (the 3 green ones are the tree-branch strip + the two insert
+  regressions, locking that the fix neither double-processes marked lines
+  nor steals the plain insert); e2e — fails on the first strip poll without
+  the branch. Full suite green: 499 unit + 161 e2e (5 pre-existing skips).
+  No new chord (Mod+Alt+L; audit table unchanged). No screenshot impact:
+  keymap-only, fixtures contain no ordered task lists (docker still
+  unavailable in this env — see Parked).
+- Scope notes: the strip keeps the item space (`1. [ ]` → `1. `), so a
+  second press re-inserts `1. [ ] ` — a round trip through a valid empty
+  task, exactly like the bullet counterpart's `- [ ]` → `- ` → `- [ ] `.
+  The QUOTED BULLET bare-marker sibling (`> - [ ]` → `> - [ ] [ ]`, same
+  root cause: `TASK_LINE` cannot match a quote prefix) was probe-verified
+  during the re-audit and seeded as item 33 — deliberately not folded in,
+  to keep this iteration to the seeded item.
+- Priority: consumed — see item 33 (found by the iteration-10 re-audit).
+
+### 33. DONE (2026-08-22, run 3, iteration 11): Mod+Alt+L strips the blockquoted BULLET bare-marker forms instead of double-inserting
+
+- Gap (run 3, iteration 10, probe-verified against the installed
+  `@lezer/markdown` + `applyTaskToggle`): the item-32 fix's regex carries
+  the quote prefix, so `> 1. [ ]` now strips to `> 1. ` — but the QUOTED
+  BULLET form was left behind: `> - [ ]` (no trailing space, no content)
+  parses as `Blockquote > BulletList > ListItem > Paragraph` with NO
+  `TaskMarker` (item 17b's bare-bullet premise under a quote), `TASK_LINE`
+  cannot match it (the line starts with `>`, not a bullet), and the
+  item-30 `QUOTED_BULLET_LINE` INSERT branch matches it with the bracket as
+  "content": `> - [ ]` → `> - [ ] [ ]` (probe: `> - [x]` → `> - [ ] [x]`,
+  the no-space quote `>- [ ]` → `>- [ ] [ ]`, deep `> > - [ ]` →
+  `> > - [ ] [ ]`). The top-level bullet (`- [ ]` → `- ` via `TASK_LINE`)
+  and the ordered (`1. [ ]` → `1. ` via item 32) are both fixed; the quoted
+  bullet is the last double-inserting form.
+- Evidence (run 3, iteration 11): `cm-task-toggle.ts` — new
+  `QUOTED_BULLET_TASK_LINE` regex (`^((?:> ?)+)([ \t]*)([-*+])[ \t]\[[
+  xX]\](?:[ \t](.*))?$`, the quoted-bullet variant of item 32's
+  `ORDERED_TASK_LINE`) + a strip branch in `applyTaskToggle` tried AFTER
+  `TASK_LINE`/`BULLET_LINE`/`ORDERED_TASK_LINE` and BEFORE the
+  `taskInsertLine` branches (ordering load-bearing —
+  `taskInsertLine('> - [ ]')` matches with content `[ ]`, so the strip
+  must win); the strip yields quote + bullet + one space + content
+  (`> - [ ]` → `> - ` — mirroring `- [ ]` → `- ` and `1. [ ]` → `1. `).
+  `taskBlocked` and `taskInsertLine` are UNCHANGED and load-bearing as-is:
+  `taskInsertLine` matching the bare-marker forms keeps the `insertable`
+  flag true so the `Blockquote` ancestor block lets the line through to
+  the new strip branch (locked by a new `taskBlocked` unit test). 9 unit
+  tests (`cm-task-toggle.test.ts`: the four probed forms `> - [ ]` /
+  `> - [x]` (link, no marker) / `>- [ ]` / `> > - [ ]`, post-quote
+  indent, following-line isolation, a marked `> - [ ] x` still strips
+  exactly once via the tree branch, a no-steal insert regression
+  `> - x` → `> - [ ] x`, and the `taskBlocked` gate for the bare form)
+  + 1 e2e (`e2e/task-lists.spec.ts`: `> - [ ]` + Mod+Alt+L → `> - `, a
+  second press re-inserts `> - [ ] `, preview checkbox count 0 in every
+  state). Sensitivity: unit — with the branch removed 6 of the 9 fail
+  with exactly the double-insert (`> - [ ] [ ]`, `> - [ ] [x]`,
+  `>- [ ] [ ]`, `> > - [ ] [ ]`, `>   - [ ] [ ]`, plus the following-line
+  case; the 3 green ones are the tree-branch strip, the no-steal insert,
+  and the gate, locking that the fix neither double-processes marked
+  lines nor steals the plain insert); e2e — fails on the first strip poll
+  without the branch (received `> - [ ] [ ]`). Full suite green: 508
+  unit + 162 e2e (5 pre-existing skips). No new chord (Mod+Alt+L; audit
+  table unchanged). No screenshot impact: keymap-only, fixtures contain
+  no blockquoted task lists (docker still unavailable in this env — see
+  Parked).
+- Scope notes: the strip keeps the item space (`> - [ ]` → `> - `), so a
+  second press re-inserts `> - [ ] ` — a round trip through a valid empty
+  task, exactly like the `- [ ]` and `1. [ ]` counterparts. With this
+  form, the double-insert family is closed in ALL FOUR bare-marker forms
+  (`- [ ]`, `1. [ ]`, `> 1. [ ]`, `> - [ ]`). A bracket followed by
+  content WITHOUT a space (`- [ ]x`, `> - [ ]x`) is not a GFM task (no
+  marked `listIsTask` match) and stays treated as bullet CONTENT — the
+  bullet → task insert wraps it, spec-consistent (no action).
+- Priority: consumed — the iteration-11 re-audit found no further
+  unblocked writing-experience gap; every remaining candidate is a Parked
+  item blocked on the human product/design decisions named there
+  (typewriter scrolling default, autolink-on-type scope, cross-tab local
+  session sync, undo-across-reload trade-off, setext support, mobile
+  header density).
+
+### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
+
+- Candidate found by the run-3 writing-experience re-audit: no
+  writing-app default in this codebase keeps the caret vertically centered
+  while scrolling (iA Writer / Typora behavior); today the view scrolls
+  only when the caret hits the bottom edge (CM6 default). A small CM6
+  `ViewPlugin` (scroll the `scrollDOM` so the caret sits ~40% down when it
+  is near the top edge after a change) is the obvious implementation.
+- BLOCKED on a human product decision: it changes default behavior for
+  every session (some users dislike mid-caret scrolling), it interacts
+  with the mobile virtual keyboard and manual scrolling, and it needs a
+  decided default (on-always vs. opt-in). Name the decision before
+  scoping.
 
 ## Chord reservation audit (2026-08-21, run 2, iteration 1)
 
@@ -710,6 +1621,8 @@ reserved-shortcut lists. Mod = Ctrl (Win/Linux) / Cmd (macOS).
 | Mod+Alt+0            | free                         | free                     | free                                  | **remove heading** (substitution for Mod+0)           |
 | Mod+N                | **reserved** (new window)    | **reserved** (new window) | **reserved** (new window)           | rejected (old new-session binding; dead in real browsers, see item 12) |
 | Mod+Alt+S            | free                         | free                     | free                                  | **new session** (substitution for the dead Mod+N, item 12) |
+| Mod+Shift+Z          | free (page-level redo, not a browser accelerator) | free (page-level redo) | free (standard text redo) | **redo** — y-codemirror's intended `Mod-Shift-z` binding; added as uppercase `Mod-Shift-Z` so CM6's case-sensitive key-name lookup actually matches a real Shift+Z keypress (item 22) |
+| Mod+Alt+L            | free                         | free                         | free                                  | **task toggle** (item 27, shipped run 3 iteration 5; CM6 matches `Mod-Alt-l` through its keyCode fallback, so macOS Option-mangling is safe per item 14's family check). Mod+Alt+T rejected: Ctrl+Alt+T is a desktop-level terminal launcher on GNOME/Ubuntu, consumed before the browser (the item-12 Mod+N lesson, one layer up) |
 
 Notes: the substitutions follow the Mod+Alt pattern this app already established for
 the rejected Mod+Shift+N / Mod+Shift+P (items 7, 8), keeping all substituted chords in
@@ -720,6 +1633,198 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **Strip-then-recompose generalizes from Enter to Backspace (run 3,
+  iteration 9):** item 29's path-(b) pattern (delete the `[x]` token into a
+  base state, run the built-in on the STRIPPED state with a captured
+  dispatch, return `remove.compose(builtinChanges)` + the captured
+  selection — already in final-doc coordinates) works identically with
+  `deleteMarkupBackward` for Backspace, and the built-in's OWN empty-item
+  logic (exit / tight→loose / renumber / quote exit / nested dedent) all
+  execute for free. Two details that matter: (1) the strip must include the
+  marker's TRAILING SPACES — stripping only `[ ]` leaves `1.  ` and the
+  built-in's "delete extra trailing space" branch consumes the press
+  (caret parks at `1. `, list NOT exited), breaking bullet parity; (2) the
+  built-in's `isActiveAt` + list-context checks are the fence/non-list
+  guards — no explicit tree walk is needed (fenced `1. ` and ten-digit
+  `1234567890. ` stripped states both return `handled: false`, verified by
+  probe).
+- **An empty nested list item under a BULLET is a lazy paragraph, not a
+  list (run 3, iteration 9, probe-verified):** `- a\n  1. ` parses as
+  `BulletList > ListItem > ListMark + Paragraph` spanning BOTH lines (the
+  empty `  1. ` has no content, so it is NOT a nested `OrderedList` — it
+  lazy-continues the bullet's paragraph). Consequences: (a)
+  `deleteMarkupBackward` cannot exit `- a\n  1. [ ] ` (nor the PLAIN
+  `- a\n  1. `) — no list context exists; item 31's wrapper therefore falls
+  through to char-by-char there, which is CONSISTENT with the plain form
+  (no new asymmetry introduced); (b) the same line WITH a task marker
+  (`- a\n  1. [ ] `) DOES parse as a real nested `OrderedList > ListItem >
+  Task > TaskMarker` — the marker's presence is what makes the item "real";
+  stripping it un-makes the list; (c) nesting under an ORDERED parent is
+  fine (`1. a\n  1. ` is a genuine nested list; Backspace works there).
+- **`1. [x]` (no trailing space) parses as a LINK (run 3, iteration 9,
+  probe-verified):** `1. [x]` → `OrderedList > ListItem > Paragraph > Link`
+  (`[x]` is a valid shortcut reference link) while `1. [ ]` → bare
+  `Paragraph` — extends the parked trailing-space TaskMarker note. Any
+  bracket-token logic on ordered items must treat the no-trailing-space
+  forms as CONTENT, not tasks (this is why item 32's double-insert is a
+  bug: the insert branch matched the bracket as content and wrapped it).
+- **`pkill -f` matches its own command line (run 3, iteration 8):** the
+  stale-proc kill step `pkill -f "vite preview"` matches the shell running
+  the command itself (the pattern appears in its argv), kills it, and the
+  bash call hangs until the 120 s timeout. Use a self-excluding pattern
+  (`pkill -f "[v]ite preview"`), check with `pgrep -a -f` first, or just
+  confirm `ss -ltn | grep -E ':(3000|4173)'` is empty before an e2e run.
+- **lezer ordered-task marker presence is trailing-space-dependent
+  (run 3, iteration 7):** `1. [ ] x` AND `1. [ ] ` (with a trailing space)
+  parse as `OrderedList > ListItem > Task > TaskMarker`, but `1. [ ]`
+  (no trailing space, no content) parses as `OrderedList > ListItem >
+  Paragraph` with NO `TaskMarker` (same as the bullet `- [ ]` → `Paragraph`
+  premise of item 17b). Any "is this an empty ordered task" check therefore
+  needs the LINE REGEX, not the tree, as the discriminator (item 29's path
+  (b) keys on the regex; the tree only excludes bullet-nested tasks).
+- **The built-in corrupts an empty ordered task on Enter (run 3, iteration
+  7):** `1. [ ] a\n2. [ ] ` + Enter → `1. [ ] a\n2. [\n3. ] ` — because the
+  ordered context ends before `[ ] `, the "empty item" exit never runs, the
+  continuation inserts at the caret, and the trailing-whitespace back-walk
+  stops at `]`, splitting the marker across two lines. This is why item 29
+  must strip the `[x]` token BEFORE running the built-in for empty items
+  (never "fix" the built-in's output in that case).
+- **`@codemirror/state` 6.7.1 ChangeSet API traps (run 3, iteration 7):**
+  (1) `ChangeSet.of(changes, length)` / `ChangeSet.empty(length)` take a
+  NUMERIC document length, not a doc — there is no `ChangeSet.single()` or
+  `.replace()` in this version; (2) `X.compose(Y)` = apply X first, then Y
+  (Y expressed in X's OUTPUT coordinates) — verified empirically, the
+  reverse direction throws on length mismatch; (3) `ChangeSet` has no
+  `.includes`-bearing iteration — `iterChangedRanges`'s callback is TYPED
+  with 4 params (no insert), while `iterChanges` exposes the 5th `inserted:
+  Text` (use `.toString()`); (4) `state.update()` takes TransactionSpec
+  OBJECTS — passing a bare ChangeSet silently applies NOTHING (no error);
+  (5) `Transaction.selection` is typed `EditorSelection | undefined`
+  (guard it).
+- **TS closure-assignment narrowing trap (run 3, iteration 7):**
+  `let x: T | null = null` assigned ONLY inside a callback passed to a
+  function call stays narrowed to `null` in control-flow analysis after the
+  call — `if (!x) return` then leaves `x: never` for all later reads.
+  Fix used in `cm-task-newline.ts`: a `const holder = { tr: null }` object
+  (property reads are re-narrowed fresh). Same family as the "TreeCursor is
+  reused and mutated" gotcha below.
+- **lezer markdown node names for line-level guards (run 3, iteration 5):**
+  three premises that shaped `taskBlocked` (and any future line-level
+  command): (1) a thematic break (`---` / `===`-is-paragraph / `***`)
+  parses as `HorizontalRule`, NOT `ThematicBreak`; (2) `SetextHeading1/2`
+  spans BOTH the paragraph line and the underline line (the underline is
+  the `HeaderMark` child), so an ancestor walk from either line reaches
+  the setext node — a tree guard covers both setext lines without the
+  item-15-style regex; (3) ordered GFM tasks (`1. [ ] x`, `1)`, nested)
+  parse as `OrderedList > ListItem > Task > TaskMarker` — the strip
+  branch of any marker-based command works for them as soon as the
+  `OrderedList` ancestor block is lifted (seeded as item 28).
+- **`doc.lineAt(pos)` at a line end stays on that line (run 3, iteration
+  5):** probing `lineAt` at the newline position of a non-final line
+  returns THAT line (and at the document end returns the last line), so
+  the same-line guard pattern `lineAt(to).number !== lineAt(from).number`
+  (items 15/27) correctly accepts a caret parked at the very end of the
+  line. No off-by-one needed.
+- **Undo/redo history does not survive reloads (run 3, iteration 4):**
+  item 21's per-tab manager registry is in-memory; after a reload the
+  undo stack is empty even though the work position (item 25) is
+  restored. There is no documented yjs API to serialize an
+  `UndoManager` stack (stack items hold internal `Yjs Item` references
+  with `keepItem` pins), so a scoped item needs a spike first (e.g.
+  persist the pre-step doc state per captured step and rebuild, or
+  accept "undo survives reloads for N steps"). BLOCKED on a human product
+  decision: which trade-off (full-stack rebuild vs a bounded N-step cap) —
+  name it before scoping. Not started.
+- **Autolink bare URLs on type (run 3, iteration 4):** an input rule
+  that rewrites `scheme://…` tokens into `[url](url)` after a word
+  boundary would complete the link story (item 16 covers paste +
+  Mod+K). BLOCKED on a product decision: it rewrites STORED document
+  content behind the user's back (marks appear on the line, against
+  the concealment philosophy), and needs decided scope — which URL
+  forms (item 16's validation deliberately refuses `www.…`; email?
+  bare-domain TLD heuristics?). Name the decision before scoping.
+- **fake-indexeddb stalls under default `vi.useFakeTimers()` (run 3,
+  iteration 4):** `fake-indexeddb`'s `queueTask` uses
+  `globalThis.setImmediate` in node (falling back to `setTimeout(0)`
+  in jsdom), and vitest's default fake-timers set fakes
+  `setImmediate` too — every IDB op hangs forever. Unit tests that
+  combine fake timers with fake-indexeddb must restrict
+  `vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })` (or
+  whatever the SUT uses) so the IDB task queue keeps flowing.
+- **CM6 6.43.x culls off-viewport lines into `.cm-gap` placeholders
+  (run 3, iteration 3):** for a document taller than the viewport,
+  `@codemirror/view` 6.43.7 replaces the run of lines outside the
+  scroll viewport with a single empty `div.cm-gap` carrying the
+  combined height (verified: 40-line note, remounted at `scrollTop = 0`
+  → 36 `.cm-line` + one `.cm-gap` (≈3.9 lines) + the line containing the
+  selection, which is always kept rendered). The INITIAL mount renders
+  ALL lines before the first gap pass, so a DOM read right after mount
+  can transiently see the full text — a race. Consequence: the DOM-based
+  `editorText` e2e helper is UNRELIABLE for notes taller than one
+  viewport (it silently loses the gapped lines, which looks like
+  document corruption). For tall-note e2e, assert on the visible tail
+  (`text.endsWith(...)` at a known scroll position) and read the MODEL
+  through the preview (with `breaks: true`, N lines → N-1
+  `article.preview br` — `<br>` contributes nothing to `textContent`,
+  so `allTextContents()` on the preview paragraph also collapses the
+  lines).
+- **CM6 scroll mechanics (run 3, iteration 3, verified in the 6.43.7
+  dist):** the view's update loop sets a scroll target whenever
+  `tr.scrollIntoView` is true — regardless of whether the transaction
+  changed the selection — so a selection-only dispatch
+  (`view.dispatch({ selection: view.state.selection.main,
+  scrollIntoView: true })`) is a safe way to scroll a restored position
+  into view (no doc change → no Yjs step, no undo-clock reset). The
+  scroll is applied in the next measure cycle (rAF), so e2e must
+  `expect.poll` on `scrollTop`. `EditorView.focus()` uses
+  `focusPreventScroll` and NEVER scrolls the selection into view — that,
+  plus "the initial state's selection is not scrolled", is the full
+  account of the item-26 gap.
+- **Playwright `fill()` on a tall contenteditable (run 3, iteration
+  3):** `fill()` leaves the caret at the end of the inserted text and
+  CM6 scrolls it into view — after filling a 40-line note the scroller
+  already reported `scrollTop ≈ maxScroll` (499 of 522). Parking a caret
+  in e2e after a fill therefore needs an explicit `Control+End` for
+  determinism, and the pre-park viewport is already near the bottom, not
+  the top.
+
+- **CDP key dispatch does NOT apply the Shift case mapping (run 3,
+  iteration 1):** `page.keyboard.press('Control+Shift+z')` delivers
+  `e.key: 'z'` (lowercase) even with Shift held, while a real browser
+  delivers `e.key: 'Z'`. CM6 keymap branches behave differently on the two
+  casings (the first lookup branch ignores Shift for character keys, so
+  the CDP press of Ctrl+Shift+z matches the plain `Mod-z` UNDO binding,
+  while the real press matches nothing). E2E tests for Shift+letter chords
+  cannot be trusted in either direction — for the real-browser path,
+  dispatch a synthetic `KeyboardEvent` with the faithful casing
+  (`{ key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true }`) on
+  `.cm-content`; that is what `e2e/undo-memory.spec.ts` does. Extends the
+  existing "CDP bypasses the accelerator layer" note below.
+- **yjs 13.6.31 `Text.insert` has no origin parameter (run 3, iteration
+  1):** the signature is `insert(index, text, attributes?)` — a 4th
+  argument is silently treated as rich-text attributes and the transaction
+  records origin `null`. To record a specific origin in tests, use
+  `doc.transact(() => text.insert(…), origin)`. (`Y.applyUpdate(doc,
+  update, origin)` does take an origin — that is how the relay's
+  `'collab-remote'` origin is set, and such edits are NOT tracked by a
+  default `Y.UndoManager`.)
+- **yjs `UndoManager` lifecycle (run 3, iteration 1):** a manager
+  auto-destroys when its Y.Doc is destroyed (`doc.on('destroy', () =>
+  manager.destroy())`), and `destroy()` is idempotent (lib0
+  `ObservableV2.destroy` just resets the observer map) — so explicit
+  `forgetUndoManager` + later doc-destroy double-destroy is harmless.
+  Memory: there is no stack cap (no `maxStackItems` in 13.6.x), stack
+  items pin deleted items via `keepItem`, and a destroyed manager stays
+  referenced by the doc's `'destroy'` listener closure until the doc
+  itself dies — for local sessions that is tab lifetime. Acceptable at
+  current scale; revisit if long-lived tabs show memory growth.
+- **Frozen `n/[id]` shared view leaks its Y.Doc (pre-existing, run 3,
+  iteration 1):** the shared-note `$effect` creates a fresh `Y.Doc` per
+  mount but only destroys it in the `cancelled` path — a normal leave
+  stops the room and nulls `sharedYtext` but the doc (and, now, its undo
+  manager) leaks until reload. Pre-existing (the doc itself leaked
+  before undo-memory); fixing belongs to a frozen-page pass, if that ever
+  happens.
 - **y-indexeddb is persistence-only — no cross-tab sync (run 2, iteration
   12):** `IndexeddbPersistence` (y-indexeddb 9.0.12) applies stored updates
   exactly ONCE at construction (`fetchUpdates`) and stores local updates on

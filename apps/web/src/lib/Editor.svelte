@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import * as Y from 'yjs';
-	import { EditorState } from '@codemirror/state';
+	import { EditorState, Prec } from '@codemirror/state';
 	import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view';
 	import { defaultKeymap } from '@codemirror/commands';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
@@ -16,7 +16,18 @@
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
 	import { taskMarkerClick } from './cm-task-click';
-	import { recordCaret, savedCaret } from './caret-memory';
+	import { taskToggleKeymap } from './cm-task-toggle';
+	import { orderedTaskNewlineKeymap } from './cm-task-newline';
+	import { orderedTaskBackspaceKeymap } from './cm-task-backspace';
+	import { getNoteSelection } from './db';
+	import {
+		clampSelection,
+		hasSelection,
+		recordSelection,
+		savedSelection
+	} from './selection-memory';
+	import { scheduleSelectionPersist } from './selection-persist';
+	import { getUndoManager } from './undo-memory';
 
 	let {
 		ytext,
@@ -61,18 +72,24 @@
 
 	onMount(() => {
 		if (!container) return;
-		const undoManager = new Y.UndoManager(ytext);
+		const undoManager = getUndoManager(ytext);
 		const docText = ytext.toString();
+		let touched = false;
+		let restoring = Boolean(noteId) && !hasSelection(noteId);
 		const state = EditorState.create({
 			doc: docText,
-			selection: { anchor: savedCaret(noteId, docText.length) },
+			selection: savedSelection(noteId, docText.length),
 			extensions: [
+				Prec.highest(keymap.of(orderedTaskNewlineKeymap(undoManager))),
+				Prec.highest(keymap.of(orderedTaskBackspaceKeymap(undoManager))),
 				keymap.of([
 					...yUndoManagerKeymap,
+					{ key: 'Mod-Shift-Z', run: () => undoManager.redo() != null, preventDefault: true },
 					...tableKeymap(undoManager),
 					...indentKeymap(undoManager),
 					...inputRulesKeymap(undoManager),
 					...formatKeymap(undoManager),
+					...taskToggleKeymap(undoManager),
 					...defaultKeymap
 				]),
 				markdown({ base: markdownLanguage }),
@@ -85,7 +102,10 @@
 				taskMarkerClick(undoManager),
 				cmPlaceholder('Start typing…'),
 				EditorView.updateListener.of((update) => {
-					recordCaret(noteId, update.state.selection.main.head);
+					const main = update.state.selection.main;
+					recordSelection(noteId, main.anchor, main.head);
+					if (update.docChanged) touched = true;
+					if (!restoring) scheduleSelectionPersist(noteId, main.anchor, main.head);
 				}),
 				EditorView.lineWrapping,
 				EditorView.editable.of(editable),
@@ -116,9 +136,28 @@
 			]
 		});
 		view = new EditorView({ state, parent: container });
+		const main = view.state.selection.main;
+		if (main.anchor !== 0 || main.head !== 0) {
+			view.dispatch({ selection: main, scrollIntoView: true });
+		}
 		if (editable) view.focus();
+		if (restoring) {
+			void (async () => {
+				try {
+					const saved = await getNoteSelection(noteId);
+					const v = view;
+					if (!saved || touched || !v) return;
+					const current = v.state.selection.main;
+					if (current.anchor !== 0 || current.head !== 0) return;
+					const restored = clampSelection(saved, v.state.doc.length);
+					if (restored.anchor === 0 && restored.head === 0) return;
+					v.dispatch({ selection: restored, scrollIntoView: true });
+				} finally {
+					restoring = false;
+				}
+			})();
+		}
 		return () => {
-			undoManager.destroy();
 			view?.destroy();
 			view = null;
 		};

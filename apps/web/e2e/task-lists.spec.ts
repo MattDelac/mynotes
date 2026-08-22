@@ -95,6 +95,125 @@ test('Enter inside a fenced code block does not continue the task marker', async
 	await expect.poll(() => editorText(page)).toBe('```\n- [ ] x\n\n```');
 });
 
+test('Enter on an ordered task item continues the marker, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line', { hasText: 'buy milk' }).click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] ');
+	await page.keyboard.type('eggs');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] eggs');
+
+	await openPreview(page);
+	const boxes = page.locator('article.preview input[data-task-line]');
+	await expect(boxes).toHaveCount(2);
+	await expect(boxes.nth(0)).toHaveAttribute('data-task-line', '1');
+	await expect(boxes.nth(1)).toHaveAttribute('data-task-line', '2');
+});
+
+test('Enter on an empty ordered task item exits the list', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] ');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await page.keyboard.type('fresh start');
+	await expect.poll(() => editorText(page)).toBe('fresh start');
+});
+
+test('an empty ordered task item in a tight list takes a blank line before it exits', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line', { hasText: 'buy milk' }).click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] ');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n\n2.  ');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n\n');
+});
+
+test('ordered task continuation is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] ');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk');
+});
+
+test('Backspace on an empty ordered task item exits the list', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] ');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.type('fresh start');
+	await expect.poll(() => editorText(page)).toBe('fresh start');
+});
+
+test('Backspace on an empty bullet task item exits the list (built-in control)', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [ ] ');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Backspace');
+	await page.keyboard.type('fresh start');
+	await expect.poll(() => editorText(page)).toBe('fresh start');
+});
+
+test('Backspace on an empty ordered task item in a tight list replaces the marker', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line', { hasText: 'buy milk' }).click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n2. [ ] ');
+	await page.keyboard.press('Backspace');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk\n   ');
+});
+
+test('a Backspace exit on an ordered task is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] ');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Backspace');
+	await expect(page.locator('.cm-placeholder')).toBeVisible();
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] ');
+});
+
+test('Backspace on a non-empty ordered task item deletes one character', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await page.locator('.cm-line', { hasText: 'buy milk' }).click();
+	await page.keyboard.press('End');
+	await page.keyboard.press('Backspace');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy mil');
+});
+
 test('clicking the bracket toggles an unchecked task to checked and back', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });
@@ -228,6 +347,192 @@ test('a read-only shared view has no interactive preview checkboxes', async ({ p
 	await context.close();
 });
 
+test('Mod+Alt+L turns a plain line into a task, visible in the preview', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('hello world');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('- [ ] hello world');
+
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+});
+
+test('Mod+Alt+L on a task line strips the marker, and again restores it', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [x] done');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('- done');
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('- [ ] done');
+});
+
+test('a task toggle is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [ ] buy milk');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('- buy milk');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('- [ ] buy milk');
+});
+
+test('Mod+Alt+L strips the marker from an ordered task, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+
+	await page.keyboard.press('Control+Alt+p');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. buy milk');
+
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+});
+
+test('Mod+Alt+L strips the marker from a blockquoted task, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('> - [ ] buy milk');
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+
+	await page.keyboard.press('Control+Alt+p');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('> - buy milk');
+
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+});
+
+test('Mod+Alt+L turns a plain ordered line into a task, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. first step');
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+
+	await page.keyboard.press('Control+Alt+p');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] first step');
+
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+});
+
+test('Mod+Alt+L inserts the marker on a plain ordered line, and a second press strips it', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1) step one');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1) [ ] step one');
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1) step one');
+});
+
+test('Mod+Alt+L strips a bare ordered marker (no trailing space) instead of double-inserting', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ]');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. ');
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] ');
+
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+});
+
+test('Mod+Alt+L strips a bare blockquoted bullet marker (no trailing space) instead of double-inserting', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('> - [ ]');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('> - ');
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('> - [ ] ');
+
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+});
+
+test('Mod+Alt+L turns a blockquoted bullet line into a task, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('> - buy milk');
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+
+	await page.keyboard.press('Control+Alt+p');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('> - [ ] buy milk');
+
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+});
+
+test('a task insert is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. buy milk');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. [ ] buy milk');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('1. buy milk');
+});
+
+test('Mod+Alt+L is a no-op on a plain blockquote line', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('> a quoted thought');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect(editorText(page)).resolves.toBe('> a quoted thought');
+});
+
 test('clicking a bracket in a read-only shared session does nothing', async ({ page, browser }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');
@@ -246,5 +551,26 @@ test('clicking a bracket in a read-only shared session does nothing', async ({ p
 	await viewer.waitForTimeout(700);
 	await expect(viewer.locator('.cm-content')).toContainText('- [ ] shared task');
 	await expect(viewer.locator('.cm-content')).not.toContainText('[x]');
+	await context.close();
+});
+
+test('Mod+Alt+L does nothing in a read-only shared view', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('- [ ] shared task');
+	await page.waitForTimeout(700);
+	const link = await shareCurrentSession(page);
+
+	const context = await browser.newContext();
+	const viewer = await context.newPage();
+	await viewer.goto(link);
+	await expect(viewer.locator('.cm-content')).toContainText('- [ ] shared task', {
+		timeout: 10_000
+	});
+
+	await viewer.keyboard.press('Control+Alt+l');
+	await viewer.waitForTimeout(700);
+	await expect(viewer.locator('.cm-content')).toContainText('- [ ] shared task');
+	await expect(viewer.locator('.cm-content')).not.toContainText('- shared');
 	await context.close();
 });

@@ -6,13 +6,22 @@
 	import { RoomSession, type SessionState } from '$lib/collab';
 	import { encryptBytes, exportKey, generateKey, importKey } from '$lib/crypto';
 	import { pushBlob, pushSnapshot } from '$lib/api';
-	import { listNotes, saveNote, deleteNote, createNote, noteTitle, type Note } from '$lib/db';
+	import {
+		listNotes,
+		saveNote,
+		deleteNote,
+		deleteNoteSelection,
+		createNote,
+		noteTitle,
+		type Note
+	} from '$lib/db';
 	import { destroyNoteDoc, getNoteDoc, migrateLegacyContent, setDocContent } from '$lib/docs';
 	import * as Y from 'yjs';
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, viewLink } from '$lib/share';
 	import { downloadNote } from '$lib/export';
-	import { forgetCaret } from '$lib/caret-memory';
+	import { forgetSelection } from '$lib/selection-memory';
+	import { forgetUndoManager } from '$lib/undo-memory';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -172,9 +181,12 @@
 	}
 
 	async function removeNoteById(id: string) {
+		const doc = await getNoteDoc(id);
+		forgetUndoManager(doc.ytext);
 		await deleteNote(id);
 		await destroyNoteDoc(id);
-		forgetCaret(id);
+		forgetSelection(id);
+		await deleteNoteSelection(id);
 		notes = await listNotes();
 		if (id === note.id) {
 			if (notes.length > 0) {

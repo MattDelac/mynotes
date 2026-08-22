@@ -13,6 +13,7 @@
 		saveNote,
 		saveSession,
 		deleteNote,
+		deleteNoteSelection,
 		noteTitle,
 		type Note,
 		type ShareInfo
@@ -31,7 +32,8 @@
 	import { mailtoLink, sessionOwnerLink, sessionViewLink } from '$lib/share';
 	import { downloadNote } from '$lib/export';
 	import { scanTaskLines } from '$lib/task-lines';
-	import { forgetCaret } from '$lib/caret-memory';
+	import { forgetSelection } from '$lib/selection-memory';
+	import { forgetUndoManager } from '$lib/undo-memory';
 	import { showToast } from '$lib/toast';
 	import Editor from '$lib/Editor.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -289,9 +291,12 @@
 	}
 
 	async function removeNoteById(id: string) {
+		const doomed = sessionDoc?.notes.get(id);
+		if (doomed) forgetUndoManager(doomed);
 		await removeNote(docId(), id);
 		await deleteNote(id);
-		forgetCaret(id);
+		forgetSelection(id);
+		await deleteNoteSelection(id);
 		await syncMetadata();
 		if (id === noteId) {
 			if (notes.length > 0) {

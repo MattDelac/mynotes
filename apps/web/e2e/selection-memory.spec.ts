@@ -30,6 +30,29 @@ test('caret position is restored after switching notes', async ({ page }) => {
 	await expect.poll(() => editorText(page)).toBe('helloX world');
 });
 
+test('selection is restored after switching notes', async ({ page }) => {
+	await page.goto('/');
+	await expect(page.getByRole('textbox', { name: 'Note' })).toBeVisible();
+	await page.keyboard.type('hello world');
+	await expect.poll(() => editorText(page)).toBe('hello world');
+
+	await page.keyboard.press('End');
+	for (let i = 0; i < 11; i++) await page.keyboard.press('Shift+ArrowLeft');
+
+	await page.getByRole('button', { name: 'Note list' }).click();
+	await page.getByRole('button', { name: 'New note' }).click();
+	await expect(page.getByRole('textbox', { name: 'Note' })).toBeVisible();
+	await page.keyboard.type('second note');
+	await expect.poll(() => editorText(page)).toBe('second note');
+
+	await page.getByRole('button', { name: 'Note list' }).click();
+	await page.locator('aside a', { hasText: 'hello world' }).click();
+	await expect.poll(() => editorText(page)).toBe('hello world');
+
+	await page.keyboard.press('Control+b');
+	await expect.poll(() => editorText(page)).toBe('**hello world**');
+});
+
 test('restored caret is clamped to the end when a collaborator shrinks the note', async ({
 	page,
 	browser
