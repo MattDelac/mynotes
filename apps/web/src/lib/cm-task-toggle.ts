@@ -69,6 +69,7 @@ const BULLET_LINE = /^(\s*)([-*+])[ \t](.*)$/;
 const ORDERED_ITEM_LINE = /^((?:> ?)*)([ \t]*\d{1,9}[.)])[ \t](.*)$/;
 const ORDERED_TASK_LINE = /^((?:> ?)*)([ \t]*\d{1,9}[.)])[ \t]\[[ xX]\](?:[ \t](.*))?$/;
 const QUOTED_BULLET_LINE = /^((?:> ?)+)([ \t]*)([-*+])[ \t](.*)$/;
+const QUOTED_BULLET_TASK_LINE = /^((?:> ?)+)([ \t]*)([-*+])[ \t]\[[ xX]\](?:[ \t](.*))?$/;
 
 export interface TaskInsert {
 	newLine: string;
@@ -111,7 +112,9 @@ export function applyTaskToggle(input: TaskToggleInput): TaskToggleResult {
 		const task = line.match(TASK_LINE);
 		const bullet = task ? null : line.match(BULLET_LINE);
 		const orderedTask = task || bullet ? null : line.match(ORDERED_TASK_LINE);
-		const insert = task || bullet || orderedTask ? null : taskInsertLine(line);
+		const quotedBulletTask =
+			task || bullet || orderedTask ? null : line.match(QUOTED_BULLET_TASK_LINE);
+		const insert = task || bullet || orderedTask || quotedBulletTask ? null : taskInsertLine(line);
 		if (task) {
 			newLine = task[1] + task[2] + ' ' + (task[3] ?? '');
 			insertAt = null;
@@ -120,6 +123,14 @@ export function applyTaskToggle(input: TaskToggleInput): TaskToggleResult {
 			insertAt = bullet[1].length + bullet[2].length;
 		} else if (orderedTask) {
 			newLine = orderedTask[1] + orderedTask[2] + ' ' + (orderedTask[3] ?? '');
+			insertAt = null;
+		} else if (quotedBulletTask) {
+			newLine =
+				quotedBulletTask[1] +
+				quotedBulletTask[2] +
+				quotedBulletTask[3] +
+				' ' +
+				(quotedBulletTask[4] ?? '');
 			insertAt = null;
 		} else if (insert) {
 			newLine = insert.newLine;

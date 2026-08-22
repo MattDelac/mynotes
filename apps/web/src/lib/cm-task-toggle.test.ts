@@ -251,6 +251,56 @@ describe('applyTaskToggle — ordered bare marker strip (no TaskMarker in the tr
 	});
 });
 
+describe('applyTaskToggle — blockquoted bare bullet marker strip (no TaskMarker in the tree)', () => {
+	function toggleQuotedBare(doc: string, pos: number): TaskToggleResult {
+		const st = makeState(doc, pos);
+		const line = st.doc.lineAt(pos);
+		return applyTaskToggle({
+			doc,
+			from: pos,
+			to: pos,
+			marker: taskMarkerOnLine(st, line)
+		});
+	}
+
+	it('strips a bare "> - [ ]" line down to "> - " (keeps the quote + bullet + space)', () => {
+		const r = toggleQuotedBare('> - [ ]', 7);
+		expect(apply('> - [ ]', r)).toBe('> - ');
+		expect(r.anchor).toBe(4);
+	});
+
+	it('strips a bare "> - [x]" line (parses as a link, no TaskMarker) down to "> - "', () => {
+		expect(apply('> - [x]', toggleQuotedBare('> - [x]', 4))).toBe('> - ');
+	});
+
+	it('strips the no-space quote form ">- [ ]" down to ">- "', () => {
+		expect(apply('>- [ ]', toggleQuotedBare('>- [ ]', 6))).toBe('>- ');
+	});
+
+	it('strips a deeply nested blockquoted bare marker, keeping both quotes', () => {
+		expect(apply('> > - [ ]', toggleQuotedBare('> > - [ ]', 8))).toBe('> > - ');
+	});
+
+	it('keeps the indent after the quote of a bare blockquoted bullet marker', () => {
+		expect(apply('>   - [ ]', toggleQuotedBare('>   - [ ]', 9))).toBe('>   - ');
+	});
+
+	it('strips only the bare marker line and leaves a following quoted line', () => {
+		const doc = '> - [ ]\n> keep';
+		expect(apply(doc, toggleQuotedBare(doc, 4))).toBe('> - \n> keep');
+	});
+
+	it('strips a marked "> - [ ] x" (real content) exactly once, not double-inserted', () => {
+		expect(apply('> - [ ] x', toggleQuotedBare('> - [ ] x', 8))).toBe('> - x');
+	});
+
+	it('still inserts exactly once on a plain blockquoted bullet line (strip branch does not steal it)', () => {
+		const r = toggleQuotedBare('> - x', 4);
+		expect(apply('> - x', r)).toBe('> - [ ] x');
+		expect(r.anchor).toBe(8);
+	});
+});
+
 describe('applyTaskToggle — blockquoted task marker strip', () => {
 	function toggleQuoted(doc: string, pos: number): TaskToggleResult {
 		const st = makeState(doc, pos);
@@ -590,6 +640,13 @@ describe('taskBlocked', () => {
 
 	it('allows a blockquoted bullet line when it is an insert candidate', () => {
 		expect(taskBlocked(makeState('> - item', 4), lineAt('> - item', 4), null, true)).toBe(false);
+	});
+
+	it('allows a bare blockquoted bullet marker line (an insert candidate, no TaskMarker)', () => {
+		const doc = '> - [ ]';
+		expect(taskBlocked(makeState(doc, 4), lineAt(doc, 4), null, taskInsertLine(doc) !== null)).toBe(
+			false
+		);
 	});
 
 	it('allows a blockquoted ordered line when it is an insert candidate', () => {

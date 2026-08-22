@@ -6,7 +6,32 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-22, run 3, iteration 10)
+## Status (2026-08-22, run 3, iteration 11)
+
+- Iteration 11 shipped item 33 — Mod+Alt+L now STRIPS the blockquoted
+  BULLET bare-marker forms instead of double-inserting: `> - [ ]` →
+  `> - ` (also `> - [x]`, the no-space quote `>- [ ]`, deep `> > - [ ]`,
+  post-quote indent) — the LAST GFM task form where the chord behaved
+  asymmetrically with its top-level bullet counterpart. `> - [ ]` (no
+  trailing space) parses WITHOUT a `TaskMarker`, so the item-30
+  `QUOTED_BULLET_LINE` INSERT branch matched the bracket as "content" and
+  yielded `> - [ ] [ ]`. New `QUOTED_BULLET_TASK_LINE` regex (the
+  quoted-bullet variant of item 32's `ORDERED_TASK_LINE`) + a strip
+  branch in `applyTaskToggle` tried BEFORE the insert branches (the
+  items-30/32 ordering lesson); `taskBlocked` unchanged — the
+  `insertable` flag from `taskInsertLine` already lets the line through
+  the `Blockquote` ancestor block (locked by a new unit test). 9 unit
+  tests + 1 e2e, both sensitivity-verified (unit: 6 of the 9 fail with
+  exactly the double-insert without the branch; e2e: fails on the first
+  strip poll receiving `> - [ ] [ ]`). Full suite green: 508 unit + 162
+  e2e (5 pre-existing skips). No new chord (Mod+Alt+L). No screenshot
+  impact: keymap-only, fixtures contain no blockquoted task lists (docker
+  still unavailable in this env — see Parked). Re-audit: with item 33 the
+  double-insert family is closed in all four bare-marker forms, and NO
+  further unblocked writing-experience gap was found — every remaining
+  candidate is a Parked item blocked on a named human product/design
+  decision (see the Parked section and item 33's scope notes). No
+  unblocked items remain in this backlog.
 
 - Iteration 10 shipped item 32 — Mod+Alt+L now STRIPS the ordered bare-marker
   forms instead of double-inserting: `1. [ ]` → `1. ` (also `1. [x]`,
@@ -1499,7 +1524,7 @@ What already works well (do not regress):
   to keep this iteration to the seeded item.
 - Priority: consumed — see item 33 (found by the iteration-10 re-audit).
 
-### 33. Mod+Alt+L double-inserts the marker on the blockquoted BULLET bare-marker forms (`> - [ ]`, no trailing space)
+### 33. DONE (2026-08-22, run 3, iteration 11): Mod+Alt+L strips the blockquoted BULLET bare-marker forms instead of double-inserting
 
 - Gap (run 3, iteration 10, probe-verified against the installed
   `@lezer/markdown` + `applyTaskToggle`): the item-32 fix's regex carries
@@ -1514,18 +1539,51 @@ What already works well (do not regress):
   `> > - [ ] [ ]`). The top-level bullet (`- [ ]` → `- ` via `TASK_LINE`)
   and the ordered (`1. [ ]` → `1. ` via item 32) are both fixed; the quoted
   bullet is the last double-inserting form.
-- Direction: one more branch in `applyTaskToggle` — a quoted-bullet variant
-  of the new strip regex (`^((?:> ?)+)([ \t]*)([-*+])[ \t]\[[ xX]\](?:[ \t](.*))?$`)
-  tried BEFORE the `QUOTED_BULLET_LINE` insert branch (same ordering lesson
-  as items 30/32); result `> - [ ]` → `> - ` (keep the quote + bullet +
-  space, mirroring `- [ ]` → `- ` and `1. [ ]` → `1. `), with the
-  `insertable` flag for `taskBlocked` already true for these lines (the
-  insert regex matches them) so no gating change is needed. Unit tests
-  (the four probed forms + a no-steal regression `> - x` → `> - [ ] x` + a
-  marked `> - [ ] x` still strips via the tree branch) + e2e: `> - [ ]` +
-  Mod+Alt+L → `> - `, second press re-inserts `> - [ ] `, preview checkbox
-  count 0 in every state. No new chord. Screenshots unaffected.
-- Priority: TOP UNBLOCKED.
+- Evidence (run 3, iteration 11): `cm-task-toggle.ts` — new
+  `QUOTED_BULLET_TASK_LINE` regex (`^((?:> ?)+)([ \t]*)([-*+])[ \t]\[[
+  xX]\](?:[ \t](.*))?$`, the quoted-bullet variant of item 32's
+  `ORDERED_TASK_LINE`) + a strip branch in `applyTaskToggle` tried AFTER
+  `TASK_LINE`/`BULLET_LINE`/`ORDERED_TASK_LINE` and BEFORE the
+  `taskInsertLine` branches (ordering load-bearing —
+  `taskInsertLine('> - [ ]')` matches with content `[ ]`, so the strip
+  must win); the strip yields quote + bullet + one space + content
+  (`> - [ ]` → `> - ` — mirroring `- [ ]` → `- ` and `1. [ ]` → `1. `).
+  `taskBlocked` and `taskInsertLine` are UNCHANGED and load-bearing as-is:
+  `taskInsertLine` matching the bare-marker forms keeps the `insertable`
+  flag true so the `Blockquote` ancestor block lets the line through to
+  the new strip branch (locked by a new `taskBlocked` unit test). 9 unit
+  tests (`cm-task-toggle.test.ts`: the four probed forms `> - [ ]` /
+  `> - [x]` (link, no marker) / `>- [ ]` / `> > - [ ]`, post-quote
+  indent, following-line isolation, a marked `> - [ ] x` still strips
+  exactly once via the tree branch, a no-steal insert regression
+  `> - x` → `> - [ ] x`, and the `taskBlocked` gate for the bare form)
+  + 1 e2e (`e2e/task-lists.spec.ts`: `> - [ ]` + Mod+Alt+L → `> - `, a
+  second press re-inserts `> - [ ] `, preview checkbox count 0 in every
+  state). Sensitivity: unit — with the branch removed 6 of the 9 fail
+  with exactly the double-insert (`> - [ ] [ ]`, `> - [ ] [x]`,
+  `>- [ ] [ ]`, `> > - [ ] [ ]`, `>   - [ ] [ ]`, plus the following-line
+  case; the 3 green ones are the tree-branch strip, the no-steal insert,
+  and the gate, locking that the fix neither double-processes marked
+  lines nor steals the plain insert); e2e — fails on the first strip poll
+  without the branch (received `> - [ ] [ ]`). Full suite green: 508
+  unit + 162 e2e (5 pre-existing skips). No new chord (Mod+Alt+L; audit
+  table unchanged). No screenshot impact: keymap-only, fixtures contain
+  no blockquoted task lists (docker still unavailable in this env — see
+  Parked).
+- Scope notes: the strip keeps the item space (`> - [ ]` → `> - `), so a
+  second press re-inserts `> - [ ] ` — a round trip through a valid empty
+  task, exactly like the `- [ ]` and `1. [ ]` counterparts. With this
+  form, the double-insert family is closed in ALL FOUR bare-marker forms
+  (`- [ ]`, `1. [ ]`, `> 1. [ ]`, `> - [ ]`). A bracket followed by
+  content WITHOUT a space (`- [ ]x`, `> - [ ]x`) is not a GFM task (no
+  marked `listIsTask` match) and stays treated as bullet CONTENT — the
+  bullet → task insert wraps it, spec-consistent (no action).
+- Priority: consumed — the iteration-11 re-audit found no further
+  unblocked writing-experience gap; every remaining candidate is a Parked
+  item blocked on the human product/design decisions named there
+  (typewriter scrolling default, autolink-on-type scope, cross-tab local
+  session sync, undo-across-reload trade-off, setext support, mobile
+  header density).
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
@@ -1674,7 +1732,9 @@ platforms (NVDA/JAWS use different modifiers).
   `UndoManager` stack (stack items hold internal `Yjs Item` references
   with `keepItem` pins), so a scoped item needs a spike first (e.g.
   persist the pre-step doc state per captured step and rebuild, or
-  accept "undo survives reloads for N steps"). Not started.
+  accept "undo survives reloads for N steps"). BLOCKED on a human product
+  decision: which trade-off (full-stack rebuild vs a bounded N-step cap) —
+  name it before scoping. Not started.
 - **Autolink bare URLs on type (run 3, iteration 4):** an input rule
   that rewrites `scheme://…` tokens into `[url](url)` after a word
   boundary would complete the link story (item 16 covers paste +

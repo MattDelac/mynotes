@@ -476,6 +476,22 @@ test('Mod+Alt+L strips a bare ordered marker (no trailing space) instead of doub
 	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
 });
 
+test('Mod+Alt+L strips a bare blockquoted bullet marker (no trailing space) instead of double-inserting', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('> - [ ]');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('> - ');
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('> - [ ] ');
+
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+});
+
 test('Mod+Alt+L turns a blockquoted bullet line into a task, visible in the preview', async ({
 	page
 }) => {

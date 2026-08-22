@@ -83,9 +83,9 @@ browser-reservation audit of every chord):
    between a task and its plain form in every GFM task form — top-level
    (`- x` ↔ `- [ ] x`, any other free line → `- [ ] line`), ordered
    (`1. x` ↔ `1. [ ] x`, incl. `1)` and nested/quoted) and blockquoted bullet
-   (`> - x` ↔ `> - [ ] x`) — a content-less marker line (`- [ ]`, `1. [ ]`)
-   strips to its plain item — while a plain quoted line stays a no-op (as in
-   code, tables, setext pairs, and thematic breaks)
+   (`> - x` ↔ `> - [ ] x`) — a content-less marker line (`- [ ]`, `1. [ ]`,
+   `> - [ ]`) strips to its plain item — while a plain quoted line stays a
+   no-op (as in code, tables, setext pairs, and thematic breaks)
 - Restored work position: each note's caret/selection survives note switches
   and page reloads (restored scroll included); per-note undo history survives
   switches
