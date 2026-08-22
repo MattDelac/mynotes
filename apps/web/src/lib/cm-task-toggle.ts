@@ -10,14 +10,14 @@ const BLOCKED_ANCESTORS = new Set([
 	'FencedCode',
 	'CodeBlock',
 	'Table',
-	'OrderedList',
 	'SetextHeading1',
 	'SetextHeading2',
-	'HorizontalRule',
-	'Blockquote'
+	'HorizontalRule'
 ]);
 
-export function taskBlocked(state: EditorState, line: Line): boolean {
+const TASK_FORM_ANCESTORS = new Set(['OrderedList', 'Blockquote']);
+
+export function taskBlocked(state: EditorState, line: Line, marker: MarkerRange | null): boolean {
 	const tree = syntaxTree(state);
 	const first = line.text.search(/\S/);
 	const node =
@@ -27,6 +27,7 @@ export function taskBlocked(state: EditorState, line: Line): boolean {
 	let current: SyntaxNode | null = node;
 	while (current) {
 		if (BLOCKED_ANCESTORS.has(current.name)) return true;
+		if (!marker && TASK_FORM_ANCESTORS.has(current.name)) return true;
 		current = current.parent;
 	}
 	return false;
@@ -103,13 +104,9 @@ export function taskToggleCommand(undoManager?: UndoManager): (view: EditorView)
 		const { from, to } = state.selection.main;
 		const line = state.doc.lineAt(from);
 		if (state.doc.lineAt(to).number !== line.number) return false;
-		if (taskBlocked(state, line)) return false;
-		const result = applyTaskToggle({
-			doc: state.doc.toString(),
-			from,
-			to,
-			marker: taskMarkerOnLine(state, line)
-		});
+		const marker = taskMarkerOnLine(state, line);
+		if (taskBlocked(state, line, marker)) return false;
+		const result = applyTaskToggle({ doc: state.doc.toString(), from, to, marker });
 		ownUndoStep(
 			view,
 			{

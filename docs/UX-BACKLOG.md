@@ -6,7 +6,35 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 3, iteration 5)
+## Status (2026-08-21, run 3, iteration 6)
+
+- Iteration 6 shipped item 28 — the Mod+Alt+L task toggle now also strips the
+  marker from the two remaining GFM task forms: ordered (`1. [ ] x` → `1. x`,
+  all of `1.` / `1)` / nested) and blockquoted (`> - [ ] x` → `> - x`, incl.
+  `> >` and `> 1.` nesting). `taskBlocked` splits its ancestor set: the hard
+  blocks (FencedCode / CodeBlock / Table / SetextHeading1-2 / HorizontalRule)
+  always no-op, while `OrderedList` / `Blockquote` are now blocked **only when
+  the line has no `TaskMarker`** (the command computes the marker first and
+  passes it in). So a task line inside those forms takes the existing
+  tree-marker strip branch (which already computed the right change — probe
+  verified lezer emits `Task` / `TaskMarker` for every ordered and blockquoted
+  form), while a plain `1. x` / `> note` line still no-ops. Deliberate v1
+  decision: strip-only for both forms — the *insert* direction (`1. x` →
+  `1. [ ] x`, `> - x` → `> - [ ] x`) is a second regex branch each and is
+  deferred (seeded as item 29); the preview checkbox (item 17c) already toggles
+  every form, so "make it a task" stays reachable. 16 unit tests
+  (`cm-task-toggle.test.ts`: marker-strip for dot/paren/nested ordered and
+  quoted/bullet/deep-nested/quoted-ordered, plus `taskBlocked` allow-with-
+  marker / block-without for each) + 4 e2e (`e2e/task-lists.spec.ts`: ordered
+  strip with the preview checkbox count 1→0, blockquoted strip 1→0, plain
+  ordered no-op, plain blockquote no-op) — the two strip e2e are
+  sensitivity-verified (both fail with the old always-block `taskBlocked`).
+  Full suite green: 420 unit + 148 e2e (5 pre-existing skips). No screenshot
+  impact: keymap-only, fixtures contain no ordered/blockquoted tasks and never
+  press the new path (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 29 (ordered task continuation drops the `[ ] ` marker —
+  probe-verified upstream gap in `@codemirror/lang-markdown` `getContext`) as
+  the next unblocked item. Next unblocked: item 29.
 
 - Iteration 5 shipped item 27 — the task-toggle keyboard command
   (Mod+Alt+L): `src/lib/cm-task-toggle.ts` adds `taskBlocked` (syntax-tree
@@ -1055,7 +1083,7 @@ What already works well (do not regress):
   a plain line (prefixed, like item 15's degenerate lines).
 - Priority: consumed — see item 28 (its direct extension).
 
-### 28. Task toggle: ordered + blockquote tasks (extends item 27 to the remaining GFM task forms)
+### 28. DONE (2026-08-21, run 3, iteration 6): Task toggle: ordered + blockquote tasks (extends item 27 to the remaining GFM task forms)
 
 - Gap (run 3, iteration 5, probe-verified): GFM tasks exist in three
   forms — top-level bullets (item 27), ordered lists (`1. [ ] x`) and
@@ -1083,8 +1111,73 @@ What already works well (do not regress):
   `> - [ ] x` → `> - x` (verified in the preview checkbox state), plus the
   plain `1. x` no-op if ordered insert is not included. Screenshots
   unaffected (keymap-only).
-- Priority: TOP UNBLOCKED — small, local-only, completes the task trio
-  across all GFM task forms.
+- Evidence (run 3, iteration 6): `cm-task-toggle.ts` — `BLOCKED_ANCESTORS`
+  loses `OrderedList` / `Blockquote` in favor of a new `TASK_FORM_ANCESTORS`
+  set that is only consulted when the line has **no** `TaskMarker`;
+  `taskBlocked(state, line, marker)` gains the marker parameter and the
+  command computes `taskMarkerOnLine` before the block check (the strip
+  branch of `applyTaskToggle` is unchanged — it already computed the right
+  change for both forms, probe-verified: lezer emits
+  `OrderedList > ListItem > Task > TaskMarker` for `1.` / `1)` / nested and
+  `Blockquote > … > Task > TaskMarker` for `> -` / `> > -` / `> 1.`, with the
+  marker at the same relative offset in every case). 16 new unit tests
+  (`cm-task-toggle.test.ts`: ordered strip dot/checked/paren/nested/second-
+  item-untouched; blockquoted strip bullet/checked/deep-nested/ordered/
+  following-line-untouched; `taskBlocked` allow-with-marker vs
+  block-without-marker per form, fence still hard-blocks) + 4 e2e
+  (`e2e/task-lists.spec.ts`), the two strip tests sensitivity-verified (fail
+  exactly with the old always-block behavior; the no-op tests pass both ways,
+  locking the no-op contract). Full suite green: 420 unit + 148 e2e
+  (5 pre-existing skips).
+- Scope notes (v1, strip-only for both forms): the *insert* direction —
+  `1. x` → `1. [ ] x` and `> - x` / `> note` → task — is NOT included: it is
+  a second regex branch per form and changes document structure more
+  (a quoted plain line becomes a quoted list); the preview checkbox (17c)
+  already toggles every form, so "make it a task" stays reachable there.
+  Seeded as item 29. A bare marker-only line (`1. [ ]` with no content)
+  parses without a `TaskMarker` like its top-level counterpart, so it is a
+  no-op here (top-level strips it via the regex fallback) — degenerate case,
+  consistent with the no-op posture.
+- Priority: consumed — see item 29 (ordered task continuation, found by the
+  iteration-6 re-audit).
+
+### 29. Task continuation: ordered task items drop the `[ ] ` marker on Enter (upstream gap)
+
+- Gap (run 3, iteration 6, probe-verified against the installed
+  `@codemirror/lang-markdown` 6.5.1 dist): Enter-continuation treats the
+  three GFM task forms asymmetrically. Bullets: `- [ ] x` + Enter →
+  `- [ ] x\n- [ ] ` (marker continued, unchecked — item 17a). Blockquotes:
+  `> - [ ] x` + Enter → `> - [ ] x\n> - [ ] ` (quote + bullet + marker all
+  continued; empty `> - [ ] ` exits to `> `). **Ordered**: `1. [ ] x` +
+  Enter → `1. [ ] x\n2. ` — the `[ ] ` marker is DROPPED (the user retypes
+  it for every new ordered task), and an empty `1. [ ] ` + Enter →
+  `1. [ ]\n2. ` — it does NOT exit the list (the bullet equivalent deletes
+  the empty item and exits).
+- Root cause (verified in the dist): `insertNewlineContinueMarkup` builds
+  its continuation context in `getContext`, whose per-form regexes capture
+  the task marker ONLY for bullets — BulletList:
+  `/^( *)([-+*])( {1,4}\[[ xX]\])?( +)/` (marker = group 3) vs OrderedList:
+  `/^( *)\d+([.)])( *)/` (no marker group). The re-emitted continuation line
+  therefore never carries the ordered task marker.
+- Direction: an app-level Enter wrapper (new keymap entry BEFORE
+  `markdownKeymap`, or a command that runs `insertNewlineContinueMarkup`
+  first): when the cursor's line is an ordered TASK item (tree:
+  `OrderedList > ListItem > Task`, item-28's probe) and the built-in
+  continuation ran, insert `[ ] ` right after the freshly inserted
+  `2. ` marker (caret after it). Handle the empty-item exit too (mirror the
+  bullet semantics: empty ordered task + Enter removes the marker/item).
+  Route through `ownUndoStep` (item 18). Keep `1.` / `1)` / nested forms
+  consistent. No new chord (Enter).
+- done-when: unit tests driving the real command (ordered task continues
+  WITH marker, checked→unchecked, nested indent kept, empty item exits,
+  plain ordered `1. x` still continues as `2. ` unchanged, blockquote
+  control) + e2e: `1. [ ] a` + Enter + type → `1. [ ] b` with the preview
+  checkbox count 2 (locks marker continuation end-to-end). Screenshots
+  unaffected (Enter-continuation, fixtures never press Enter in an ordered
+  task list).
+- Priority: TOP UNBLOCKED — completes the ordered-task input story
+  (continuation is the one ordered-task input path still missing the marker;
+  item 17a bullets + 17b/17c toggles + item 28 strip are all in place).
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 

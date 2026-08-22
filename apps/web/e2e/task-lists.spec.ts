@@ -265,6 +265,66 @@ test('a task toggle is its own undo step', async ({ page }) => {
 	await expect.poll(() => editorText(page)).toBe('- [ ] buy milk');
 });
 
+test('Mod+Alt+L strips the marker from an ordered task, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. [ ] buy milk');
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+
+	await page.keyboard.press('Control+Alt+p');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('1. buy milk');
+
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+});
+
+test('Mod+Alt+L strips the marker from a blockquoted task, visible in the preview', async ({
+	page
+}) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('> - [ ] buy milk');
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+
+	await page.keyboard.press('Control+Alt+p');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('> - buy milk');
+
+	await openPreview(page);
+	await expect(page.locator('article.preview input[data-task-line]')).toHaveCount(0);
+});
+
+test('Mod+Alt+L is a no-op on a plain ordered line', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('1. first step');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect(editorText(page)).resolves.toBe('1. first step');
+});
+
+test('Mod+Alt+L is a no-op on a plain blockquote line', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('> a quoted thought');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect(editorText(page)).resolves.toBe('> a quoted thought');
+});
+
 test('clicking a bracket in a read-only shared session does nothing', async ({ page, browser }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');

@@ -78,8 +78,10 @@ browser-reservation audit of every chord):
 - Task lists: `- [ ]` lines continue on Enter; the bracket token toggles on click
   in the editor and in the preview (preview disabled in read-only shares);
   Mod+Alt+L toggles the current line between a task, a plain bullet, and a
-  prefixed `- [ ] ` line (top-level lines only; no-op in code, tables, ordered
-  lists, setext pairs, thematic breaks, and blockquotes)
+  prefixed `- [ ] ` line, and strips the marker from ordered (`1. [ ] x` → `1. x`)
+  and blockquoted (`> - [ ] x` → `> - x`) tasks. Insertion is top-level only — a
+  plain ordered/quoted line is a no-op (no-op also in code, tables, setext pairs,
+  and thematic breaks)
 - Restored work position: each note's caret/selection survives note switches
   and page reloads (restored scroll included); per-note undo history survives
   switches

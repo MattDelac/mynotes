@@ -156,6 +156,79 @@ describe('applyTaskToggle — tree marker branch', () => {
 	});
 });
 
+describe('applyTaskToggle — ordered task marker strip', () => {
+	function toggleOrdered(doc: string, pos: number): TaskToggleResult {
+		const st = makeState(doc, pos);
+		const line = st.doc.lineAt(pos);
+		return applyTaskToggle({
+			doc,
+			from: pos,
+			to: pos,
+			marker: taskMarkerOnLine(st, line)
+		});
+	}
+
+	it('strips the marker from a dot ordered task, keeping the ordered prefix', () => {
+		const r = toggleOrdered('1. [ ] buy milk', 10);
+		expect(apply('1. [ ] buy milk', r)).toBe('1. buy milk');
+		expect(r.anchor).toBe(6);
+	});
+
+	it('strips a checked ordered task marker', () => {
+		expect(apply('1. [x] done', toggleOrdered('1. [x] done', 4))).toBe('1. done');
+	});
+
+	it('strips the marker from a paren ordered task', () => {
+		expect(apply('1) [ ] buy milk', toggleOrdered('1) [ ] buy milk', 4))).toBe('1) buy milk');
+	});
+
+	it('keeps the indent of a nested ordered task', () => {
+		const doc = '- a\n    1. [ ] b';
+		expect(apply(doc, toggleOrdered(doc, 12))).toBe('- a\n    1. b');
+	});
+
+	it('keeps a second ordered item on another line untouched', () => {
+		const doc = '1. [ ] first\n2. second';
+		expect(apply(doc, toggleOrdered(doc, 4))).toBe('1. first\n2. second');
+	});
+});
+
+describe('applyTaskToggle — blockquoted task marker strip', () => {
+	function toggleQuoted(doc: string, pos: number): TaskToggleResult {
+		const st = makeState(doc, pos);
+		const line = st.doc.lineAt(pos);
+		return applyTaskToggle({
+			doc,
+			from: pos,
+			to: pos,
+			marker: taskMarkerOnLine(st, line)
+		});
+	}
+
+	it('strips the marker from a blockquoted bullet task, keeping the quote and bullet', () => {
+		const r = toggleQuoted('> - [ ] buy milk', 12);
+		expect(apply('> - [ ] buy milk', r)).toBe('> - buy milk');
+		expect(r.anchor).toBe(8);
+	});
+
+	it('strips a checked blockquoted task marker', () => {
+		expect(apply('> - [x] done', toggleQuoted('> - [x] done', 6))).toBe('> - done');
+	});
+
+	it('strips the marker from a deeply nested blockquoted task', () => {
+		expect(apply('> > - [ ] x', toggleQuoted('> > - [ ] x', 8))).toBe('> > - x');
+	});
+
+	it('strips the marker from a blockquoted ordered task', () => {
+		expect(apply('> 1. [ ] x', toggleQuoted('> 1. [ ] x', 8))).toBe('> 1. x');
+	});
+
+	it('keeps a following plain quoted line untouched', () => {
+		const doc = '> - [ ] task\n> note';
+		expect(apply(doc, toggleQuoted(doc, 6))).toBe('> - task\n> note');
+	});
+});
+
 describe('taskMarkerOnLine', () => {
 	function onLine(doc: string, pos: number) {
 		const state = makeState(doc, pos);
@@ -196,92 +269,147 @@ describe('taskBlocked', () => {
 		return makeState(doc, pos).doc.lineAt(pos);
 	}
 
+	function markerAt(doc: string, pos: number) {
+		const st = makeState(doc, pos);
+		return taskMarkerOnLine(st, st.doc.lineAt(pos));
+	}
+
 	it('blocks a line inside a fenced code block', () => {
-		expect(taskBlocked(makeState('```\n- [ ] x\n```', 6), lineAt('```\n- [ ] x\n```', 6))).toBe(
-			true
-		);
+		expect(
+			taskBlocked(makeState('```\n- [ ] x\n```', 6), lineAt('```\n- [ ] x\n```', 6), null)
+		).toBe(true);
 	});
 
 	it('blocks the opening and closing fence lines', () => {
-		expect(taskBlocked(makeState('```\n- [ ] x\n```', 0), lineAt('```\n- [ ] x\n```', 0))).toBe(
-			true
-		);
-		expect(taskBlocked(makeState('```\n- [ ] x\n```', 12), lineAt('```\n- [ ] x\n```', 12))).toBe(
-			true
-		);
+		expect(
+			taskBlocked(makeState('```\n- [ ] x\n```', 0), lineAt('```\n- [ ] x\n```', 0), null)
+		).toBe(true);
+		expect(
+			taskBlocked(makeState('```\n- [ ] x\n```', 12), lineAt('```\n- [ ] x\n```', 12), null)
+		).toBe(true);
 	});
 
 	it('allows the line after a closed fence', () => {
 		const doc = '```\ncode\n```\nafter';
-		expect(taskBlocked(makeState(doc, 16), lineAt(doc, 16))).toBe(false);
+		expect(taskBlocked(makeState(doc, 16), lineAt(doc, 16), null)).toBe(false);
 	});
 
 	it('blocks an indented code line', () => {
-		expect(taskBlocked(makeState('    code', 6), lineAt('    code', 6))).toBe(true);
+		expect(taskBlocked(makeState('    code', 6), lineAt('    code', 6), null)).toBe(true);
 	});
 
 	it('blocks a table row', () => {
 		const doc = '| a | b |\n| --- | --- |\n| c | d |';
-		expect(taskBlocked(makeState(doc, 30), lineAt(doc, 30))).toBe(true);
+		expect(taskBlocked(makeState(doc, 30), lineAt(doc, 30), null)).toBe(true);
 	});
 
 	it('blocks a pipe-less line directly after a table (a table row per GFM)', () => {
 		const doc = '| a | b |\n| --- | --- |\n| c | d |\nafter';
-		expect(taskBlocked(makeState(doc, 38), lineAt(doc, 38))).toBe(true);
+		expect(taskBlocked(makeState(doc, 38), lineAt(doc, 38), null)).toBe(true);
 	});
 
 	it('allows the line after a table when a blank line separates them', () => {
 		const doc = '| a | b |\n| --- | --- |\n| c | d |\n\nafter';
-		expect(taskBlocked(makeState(doc, 39), lineAt(doc, 39))).toBe(false);
+		expect(taskBlocked(makeState(doc, 39), lineAt(doc, 39), null)).toBe(false);
 	});
 
-	it('blocks an ordered list item', () => {
-		expect(taskBlocked(makeState('1. item', 4), lineAt('1. item', 4))).toBe(true);
+	it('blocks a plain ordered list item (no task marker)', () => {
+		expect(taskBlocked(makeState('1. item', 4), lineAt('1. item', 4), null)).toBe(true);
 	});
 
-	it('blocks an ordered list item with a paren marker', () => {
-		expect(taskBlocked(makeState('1) item', 4), lineAt('1) item', 4))).toBe(true);
+	it('blocks a plain ordered list item with a paren marker (no task marker)', () => {
+		expect(taskBlocked(makeState('1) item', 4), lineAt('1) item', 4), null)).toBe(true);
 	});
 
-	it('blocks a nested ordered item indented under a bullet', () => {
-		expect(taskBlocked(makeState('- a\n    1. b', 12), lineAt('- a\n    1. b', 12))).toBe(true);
+	it('blocks a nested plain ordered item indented under a bullet (no task marker)', () => {
+		expect(taskBlocked(makeState('- a\n    1. b', 12), lineAt('- a\n    1. b', 12), null)).toBe(
+			true
+		);
+	});
+
+	it('allows an ordered task line when the line has a task marker', () => {
+		expect(
+			taskBlocked(
+				makeState('1. [ ] buy milk', 4),
+				lineAt('1. [ ] buy milk', 4),
+				markerAt('1. [ ] buy milk', 4)
+			)
+		).toBe(false);
+	});
+
+	it('allows a paren-marker ordered task line with a task marker', () => {
+		expect(
+			taskBlocked(
+				makeState('1) [ ] buy milk', 4),
+				lineAt('1) [ ] buy milk', 4),
+				markerAt('1) [ ] buy milk', 4)
+			)
+		).toBe(false);
+	});
+
+	it('allows a nested ordered task line with a task marker', () => {
+		const doc = '- a\n    1. [ ] b';
+		expect(taskBlocked(makeState(doc, 12), lineAt(doc, 12), markerAt(doc, 12))).toBe(false);
+	});
+
+	it('still blocks a fenced task line even with a marker-shaped probe', () => {
+		const doc = '```\n1. [ ] x\n```';
+		expect(taskBlocked(makeState(doc, 6), lineAt(doc, 6), markerAt(doc, 6))).toBe(true);
 	});
 
 	it('blocks the setext underline line', () => {
-		expect(taskBlocked(makeState('Title\n====', 7), lineAt('Title\n====', 7))).toBe(true);
-		expect(taskBlocked(makeState('Title\n---', 7), lineAt('Title\n---', 7))).toBe(true);
+		expect(taskBlocked(makeState('Title\n====', 7), lineAt('Title\n====', 7), null)).toBe(true);
+		expect(taskBlocked(makeState('Title\n---', 7), lineAt('Title\n---', 7), null)).toBe(true);
 	});
 
 	it('blocks the paragraph line above a setext underline', () => {
-		expect(taskBlocked(makeState('Title\n====', 2), lineAt('Title\n====', 2))).toBe(true);
+		expect(taskBlocked(makeState('Title\n====', 2), lineAt('Title\n====', 2), null)).toBe(true);
 	});
 
 	it('blocks a thematic break', () => {
-		expect(taskBlocked(makeState('para\n\n---', 8), lineAt('para\n\n---', 8))).toBe(true);
+		expect(taskBlocked(makeState('para\n\n---', 8), lineAt('para\n\n---', 8), null)).toBe(true);
 	});
 
-	it('blocks a blockquote line', () => {
-		expect(taskBlocked(makeState('> quote', 4), lineAt('> quote', 4))).toBe(true);
+	it('blocks a plain blockquote line (no task marker)', () => {
+		expect(taskBlocked(makeState('> quote', 4), lineAt('> quote', 4), null)).toBe(true);
 	});
 
-	it('blocks a task inside a blockquote (v1 is top-level only)', () => {
-		expect(taskBlocked(makeState('> - [ ] x', 6), lineAt('> - [ ] x', 6))).toBe(true);
+	it('allows a blockquoted bullet task line when the line has a task marker', () => {
+		expect(
+			taskBlocked(
+				makeState('> - [ ] buy milk', 6),
+				lineAt('> - [ ] buy milk', 6),
+				markerAt('> - [ ] buy milk', 6)
+			)
+		).toBe(false);
+	});
+
+	it('allows a nested blockquoted task line with a task marker', () => {
+		expect(
+			taskBlocked(makeState('> > - [ ] x', 8), lineAt('> > - [ ] x', 8), markerAt('> > - [ ] x', 8))
+		).toBe(false);
+	});
+
+	it('allows a blockquoted ordered task line with a task marker', () => {
+		expect(
+			taskBlocked(makeState('> 1. [ ] x', 8), lineAt('> 1. [ ] x', 8), markerAt('> 1. [ ] x', 8))
+		).toBe(false);
 	});
 
 	it('allows a plain line', () => {
-		expect(taskBlocked(makeState('just text', 4), lineAt('just text', 4))).toBe(false);
+		expect(taskBlocked(makeState('just text', 4), lineAt('just text', 4), null)).toBe(false);
 	});
 
 	it('allows a plain bullet line', () => {
-		expect(taskBlocked(makeState('- item', 4), lineAt('- item', 4))).toBe(false);
+		expect(taskBlocked(makeState('- item', 4), lineAt('- item', 4), null)).toBe(false);
 	});
 
 	it('allows a nested bullet task line', () => {
-		expect(taskBlocked(makeState('  - [ ] x', 6), lineAt('  - [ ] x', 6))).toBe(false);
+		expect(taskBlocked(makeState('  - [ ] x', 6), lineAt('  - [ ] x', 6), null)).toBe(false);
 	});
 
 	it('allows the bullet line before a blockquote', () => {
 		const doc = '- a\n> quote';
-		expect(taskBlocked(makeState(doc, 1), lineAt(doc, 1))).toBe(false);
+		expect(taskBlocked(makeState(doc, 1), lineAt(doc, 1), null)).toBe(false);
 	});
 });
