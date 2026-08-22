@@ -1,0 +1,287 @@
+import { describe, expect, it } from 'vitest';
+import { EditorState, type Line } from '@codemirror/state';
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import {
+	applyTaskToggle,
+	taskBlocked,
+	taskMarkerOnLine,
+	type TaskToggleResult
+} from './cm-task-toggle';
+
+function makeState(doc: string, anchor: number): EditorState {
+	return EditorState.create({
+		doc,
+		extensions: [markdown({ base: markdownLanguage })],
+		selection: { anchor }
+	});
+}
+
+function apply(doc: string, result: TaskToggleResult): string {
+	let out = doc;
+	for (const ch of [...result.changes].sort((a, b) => b.from - a.from || b.to - a.to)) {
+		out = out.slice(0, ch.from) + ch.insert + out.slice(ch.to);
+	}
+	return out;
+}
+
+function toggle(
+	doc: string,
+	from: number,
+	to: number,
+	marker: { from: number; to: number } | null = null
+): TaskToggleResult {
+	return applyTaskToggle({ doc, from, to, marker });
+}
+
+describe('applyTaskToggle — plain line to task', () => {
+	it('prefixes a plain line with "- [ ] " and shifts the caret', () => {
+		const r = toggle('hello world', 5, 5);
+		expect(apply('hello world', r)).toBe('- [ ] hello world');
+		expect(r.anchor).toBe(11);
+	});
+
+	it('works on the first line of a multi-line document', () => {
+		expect(apply('hello\nworld', toggle('hello\nworld', 0, 0))).toBe('- [ ] hello\nworld');
+	});
+
+	it('works on a middle line and leaves the others alone', () => {
+		expect(apply('a\nhello\nb', toggle('a\nhello\nb', 6, 6))).toBe('a\n- [ ] hello\nb');
+	});
+
+	it('gives an empty line "- [ ] " so typed text lands in a valid task', () => {
+		const r = toggle('a\n\nb', 2, 2);
+		expect(apply('a\n\nb', r)).toBe('a\n- [ ] \nb');
+		expect(r.anchor).toBe(8);
+	});
+
+	it('turns an empty document into "- [ ] "', () => {
+		expect(apply('', toggle('', 0, 0))).toBe('- [ ] ');
+	});
+
+	it('shifts a selection with the prefix', () => {
+		const r = toggle('hello', 2, 5);
+		expect(apply('hello', r)).toBe('- [ ] hello');
+		expect(r.anchor).toBe(8);
+		expect(r.head).toBe(11);
+	});
+});
+
+describe('applyTaskToggle — plain bullet to task', () => {
+	it('inserts "[ ] " after a dash bullet, keeping the caret on the same letter', () => {
+		const r = toggle('- buy milk', 6, 6);
+		expect(apply('- buy milk', r)).toBe('- [ ] buy milk');
+		expect(r.anchor).toBe(10);
+	});
+
+	it('inserts "[ ] " after an asterisk bullet', () => {
+		expect(apply('* item', toggle('* item', 5, 5))).toBe('* [ ] item');
+	});
+
+	it('inserts "[ ] " after a plus bullet', () => {
+		expect(apply('+ item', toggle('+ item', 5, 5))).toBe('+ [ ] item');
+	});
+
+	it('keeps the indent of a nested bullet', () => {
+		expect(apply('  - second', toggle('  - second', 8, 8))).toBe('  - [ ] second');
+	});
+
+	it('turns a bullet with only a trailing space into "- [ ] "', () => {
+		expect(apply('- ', toggle('- ', 2, 2))).toBe('- [ ] ');
+	});
+
+	it('treats a lone bullet character as a plain line', () => {
+		expect(apply('-', toggle('-', 0, 0))).toBe('- [ ] -');
+	});
+});
+
+describe('applyTaskToggle — task to plain bullet (line regex)', () => {
+	it('strips the "[ ] " marker and keeps the bullet', () => {
+		const r = toggle('- [ ] buy milk', 6, 6);
+		expect(apply('- [ ] buy milk', r)).toBe('- buy milk');
+		expect(r.anchor).toBe(2);
+	});
+
+	it('strips a checked "[x]" marker', () => {
+		expect(apply('- [x] done', toggle('- [x] done', 6, 6))).toBe('- done');
+	});
+
+	it('strips an uppercase "[X]" marker', () => {
+		expect(apply('- [X] done', toggle('- [X] done', 6, 6))).toBe('- done');
+	});
+
+	it('strips a bare "- [ ]" line down to "- "', () => {
+		expect(apply('- [ ]', toggle('- [ ]', 3, 3))).toBe('- ');
+	});
+
+	it('strips a bare "- [x]" line (no TaskMarker in the tree) down to "- "', () => {
+		expect(apply('- [x]', toggle('- [x]', 3, 3))).toBe('- ');
+	});
+
+	it('handles a tab between the bullet and the marker', () => {
+		expect(apply('-\t[x] y', toggle('-\t[x] y', 4, 4))).toBe('- y');
+	});
+
+	it('treats "[nope]" as content, not a marker', () => {
+		expect(apply('- [nope] x', toggle('- [nope] x', 8, 8))).toBe('- [ ] [nope] x');
+	});
+
+	it('shifts a selection back with the stripped marker', () => {
+		const r = toggle('- [ ] buy milk', 6, 14);
+		expect(apply('- [ ] buy milk', r)).toBe('- buy milk');
+		expect(r.anchor).toBe(2);
+		expect(r.head).toBe(10);
+	});
+});
+
+describe('applyTaskToggle — tree marker branch', () => {
+	it('strips the marker range plus its trailing space', () => {
+		const r = toggle('- [ ] buy milk', 6, 6, { from: 2, to: 5 });
+		expect(apply('- [ ] buy milk', r)).toBe('- buy milk');
+	});
+
+	it('strips a marker at the end of the line without a trailing space', () => {
+		expect(apply('- [ ] ', toggle('- [ ] ', 4, 4, { from: 2, to: 5 }))).toBe('- ');
+	});
+
+	it('keeps the indent of a nested marker', () => {
+		expect(apply('  - [ ] second', toggle('  - [ ] second', 8, 8, { from: 4, to: 7 }))).toBe(
+			'  - second'
+		);
+	});
+
+	it('keeps extra spaces after the marker as item content', () => {
+		expect(apply('- [ ]   spaced', toggle('- [ ]   spaced', 6, 6, { from: 2, to: 5 }))).toBe(
+			'-   spaced'
+		);
+	});
+});
+
+describe('taskMarkerOnLine', () => {
+	function onLine(doc: string, pos: number) {
+		const state = makeState(doc, pos);
+		return taskMarkerOnLine(state, state.doc.lineAt(pos));
+	}
+
+	it('finds the marker with the caret at the end of the line', () => {
+		expect(onLine('- [ ] buy milk', 13)).toEqual({ from: 2, to: 5 });
+	});
+
+	it('finds the marker with the caret at the start of the line', () => {
+		expect(onLine('- [ ] buy milk', 0)).toEqual({ from: 2, to: 5 });
+	});
+
+	it('finds the marker of a nested task', () => {
+		expect(onLine('  - [ ] second', 10)).toEqual({ from: 4, to: 7 });
+	});
+
+	it('returns null for a bare "- [ ]" line (parses as a paragraph)', () => {
+		expect(onLine('- [ ]', 3)).toBeNull();
+	});
+
+	it('returns null for a bare "- [x]" line (parses as a link)', () => {
+		expect(onLine('- [x]', 3)).toBeNull();
+	});
+
+	it('returns null for a plain line', () => {
+		expect(onLine('just text', 4)).toBeNull();
+	});
+
+	it('returns null for a task-like line inside a fence', () => {
+		expect(onLine('```\n- [ ] x\n```', 6)).toBeNull();
+	});
+});
+
+describe('taskBlocked', () => {
+	function lineAt(doc: string, pos: number): Line {
+		return makeState(doc, pos).doc.lineAt(pos);
+	}
+
+	it('blocks a line inside a fenced code block', () => {
+		expect(taskBlocked(makeState('```\n- [ ] x\n```', 6), lineAt('```\n- [ ] x\n```', 6))).toBe(
+			true
+		);
+	});
+
+	it('blocks the opening and closing fence lines', () => {
+		expect(taskBlocked(makeState('```\n- [ ] x\n```', 0), lineAt('```\n- [ ] x\n```', 0))).toBe(
+			true
+		);
+		expect(taskBlocked(makeState('```\n- [ ] x\n```', 12), lineAt('```\n- [ ] x\n```', 12))).toBe(
+			true
+		);
+	});
+
+	it('allows the line after a closed fence', () => {
+		const doc = '```\ncode\n```\nafter';
+		expect(taskBlocked(makeState(doc, 16), lineAt(doc, 16))).toBe(false);
+	});
+
+	it('blocks an indented code line', () => {
+		expect(taskBlocked(makeState('    code', 6), lineAt('    code', 6))).toBe(true);
+	});
+
+	it('blocks a table row', () => {
+		const doc = '| a | b |\n| --- | --- |\n| c | d |';
+		expect(taskBlocked(makeState(doc, 30), lineAt(doc, 30))).toBe(true);
+	});
+
+	it('blocks a pipe-less line directly after a table (a table row per GFM)', () => {
+		const doc = '| a | b |\n| --- | --- |\n| c | d |\nafter';
+		expect(taskBlocked(makeState(doc, 38), lineAt(doc, 38))).toBe(true);
+	});
+
+	it('allows the line after a table when a blank line separates them', () => {
+		const doc = '| a | b |\n| --- | --- |\n| c | d |\n\nafter';
+		expect(taskBlocked(makeState(doc, 39), lineAt(doc, 39))).toBe(false);
+	});
+
+	it('blocks an ordered list item', () => {
+		expect(taskBlocked(makeState('1. item', 4), lineAt('1. item', 4))).toBe(true);
+	});
+
+	it('blocks an ordered list item with a paren marker', () => {
+		expect(taskBlocked(makeState('1) item', 4), lineAt('1) item', 4))).toBe(true);
+	});
+
+	it('blocks a nested ordered item indented under a bullet', () => {
+		expect(taskBlocked(makeState('- a\n    1. b', 12), lineAt('- a\n    1. b', 12))).toBe(true);
+	});
+
+	it('blocks the setext underline line', () => {
+		expect(taskBlocked(makeState('Title\n====', 7), lineAt('Title\n====', 7))).toBe(true);
+		expect(taskBlocked(makeState('Title\n---', 7), lineAt('Title\n---', 7))).toBe(true);
+	});
+
+	it('blocks the paragraph line above a setext underline', () => {
+		expect(taskBlocked(makeState('Title\n====', 2), lineAt('Title\n====', 2))).toBe(true);
+	});
+
+	it('blocks a thematic break', () => {
+		expect(taskBlocked(makeState('para\n\n---', 8), lineAt('para\n\n---', 8))).toBe(true);
+	});
+
+	it('blocks a blockquote line', () => {
+		expect(taskBlocked(makeState('> quote', 4), lineAt('> quote', 4))).toBe(true);
+	});
+
+	it('blocks a task inside a blockquote (v1 is top-level only)', () => {
+		expect(taskBlocked(makeState('> - [ ] x', 6), lineAt('> - [ ] x', 6))).toBe(true);
+	});
+
+	it('allows a plain line', () => {
+		expect(taskBlocked(makeState('just text', 4), lineAt('just text', 4))).toBe(false);
+	});
+
+	it('allows a plain bullet line', () => {
+		expect(taskBlocked(makeState('- item', 4), lineAt('- item', 4))).toBe(false);
+	});
+
+	it('allows a nested bullet task line', () => {
+		expect(taskBlocked(makeState('  - [ ] x', 6), lineAt('  - [ ] x', 6))).toBe(false);
+	});
+
+	it('allows the bullet line before a blockquote', () => {
+		const doc = '- a\n> quote';
+		expect(taskBlocked(makeState(doc, 1), lineAt(doc, 1))).toBe(false);
+	});
+});

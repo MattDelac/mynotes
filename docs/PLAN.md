@@ -76,7 +76,10 @@ browser-reservation audit of every chord):
 - Link command: Mod+K (clipboard URL auto-fill; pasting a URL over a selection
   already links it via the built-in `pasteURLAsLink`)
 - Task lists: `- [ ]` lines continue on Enter; the bracket token toggles on click
-  in the editor and in the preview (preview disabled in read-only shares)
+  in the editor and in the preview (preview disabled in read-only shares);
+  Mod+Alt+L toggles the current line between a task, a plain bullet, and a
+  prefixed `- [ ] ` line (top-level lines only; no-op in code, tables, ordered
+  lists, setext pairs, thematic breaks, and blockquotes)
 - Restored work position: each note's caret/selection survives note switches
   and page reloads (restored scroll included); per-note undo history survives
   switches

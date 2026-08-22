@@ -228,6 +228,43 @@ test('a read-only shared view has no interactive preview checkboxes', async ({ p
 	await context.close();
 });
 
+test('Mod+Alt+L turns a plain line into a task, visible in the preview', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('hello world');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('- [ ] hello world');
+
+	await openPreview(page);
+	const box = page.locator('article.preview input[data-task-line]');
+	await expect(box).toHaveCount(1);
+	await expect(box).toHaveAttribute('data-task-line', '1');
+	await expect(box).not.toBeChecked();
+});
+
+test('Mod+Alt+L on a task line strips the marker, and again restores it', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [x] done');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('- done');
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('- [ ] done');
+});
+
+test('a task toggle is its own undo step', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('- [ ] buy milk');
+	await page.locator('.cm-line').click();
+	await page.keyboard.press('Control+Alt+l');
+	await expect.poll(() => editorText(page)).toBe('- buy milk');
+	await page.keyboard.press('Control+z');
+	await expect.poll(() => editorText(page)).toBe('- [ ] buy milk');
+});
+
 test('clicking a bracket in a read-only shared session does nothing', async ({ page, browser }) => {
 	page.on('dialog', (dialog) => dialog.accept());
 	await page.goto('/');
@@ -246,5 +283,26 @@ test('clicking a bracket in a read-only shared session does nothing', async ({ p
 	await viewer.waitForTimeout(700);
 	await expect(viewer.locator('.cm-content')).toContainText('- [ ] shared task');
 	await expect(viewer.locator('.cm-content')).not.toContainText('[x]');
+	await context.close();
+});
+
+test('Mod+Alt+L does nothing in a read-only shared view', async ({ page, browser }) => {
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('- [ ] shared task');
+	await page.waitForTimeout(700);
+	const link = await shareCurrentSession(page);
+
+	const context = await browser.newContext();
+	const viewer = await context.newPage();
+	await viewer.goto(link);
+	await expect(viewer.locator('.cm-content')).toContainText('- [ ] shared task', {
+		timeout: 10_000
+	});
+
+	await viewer.keyboard.press('Control+Alt+l');
+	await viewer.waitForTimeout(700);
+	await expect(viewer.locator('.cm-content')).toContainText('- [ ] shared task');
+	await expect(viewer.locator('.cm-content')).not.toContainText('- shared');
 	await context.close();
 });

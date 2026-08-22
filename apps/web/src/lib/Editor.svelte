@@ -16,6 +16,7 @@
 	import { inputRulesKeymap } from './cm-input-rules';
 	import { tableKeymap } from './cm-table';
 	import { taskMarkerClick } from './cm-task-click';
+	import { taskToggleKeymap } from './cm-task-toggle';
 	import { getNoteSelection } from './db';
 	import {
 		clampSelection,
@@ -84,6 +85,7 @@
 					...indentKeymap(undoManager),
 					...inputRulesKeymap(undoManager),
 					...formatKeymap(undoManager),
+					...taskToggleKeymap(undoManager),
 					...defaultKeymap
 				]),
 				markdown({ base: markdownLanguage }),

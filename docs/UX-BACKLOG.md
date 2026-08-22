@@ -6,7 +6,38 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-21, run 3, iteration 4)
+## Status (2026-08-21, run 3, iteration 5)
+
+- Iteration 5 shipped item 27 — the task-toggle keyboard command
+  (Mod+Alt+L): `src/lib/cm-task-toggle.ts` adds `taskBlocked` (syntax-tree
+  ancestor walk over FencedCode / CodeBlock / Table / OrderedList /
+  SetextHeading1/2 / HorizontalRule / Blockquote — top-level lines only),
+  `taskMarkerOnLine` (line-range `TaskMarker` probe, the 17a/17b precedent),
+  pure `applyTaskToggle({ doc, from, to, marker })` and
+  `taskToggleCommand`/`taskToggleKeymap` (one `Mod-Alt-l` binding, routed
+  through `ownUndoStep`), wired in `Editor.svelte` after `formatKeymap`.
+  Semantics: a line with a tree `TaskMarker` → strip the marker + its
+  trailing separator; else a task line (regex — covers the bare `- [x]` /
+  `- [ ]` forms the tree parses as Link/Paragraph without a marker) →
+  strip; else a bullet line `(\s*)([-*+])␣…` → insert `[ ] ` after the
+  bullet; else prefix `- [ ] ` at column 0 (an empty line yields `- [ ] `
+  WITH a trailing space, unlike item 15's bare `##`, so the next typed
+  character already forms a valid GFM task). 50 unit tests
+  (`cm-task-toggle.test.ts`: all transformation branches + the regex
+  fallbacks + `taskMarkerOnLine` + `taskBlocked`) + 4 e2e
+  (`e2e/task-lists.spec.ts`: plain line → task with the interactive preview
+  checkbox appearing on `data-task-line=1`; task → plain bullet → task
+  round trip; own undo step; read-only shared view no-op) — the three
+  behavioral e2e are sensitivity-verified (each fails without the keymap
+  wiring; the read-only one locks the editable guard). Full suite green:
+  404 unit + 144 e2e (5 pre-existing skips). No screenshot impact:
+  keymap-only change, the fixtures contain no task lists and never press
+  the new chord (docker still unavailable in this env — see Parked).
+  Re-audit seeded item 28 (extend the keyboard toggle to ordered and
+  blockquote tasks — probe-verified: lezer DOES emit `Task`/`TaskMarker`
+  for both forms, so item 27's strip branch already works for them once
+  the `OrderedList`/`Blockquote` ancestor block is lifted) as the next
+  unblocked item. Next unblocked: item 28.
 
 - Iteration 4 shipped item 25 — the per-note work position now persists
   across reloads: a new `selections` object store (IDB v3) holds
@@ -972,7 +1003,7 @@ What already works well (do not regress):
   caret, or changes content; docker still unavailable in this env — see
   Parked).
 
-### 27. Task-toggle keyboard command (completes the item-17 input trio)
+### 27. DONE (2026-08-21, run 3, iteration 5): Task-toggle keyboard command — Mod+Alt+L (completes the item-17 input trio)
 
 - Gap (run-3, iteration-4 re-audit): task lists have three input paths
   — type + Enter-continuation (17a), bracket-token click in the editor
@@ -1002,7 +1033,58 @@ What already works well (do not regress):
   no-ops) + e2e: plain line → task (verified in the preview), task →
   plain item, own undo step, read-only shared-view no-op. Screenshots
   unaffected (keymap-only, fixtures contain no task lists).
-- Priority: TOP UNBLOCKED — small, local-only.
+- Evidence (run 3, iteration 5): new `src/lib/cm-task-toggle.ts` —
+  `taskBlocked` (ancestor walk: FencedCode / CodeBlock / Table /
+  OrderedList / SetextHeading1 / SetextHeading2 / HorizontalRule /
+  Blockquote), `taskMarkerOnLine` (line-range `TaskMarker` probe), pure
+  `applyTaskToggle`, `taskToggleCommand` via `ownUndoStep`,
+  `taskToggleKeymap` (`Mod-Alt-l`); wired in `Editor.svelte` after
+  `formatKeymap`. 50 unit tests (`cm-task-toggle.test.ts`) + 4 e2e
+  (`e2e/task-lists.spec.ts`), the three behavioral ones
+  sensitivity-verified (each fails without the keymap wiring). Full suite
+  green: 404 unit + 144 e2e (5 pre-existing skips).
+- Scope notes (v1, top-level only): ordered tasks (`1. [ ] x`) and
+  blockquote tasks (`> - [ ] x`) are no-ops — lezer parses both WITH a
+  `TaskMarker` (probe-verified iteration 5), so item 28 lifts the
+  `OrderedList`/`Blockquote` ancestor block; the preview checkboxes
+  (item 17c) already toggle those forms. An empty line toggles to
+  `- [ ] ` WITH a trailing space (item 15's heading command yields a
+  bare `##` without — deliberately different: GFM task detection
+  requires a space after `]`, so the next typed character must already
+  land in a valid task). A lone `-`/`*`/`+` character line is treated as
+  a plain line (prefixed, like item 15's degenerate lines).
+- Priority: consumed — see item 28 (its direct extension).
+
+### 28. Task toggle: ordered + blockquote tasks (extends item 27 to the remaining GFM task forms)
+
+- Gap (run 3, iteration 5, probe-verified): GFM tasks exist in three
+  forms — top-level bullets (item 27), ordered lists (`1. [ ] x`) and
+  blockquotes (`> - [ ] x`). Lezer emits `OrderedList > ListItem > Task
+  > TaskMarker` for the ordered forms (all of `1.` / `1)` / nested) and
+  `Blockquote > … > Task > TaskMarker` for the quoted forms, so item 27's
+  TREE-MARKER strip branch already computes the right change for both —
+  `taskBlocked`'s `OrderedList` / `Blockquote` ancestor block is what
+  turns them into no-ops today. The preview checkboxes (item 17c,
+  `task-lines.ts` scanner covers ordered + blockquote) already toggle
+  every form; the keyboard path is the last missing one.
+- Direction: (a) ordered — lift `OrderedList` from `taskBlocked` ONLY for
+  the marker-strip branch (a plain `1. x` line still no-ops in v1 —
+  inserting `[ ] ` after an ordered marker is a second regex branch,
+  `(\s*)(\d{1,9})[.)][ \t]`, and can land as a follow-up slice if wanted);
+  (b) blockquote — lift `Blockquote` for the marker-strip branch AND add a
+  `>␣` prefix variant of the bullet/free-line regexes so `> - x` →
+  `> - [ ] x` and `> hello` → `> - [ ] hello` (or decide quoted tasks are
+  strip-only — the preview checkbox already covers the other direction
+  there). Keep fenced code / tables / setext / thematic breaks blocked.
+- No new chord (same Mod+Alt+L; audit row unchanged).
+- done-when: unit tests for the new branches (ordered strip, blockquote
+  strip, blockquote bullet insert if included, both inside existing
+  `taskBlocked`/`applyTaskToggle` suites) + e2e: `1. [ ] x` → `1. x` and
+  `> - [ ] x` → `> - x` (verified in the preview checkbox state), plus the
+  plain `1. x` no-op if ordered insert is not included. Screenshots
+  unaffected (keymap-only).
+- Priority: TOP UNBLOCKED — small, local-only, completes the task trio
+  across all GFM task forms.
 
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
@@ -1041,7 +1123,7 @@ reserved-shortcut lists. Mod = Ctrl (Win/Linux) / Cmd (macOS).
 | Mod+N                | **reserved** (new window)    | **reserved** (new window) | **reserved** (new window)           | rejected (old new-session binding; dead in real browsers, see item 12) |
 | Mod+Alt+S            | free                         | free                     | free                                  | **new session** (substitution for the dead Mod+N, item 12) |
 | Mod+Shift+Z          | free (page-level redo, not a browser accelerator) | free (page-level redo) | free (standard text redo) | **redo** — y-codemirror's intended `Mod-Shift-z` binding; added as uppercase `Mod-Shift-Z` so CM6's case-sensitive key-name lookup actually matches a real Shift+Z keypress (item 22) |
-| Mod+Alt+L            | free                         | free                     | free                                  | **task toggle** (item 27, seeded run 3 iteration 4). Mod+Alt+T rejected: Ctrl+Alt+T is a desktop-level terminal launcher on GNOME/Ubuntu, consumed before the browser (the item-12 Mod+N lesson, one layer up) |
+| Mod+Alt+L            | free                         | free                         | free                                  | **task toggle** (item 27, shipped run 3 iteration 5; CM6 matches `Mod-Alt-l` through its keyCode fallback, so macOS Option-mangling is safe per item 14's family check). Mod+Alt+T rejected: Ctrl+Alt+T is a desktop-level terminal launcher on GNOME/Ubuntu, consumed before the browser (the item-12 Mod+N lesson, one layer up) |
 
 Notes: the substitutions follow the Mod+Alt pattern this app already established for
 the rejected Mod+Shift+N / Mod+Shift+P (items 7, 8), keeping all substituted chords in
@@ -1052,6 +1134,23 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **lezer markdown node names for line-level guards (run 3, iteration 5):**
+  three premises that shaped `taskBlocked` (and any future line-level
+  command): (1) a thematic break (`---` / `===`-is-paragraph / `***`)
+  parses as `HorizontalRule`, NOT `ThematicBreak`; (2) `SetextHeading1/2`
+  spans BOTH the paragraph line and the underline line (the underline is
+  the `HeaderMark` child), so an ancestor walk from either line reaches
+  the setext node — a tree guard covers both setext lines without the
+  item-15-style regex; (3) ordered GFM tasks (`1. [ ] x`, `1)`, nested)
+  parse as `OrderedList > ListItem > Task > TaskMarker` — the strip
+  branch of any marker-based command works for them as soon as the
+  `OrderedList` ancestor block is lifted (seeded as item 28).
+- **`doc.lineAt(pos)` at a line end stays on that line (run 3, iteration
+  5):** probing `lineAt` at the newline position of a non-final line
+  returns THAT line (and at the document end returns the last line), so
+  the same-line guard pattern `lineAt(to).number !== lineAt(from).number`
+  (items 15/27) correctly accepts a caret parked at the very end of the
+  line. No off-by-one needed.
 - **Undo/redo history does not survive reloads (run 3, iteration 4):**
   item 21's per-tab manager registry is in-memory; after a reload the
   undo stack is empty even though the work position (item 25) is
