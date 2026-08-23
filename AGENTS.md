@@ -97,9 +97,10 @@ presence/awareness yet.
   per-note Yjs docs — only for frozen pre-session shares), `crypto.ts` (AES-GCM, base64url),
   `api.ts` (relay client), `collab.ts` (RoomSession — encrypted Yjs-over-WS sync), `share.ts`
   (link building), `shared.ts` (share fragment parsing), `cm-conceal.ts` (Typora-style markdown
-  mark concealment), `export.ts` (.md download), `Editor.svelte`
-  (CodeMirror 6 + yCollab binding). Routes: `s/[id]` (session page), `n/[id]` (frozen legacy
-  per-note shares, redirects local notes to their session).
+  mark concealment), `export.ts` (.md download), `shortcuts.ts` (declarative registry of every
+  shortcut + `formatKeys` for the help sheet), `Editor.svelte` (CodeMirror 6 + yCollab binding).
+  Routes: `s/[id]` (session page), `n/[id]` (frozen legacy per-note shares, redirects local
+  notes to their session).
 - Svelte 5 runes (`$state`, `$derived`), tabs for indentation (Prettier config), no comments
   unless asked.
 - Commit style: conventional commits (`feat:`, `fix:`, `chore:`).

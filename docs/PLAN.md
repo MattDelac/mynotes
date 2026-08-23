@@ -89,6 +89,10 @@ browser-reservation audit of every chord):
 - Restored work position: each note's caret/selection survives note switches
   and page reloads (restored scroll included); per-note undo history survives
   switches
+- Keyboard-shortcuts help sheet: a typed `?` while the editor is not focused
+  (or More-options → Keyboard shortcuts) opens a small overlay listing every
+  chord plus the typing and pointer aids; read-only shared views show only the
+  rows that work there, and closing the sheet restores editor focus
 
 ### Export to disk
 
