@@ -1727,6 +1727,60 @@ registry.
   item 23 (typewriter scrolling) is the only remaining open numbered item and
   is BLOCKED on a human product decision (see Parked).
 
+### 35. OPEN (2026-08-23, human mandate): Code-fence language highlighting (editor + preview)
+
+Syntax-highlight code inside ```` ```lang ```` fences. Product decisions
+already made (do not relitigate):
+
+- **Scope**: syntax highlighting + block styling ONLY. No formatter
+  (formatting would rewrite stored text and need per-language engines).
+- **Editor**: NEW dep `@codemirror/language-data` (justification: language-
+  aware fence highlighting; lazy per-language chunks via Vite, zero upfront
+  bundle cost). Wire `codeLanguages: languages` into the `markdown()`
+  extension in `Editor.svelte`. Support ALL ~120 languages in the package —
+  whatever fence info-string the user types should highlight.
+- **Preview**: NEW dep `highlight.js/lib/core` (justification: sync marked
+  integration — lezer language loading is async and the preview render path
+  is sync) + a CURATED set of ~15 languages (js, ts, jsx, tsx, python,
+  rust, go, sh/bash, json, html, css, sql, yaml, markdown, diff). Custom
+  `renderer.code` override in `markdown.ts`: fence info-string present and
+  supported → hljs.highlight output; missing/unknown language → plain
+  escaped code (no crash, no warnings). DOMPurify must pass spans with
+  class attributes through — lock with a test.
+- **Block styling**: fenced blocks get a subtle background/padding/radius
+  in BOTH editor (decorations scoped to the FencedCode lines) and preview
+  (`.preview pre` refinements). INLINE-CODE styling is FROZEN — the
+  screenshots fixture contains `` `const x = 1;` `` and inline-code restyle
+  would change committed PNGs.
+- **Token palette**: add `tok-*` color rules (keyword, string, comment,
+  number, function, operator, punctuation, etc.) for BOTH light and dark
+  themes in `app.css`. `classHighlighter` is already applied and emits
+  these classes; today nothing styles them.
+- **No chrome**: no language labels on blocks, no copy buttons, no UI
+  beyond colors + block background.
+- **Guards (regression-locked)**: mark concealment invariant unchanged
+  (fence delimiter marks stay visible per item 4; marks hidden except on
+  the cursor line); format/task/table commands remain no-ops inside
+  FencedCode/CodeBlock; fence auto-close (`cm-input-rules.ts`) unchanged.
+- **Screenshot safety**: screenshots fixture FROZEN (no edits); no
+  inline-code restyle; fixture has no fenced block → no committed PNG can
+  change. The shortcuts sheet must never appear in fixtures. If `pnpm
+  screenshots` (docker) is impossible in the environment, reason about
+  fixture impact in the backlog instead — and remember the item-34 lesson:
+  chrome visible in ANY committed fixture (header, sidebar, menu, share
+  panel, preview) changes PNGs.
+- **Tests**: unit — renderer override (known lang → hljs spans, unknown →
+  plain, no-info → plain), DOMPurify span/class passthrough; e2e
+  sensitivity-verified — ```` ```js ```` fence shows `tok-keyword` in the
+  editor, preview shows highlighted spans for a curated lang, unknown lang
+  renders plain, conceal still shows fence marks, fence auto-close
+  regression.
+- **Docs**: `docs/PLAN.md` scope line in the same commit as the wiring;
+  both new deps get their justification line in the backlog item.
+
+Non-goals (do not start): code formatter, language labels, copy buttons,
+inline-code restyle, new keybindings, highlight.js full bundle.
+
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
 - Candidate found by the run-3 writing-experience re-audit: no
