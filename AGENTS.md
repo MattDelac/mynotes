@@ -106,11 +106,11 @@ presence/awareness yet.
 
 ## CI/CD
 
-Two entrypoints orchestrate the reusable `_*.yml` workflows (each also manually dispatchable via
+Entrypoints orchestrate the reusable `_*.yml` workflows (each also manually dispatchable via
 `workflow_dispatch`). No path filters — all legs run on every trigger, in parallel.
 
-- `pull_request.yml`: 4 parallel legs — Frontend, Backend, E2E, Screenshots. Concurrency group
-  `pr-<ref>`, cancels superseded runs.
+- `pull_request.yml`: 4 parallel legs — Frontend, Backend, E2E, Screenshots — plus a Preview leg
+  gated on Frontend + Backend. Concurrency group `pr-<ref>`, cancels superseded runs.
 - `cicd.yml` (push to main): the same 4 legs, then Release Frontend + Release Backend, each gated
   on Frontend + Backend + E2E (Screenshots gates PR merge only, not deploys). Concurrency group
   `cicd-main` (no cancel) serializes deploys.
@@ -119,6 +119,12 @@ Two entrypoints orchestrate the reusable `_*.yml` workflows (each also manually 
 - `_e2e.yml`: Playwright e2e (boots preview + Rust backend on :3000).
 - `_ci-screenshots.yml`: regenerates UI screenshots and fails if they differ from the committed
   ones (keeps `apps/screenshots/` current; `screenshots.yml` regenerates and opens a PR instead).
+- `_preview.yml`: builds both images (linux/arm64, tagged `sha-<short>`, web built with the
+  preview API's Tailscale host as `PUBLIC_API_URL`) and deploys them to the
+  `preview-pr-<owner>-mynotes-<PR>` namespace behind the Tailscale ingress
+  (`pr-<PR>-mynotes` / `pr-<PR>-mynotes-api`, tailnet-only); the API runs on an `emptyDir`
+  (no Litestream). Comments the preview URL on the PR.
+- `preview-cleanup.yml`: deletes the preview namespace when a PR closes.
 - `_release-frontend.yml`: builds `apps/web/Dockerfile` (linux/arm64 on a native arm64 runner,
   nginx-unprivileged on 8080), pushes `ghcr.io/mattdelac/mynotes-web:sha-<short>` and `:latest`.
   The deploy job (Tailscale + `kubectl set image`) runs only when `github.ref` is `refs/heads/main`.

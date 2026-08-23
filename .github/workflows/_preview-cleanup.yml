@@ -1,0 +1,40 @@
+name: Preview cleanup
+
+on:
+  workflow_call:
+    inputs:
+      pr-number:
+        description: PR number whose preview deployment to delete
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: PR number whose preview deployment to delete
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  NAMESPACE: preview-pr-mattdelac-mynotes-${{ inputs.pr-number }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Delete preview namespace
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+          kubectl delete namespace "${NAMESPACE}" --ignore-not-found

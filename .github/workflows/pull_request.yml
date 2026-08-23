@@ -10,6 +10,8 @@ concurrency:
 permissions:
   contents: read
   id-token: write
+  packages: write
+  pull-requests: write
 
 jobs:
   frontend:
@@ -27,3 +29,11 @@ jobs:
   screenshots:
     name: Screenshots
     uses: ./.github/workflows/_ci-screenshots.yml
+
+  preview:
+    name: Preview
+    needs: [frontend, backend]
+    uses: ./.github/workflows/_preview.yml
+    with:
+      pr-number: ${{ github.event.number }}
+    secrets: inherit
