@@ -1585,6 +1585,81 @@ What already works well (do not regress):
   session sync, undo-across-reload trade-off, setext support, mobile
   header density).
 
+### 34. OPEN (2026-08-22, human mandate): Keyboard-shortcuts help sheet (Herdr-style `?` sheet)
+
+Show every shortcut available in the app in a small overlay, like Herdr's
+keybindings sheet. Product decisions already made (do not relitigate):
+
+- **Trigger**: a typed `?` (Shift+?) at document level when the editor is
+  NOT focused (GitHub/Linear pattern). When the editor (or any input /
+  textarea / contenteditable) has focus, `?` must type normally. Guard
+  requires `e.key === '?'` with no modifiers and `document.activeElement`
+  not inside `.cm-editor` nor an input/textarea/contenteditable. Pressing
+  `?` again (same guard) also closes the sheet; Escape and backdrop click
+  close too.
+- **Discoverability**: a "Keyboard shortcuts" entry in the existing
+  More-options menu in `AppHeader.svelte`. NO new top-level chrome (no
+  header `?` icon) — zero-chrome north star.
+- **Read-only shared views**: the sheet stays reachable (chord + menu
+  entry), but only `readOnlySafe` rows render (App group's sidebar,
+  export, this-sheet entry) — all editing groups hidden.
+- **Non-key sections**: include a Typing section (input rules: `- [ ] `
+  + space task line, code-fence auto-close, paste-URL-over-selection
+  makes a link) and a Pointer section (Ctrl/Cmd+click opens link,
+  bracket-token `[ ]` click toggles task, long-press opens link on touch,
+  preview checkbox toggles task). These are non-keyboard and have no
+  `keys` array.
+
+Shape (from the human plan):
+
+- `apps/web/src/lib/shortcuts.ts` — declarative registry, single source
+  of truth: `{ group, label, keys: string[], readOnlySafe?: boolean }[]`
+  (Typing/Pointer entries carry no `keys`), plus `formatKeys(keys, isMac)`
+  → `⌘/⌥/⇧` labels on mac vs `Ctrl/Alt/Shift` elsewhere (mac detection
+  reused from `AppHeader.svelte`'s `navigator.platform` check).
+- `apps/web/src/lib/components/ShortcutsSheet.svelte` — centered sheet on
+  existing tokens (`--radius`, `--border`, `--shadow`, `--bg`),
+  `role="dialog"` + `aria-modal="true"`, Esc/backdrop/`?` close, and
+  focus RESTORED to the previously focused element (the editor) on close
+  — the editor autofocus invariant must not regress.
+- `AppHeader.svelte` owns `sheetOpen` state + the `?` keydown guard
+  (extend the existing `handleKeydown`) + the menu item. AppHeader is
+  shared by both routes, so the sheet is available everywhere.
+
+Groups and rows (audit against the live keymaps on main at 7f63db4):
+
+- Formatting: Bold `Mod+B`, Italic `Mod+I`, Strikethrough `Mod+Alt+X`,
+  Inline code `Mod+Alt+C`, Link `Mod+K`
+- Headings: Heading 1–6 `Mod+Alt+1`..`Mod+Alt+6` (one row), Remove
+  heading `Mod+Alt+0`
+- Lists & tasks: Indent `Tab` / Outdent `Shift+Tab`, Toggle task
+  `Mod+Alt+L` (`cm-task-toggle.ts`)
+- Tables: Next cell `Tab`, Previous cell `Shift+Tab`, New row `Enter`,
+  Exit table `Backspace` (contextual, one group row or note)
+- App: New note `Mod+Alt+N`, New session `Mod+Alt+S`, Preview
+  `Mod+Alt+P`, Export `Mod+E`, Sidebar `Mod+O`, Undo `Mod+Z`, Redo
+  `Mod+Shift+Z` (the run-4 fix, `Editor.svelte`), This sheet `?`
+- Typing: `- [ ] ` + space starts a task line; ``` + Enter auto-closes a
+  code fence; pasting a URL over a selection makes a link
+- Pointer: Ctrl/Cmd+click a link to open it; click `[ ]`/`[x]` bracket to
+  toggle a task; long-press a link opens it (touch); preview checkboxes
+  toggle the task
+
+Tests (sensitivity-verified where user-facing):
+
+- Unit: registry shape (groups ordered, rows have labels + keys or are
+  marked non-key), `formatKeys` mac/non-mac, read-only filter.
+- E2E: `?` with editor blurred opens the sheet; `?` with editor focused
+  types a literal `?` into the document; menu entry opens; Escape and
+  backdrop close; closing restores editor focus; read-only shared view
+  shows only `readOnlySafe` rows.
+
+Docs: `docs/PLAN.md` scope line in the same commit as the wiring.
+
+Non-goals (do not start): command palette, key remapping,
+search-within-sheet, header `?` icon, deriving the live keymaps from the
+registry.
+
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
 - Candidate found by the run-3 writing-experience re-audit: no
