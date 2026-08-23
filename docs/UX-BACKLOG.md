@@ -6,7 +6,48 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-22, run 3, iteration 11)
+## Status (2026-08-23, run 5, iteration 1)
+
+- Iteration 1 (run 5) shipped item 34 — the keyboard-shortcuts help sheet
+  (human mandate). New `src/lib/shortcuts.ts` (declarative registry of every
+  chord + `formatKeys`/`formatKey` for mac/desktop + `visibleShortcuts`
+  read-only filter — single source of truth, audited against the live keymaps
+  on main: Mod+B/I, Mod+Alt+X/C, Mod+K, Mod+Alt+1..6/0, Tab, Shift+Tab,
+  Mod+Alt+L, Mod+Alt+N/S/P, Mod+E, Mod+O, Mod+Z, Mod+Shift+Z, `?`) and
+  `src/lib/components/ShortcutsSheet.svelte` (centered dialog on existing
+  tokens, `role="dialog"` `aria-modal`, Esc/backdrop/`?` close, focus RESTORED
+  to the editable editor on close — the autofocus invariant). `AppHeader.svelte`
+  owns `sheetOpen` + the `?` keydown guard (typed `?` with no Ctrl/Alt/Meta and
+  `document.activeElement` NOT inside `.cm-editor`/input/textarea/contenteditable
+  toggles it; when the editor or any field has focus `?` types normally; while
+  open the sheet swallows other chords and `?`/Escape close it) + a
+  "Keyboard shortcuts" More-options entry (the menu now renders in read-only
+  views too, with only that entry, so the sheet stays reachable by chord AND
+  menu there). Seven groups render: Formatting, Headings, Lists & tasks,
+  Tables, App, plus non-key Typing and Pointer sections. Read-only shared views
+  render ONLY the `readOnlySafe` rows (Export, Sidebar, This sheet) — all
+  editing groups hidden. 8 unit tests (`shortcuts.test.ts`: group order, row
+  shape, every-mandated-chord-present, formatKeys mac/non-mac, read-only
+  filter) + 7 e2e tests (`e2e/shortcuts-sheet.spec.ts`), three of them
+  sensitivity-verified: (a) `?` with editor blurred opens / `?` again closes
+  — fails with the guard disabled; (b) `?` with editor focused types a literal
+  `?` into the document — fails with the `inEditorOrField()` guard removed;
+  (c) closing restores editor focus (a typed char lands in the doc) — fails
+  with the focus-restore removed. Full suite green: 516 unit + 169 e2e
+  (5 pre-existing skips). `docs/PLAN.md` gained the scope line; `AGENTS.md` the
+  `shortcuts.ts` module note. **Screenshots: docker cannot start containers in
+  this env (runc `bpf_prog_query(BPF_CGROUP_DEVICE): operation not permitted`)
+  so `pnpm screenshots` could not run; the committed `light-menu.png` /
+  `dark-menu.png` are now STALE — the dropdown gains one "Keyboard shortcuts"
+  row — and must be regenerated on a docker-capable machine before merge (the
+  CI screenshots leg will fail until then). No other committed PNG can change:
+  the sheet is closed by default and no fixture opens it, and the menu is only
+  open in the two menu fixtures. Re-audit (writing experience): no further
+  unblocked gap found — item 34 was the last mandated feature and every
+  remaining candidate is a Parked item blocked on a named human product/design
+  decision (see Parked). Item 23 (typewriter scrolling) is the only open
+  numbered item and is BLOCKED on that product decision. No unblocked items
+  remain.
 
 - Iteration 11 shipped item 33 — Mod+Alt+L now STRIPS the blockquoted
   BULLET bare-marker forms instead of double-inserting: `> - [ ]` →
@@ -1585,6 +1626,107 @@ What already works well (do not regress):
   session sync, undo-across-reload trade-off, setext support, mobile
   header density).
 
+### 34. DONE (2026-08-23, run 5, iteration 1): Keyboard-shortcuts help sheet (Herdr-style `?` sheet)
+
+Show every shortcut available in the app in a small overlay, like Herdr's
+keybindings sheet. Product decisions already made (do not relitigate):
+
+- **Trigger**: a typed `?` (Shift+?) at document level when the editor is
+  NOT focused (GitHub/Linear pattern). When the editor (or any input /
+  textarea / contenteditable) has focus, `?` must type normally. Guard
+  requires `e.key === '?'` with no modifiers and `document.activeElement`
+  not inside `.cm-editor` nor an input/textarea/contenteditable. Pressing
+  `?` again (same guard) also closes the sheet; Escape and backdrop click
+  close too.
+- **Discoverability**: a "Keyboard shortcuts" entry in the existing
+  More-options menu in `AppHeader.svelte`. NO new top-level chrome (no
+  header `?` icon) — zero-chrome north star.
+- **Read-only shared views**: the sheet stays reachable (chord + menu
+  entry), but only `readOnlySafe` rows render (App group's sidebar,
+  export, this-sheet entry) — all editing groups hidden.
+- **Non-key sections**: include a Typing section (input rules: `- [ ] `
+  + space task line, code-fence auto-close, paste-URL-over-selection
+  makes a link) and a Pointer section (Ctrl/Cmd+click opens link,
+  bracket-token `[ ]` click toggles task, long-press opens link on touch,
+  preview checkbox toggles task). These are non-keyboard and have no
+  `keys` array.
+
+Shape (from the human plan):
+
+- `apps/web/src/lib/shortcuts.ts` — declarative registry, single source
+  of truth: `{ group, label, keys: string[], readOnlySafe?: boolean }[]`
+  (Typing/Pointer entries carry no `keys`), plus `formatKeys(keys, isMac)`
+  → `⌘/⌥/⇧` labels on mac vs `Ctrl/Alt/Shift` elsewhere (mac detection
+  reused from `AppHeader.svelte`'s `navigator.platform` check).
+- `apps/web/src/lib/components/ShortcutsSheet.svelte` — centered sheet on
+  existing tokens (`--radius`, `--border`, `--shadow`, `--bg`),
+  `role="dialog"` + `aria-modal="true"`, Esc/backdrop/`?` close, and
+  focus RESTORED to the previously focused element (the editor) on close
+  — the editor autofocus invariant must not regress.
+- `AppHeader.svelte` owns `sheetOpen` state + the `?` keydown guard
+  (extend the existing `handleKeydown`) + the menu item. AppHeader is
+  shared by both routes, so the sheet is available everywhere.
+
+Groups and rows (audit against the live keymaps on main at 7f63db4):
+
+- Formatting: Bold `Mod+B`, Italic `Mod+I`, Strikethrough `Mod+Alt+X`,
+  Inline code `Mod+Alt+C`, Link `Mod+K`
+- Headings: Heading 1–6 `Mod+Alt+1`..`Mod+Alt+6` (one row), Remove
+  heading `Mod+Alt+0`
+- Lists & tasks: Indent `Tab` / Outdent `Shift+Tab`, Toggle task
+  `Mod+Alt+L` (`cm-task-toggle.ts`)
+- Tables: Next cell `Tab`, Previous cell `Shift+Tab`, New row `Enter`,
+  Exit table `Backspace` (contextual, one group row or note)
+- App: New note `Mod+Alt+N`, New session `Mod+Alt+S`, Preview
+  `Mod+Alt+P`, Export `Mod+E`, Sidebar `Mod+O`, Undo `Mod+Z`, Redo
+  `Mod+Shift+Z` (the run-4 fix, `Editor.svelte`), This sheet `?`
+- Typing: `- [ ] ` + space starts a task line; ``` + Enter auto-closes a
+  code fence; pasting a URL over a selection makes a link
+- Pointer: Ctrl/Cmd+click a link to open it; click `[ ]`/`[x]` bracket to
+  toggle a task; long-press a link opens it (touch); preview checkboxes
+  toggle the task
+
+Tests (sensitivity-verified where user-facing):
+
+- Unit: registry shape (groups ordered, rows have labels + keys or are
+  marked non-key), `formatKeys` mac/non-mac, read-only filter.
+- E2E: `?` with editor blurred opens the sheet; `?` with editor focused
+  types a literal `?` into the document; menu entry opens; Escape and
+  backdrop close; closing restores editor focus; read-only shared view
+  shows only `readOnlySafe` rows.
+
+Docs: `docs/PLAN.md` scope line in the same commit as the wiring.
+
+Non-goals (do not start): command palette, key remapping,
+search-within-sheet, header `?` icon, deriving the live keymaps from the
+registry.
+
+- Evidence (run 5, iteration 1): `src/lib/shortcuts.ts` (registry of 29 rows
+  across 7 groups — every mandated chord present, audited against the live
+  keymaps on main — + `formatKey`/`formatKeys` + `visibleShortcuts`) and
+  `src/lib/components/ShortcutsSheet.svelte` (centered `role="dialog"`
+  `aria-modal` sheet on existing tokens; Esc/backdrop/`?` close; on close it
+  re-focuses the editable `.cm-content`, falling back to the previously
+  focused element, so the editor-autofocus invariant holds). `AppHeader.svelte`
+  owns `sheetOpen`, the `?` guard (no Ctrl/Alt/Meta, and `document.activeElement`
+  not inside `.cm-editor`/input/textarea/contenteditable — so `?` types
+  normally whenever the editor or any field is focused), and the
+  "Keyboard shortcuts" More-options entry; the menu now also renders in
+  read-only views (entry-only) so the sheet is reachable by chord AND menu
+  there, and only `readOnlySafe` rows (Export, Sidebar, This sheet) render.
+  8 unit tests + 7 e2e tests (`e2e/shortcuts-sheet.spec.ts`); the open-when-
+  blurred, types-when-focused, and focus-restore e2e are sensitivity-verified
+  (each fails with its wiring removed). Full suite green: 516 unit + 169 e2e
+  (5 pre-existing skips). `docs/PLAN.md` scope line added. Screenshots: `light-
+  menu.png`/`dark-menu.png` are now STALE (the dropdown gains one row) and must
+  be regenerated with `pnpm screenshots` on a docker-capable machine before
+  merge — docker cannot start containers in this gnhf env (runc cgroup-BPF
+  "operation not permitted"); no other committed PNG can change (the sheet is
+  closed by default and no fixture opens it). Priority: consumed — the
+  iteration-1 re-audit found no further unblocked writing-experience gap;
+  item 23 (typewriter scrolling) is the only remaining open numbered item and
+  is BLOCKED on a human product decision (see Parked).
+
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
 - Candidate found by the run-3 writing-experience re-audit: no
@@ -1623,6 +1765,7 @@ reserved-shortcut lists. Mod = Ctrl (Win/Linux) / Cmd (macOS).
 | Mod+Alt+S            | free                         | free                     | free                                  | **new session** (substitution for the dead Mod+N, item 12) |
 | Mod+Shift+Z          | free (page-level redo, not a browser accelerator) | free (page-level redo) | free (standard text redo) | **redo** — y-codemirror's intended `Mod-Shift-z` binding; added as uppercase `Mod-Shift-Z` so CM6's case-sensitive key-name lookup actually matches a real Shift+Z keypress (item 22) |
 | Mod+Alt+L            | free                         | free                         | free                                  | **task toggle** (item 27, shipped run 3 iteration 5; CM6 matches `Mod-Alt-l` through its keyCode fallback, so macOS Option-mangling is safe per item 14's family check). Mod+Alt+T rejected: Ctrl+Alt+T is a desktop-level terminal launcher on GNOME/Ubuntu, consumed before the browser (the item-12 Mod+N lesson, one layer up) |
+| `?` (Shift+/, no other modifiers) | free (not a browser accelerator) | free (not a browser accelerator) | free (not a browser accelerator) | **shortcuts-sheet trigger** (item 34, shipped run 5 iteration 1) — only consulted at document level when the editor and every input/textarea/contenteditable are NOT focused, so it can never steal a typed `?`; no in-app chord is added by the sheet itself |
 
 Notes: the substitutions follow the Mod+Alt pattern this app already established for
 the rejected Mod+Shift+N / Mod+Shift+P (items 7, 8), keeping all substituted chords in

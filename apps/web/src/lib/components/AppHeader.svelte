@@ -4,6 +4,7 @@
 		Download,
 		Eye,
 		FilePlus2,
+		Keyboard,
 		Link2,
 		List,
 		LogOut,
@@ -12,6 +13,7 @@
 		Trash2,
 		Upload
 	} from 'lucide-svelte';
+	import ShortcutsSheet from './ShortcutsSheet.svelte';
 
 	interface Props {
 		title: string;
@@ -48,6 +50,7 @@
 	}: Props = $props();
 
 	let menuOpen = $state(false);
+	let sheetOpen = $state(false);
 	let menuButtonEl = $state<HTMLButtonElement | null>(null);
 
 	function toggleMenu() {
@@ -58,9 +61,40 @@
 		menuOpen = false;
 	}
 
+	function closeSheet() {
+		sheetOpen = false;
+	}
+
+	function toggleSheet() {
+		sheetOpen = !sheetOpen;
+	}
+
+	function inEditorOrField(): boolean {
+		const el = document.activeElement;
+		if (!(el instanceof Element)) return false;
+		if (el.closest('.cm-editor')) return true;
+		if (el.closest('input, textarea')) return true;
+		if (el instanceof HTMLElement && el.isContentEditable) return true;
+		return false;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			closeMenu();
+			if (sheetOpen) closeSheet();
+			return;
+		}
+		if (sheetOpen) {
+			if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+				e.preventDefault();
+				closeSheet();
+			}
+			return;
+		}
+		if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey && !inEditorOrField()) {
+			e.preventDefault();
+			closeMenu();
+			toggleSheet();
 			return;
 		}
 		const isMac = navigator.platform.startsWith('Mac');
@@ -147,7 +181,7 @@
 		</button>
 	{/if}
 
-	{#if !readOnly && onMenuAction}
+	{#if onMenuAction}
 		<div class="menu-wrapper">
 			<button
 				class="icon"
@@ -174,29 +208,31 @@
 
 			{#if menuOpen}
 				<div class="dropdown-menu">
-					<button
-						class="menu-item"
-						onclick={() => {
-							onMenuAction('export');
-							closeMenu();
-						}}
-						aria-label="Export note"
-					>
-						<Download size={15} />
-						<span>Export</span>
-					</button>
-					<button
-						class="menu-item"
-						onclick={() => {
-							onMenuAction('import');
-							closeMenu();
-						}}
-						aria-label="Import note"
-					>
-						<Upload size={15} />
-						<span>Import</span>
-					</button>
-					{#if showNewSession}
+					{#if !readOnly}
+						<button
+							class="menu-item"
+							onclick={() => {
+								onMenuAction('export');
+								closeMenu();
+							}}
+							aria-label="Export note"
+						>
+							<Download size={15} />
+							<span>Export</span>
+						</button>
+						<button
+							class="menu-item"
+							onclick={() => {
+								onMenuAction('import');
+								closeMenu();
+							}}
+							aria-label="Import note"
+						>
+							<Upload size={15} />
+							<span>Import</span>
+						</button>
+					{/if}
+					{#if !readOnly && showNewSession}
 						<button
 							class="menu-item"
 							onclick={() => {
@@ -209,7 +245,7 @@
 							<span>New session</span>
 						</button>
 					{/if}
-					{#if showDeleteNote}
+					{#if !readOnly && showDeleteNote}
 						<button
 							class="menu-item"
 							onclick={() => {
@@ -222,6 +258,17 @@
 							<span>Delete note</span>
 						</button>
 					{/if}
+					<button
+						class="menu-item"
+						onclick={() => {
+							closeMenu();
+							toggleSheet();
+						}}
+						aria-label="Keyboard shortcuts"
+					>
+						<Keyboard size={15} />
+						<span>Keyboard shortcuts</span>
+					</button>
 				</div>
 			{/if}
 		</div>
@@ -247,6 +294,8 @@
 		onkeydown={(e) => e.key === 'Escape' && closeMenu()}
 	></div>
 {/if}
+
+<ShortcutsSheet open={sheetOpen} {readOnly} onClose={closeSheet} />
 
 <style>
 	header {
