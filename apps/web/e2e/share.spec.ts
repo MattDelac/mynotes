@@ -18,6 +18,22 @@ test('dismissing the share confirmation aborts sharing', async ({ page }) => {
 	await expect(page.locator('.sharebar')).toHaveCount(0);
 });
 
+test('share panel fits within a mobile viewport', async ({ browser }) => {
+	const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+	const page = await context.newPage();
+	page.on('dialog', (dialog) => dialog.accept());
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('mobile share fit');
+	await page.waitForTimeout(700);
+	await shareCurrentSession(page);
+
+	const box = await page.locator('.sharebar').boundingBox();
+	expect(box).not.toBeNull();
+	expect(box.x).toBeGreaterThanOrEqual(0);
+	expect(box.x + box.width).toBeLessThanOrEqual(390);
+	await context.close();
+});
+
 test('share creates an encrypted link that decrypts in a fresh browser', async ({
 	page,
 	browser

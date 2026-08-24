@@ -180,4 +180,10 @@
 		padding: 0.4rem var(--space-2);
 		border-radius: var(--radius);
 	}
+	@media (max-width: 640px) {
+		.sharebar {
+			left: var(--space-3);
+			min-width: 0;
+		}
+	}
 </style>
