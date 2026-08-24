@@ -6,10 +6,12 @@
 	import { defaultKeymap } from '@codemirror/commands';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+	import { languages } from '@codemirror/language-data';
 	import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 	import { classHighlighter, tags } from '@lezer/highlight';
 	import { concealMarks } from './cm-conceal';
 	import { titleLines } from './cm-title';
+	import { fencedCodeLines } from './cm-fenced-code';
 	import { clickableLinks } from './cm-links';
 	import { formatKeymap } from './cm-format';
 	import { indentKeymap } from './cm-indent';
@@ -92,12 +94,14 @@
 					...taskToggleKeymap(undoManager),
 					...defaultKeymap
 				]),
-				markdown({ base: markdownLanguage }),
+				markdown({ base: markdownLanguage, codeLanguages: languages }),
 				syntaxHighlighting(markdownStyle),
 				syntaxHighlighting(classHighlighter),
 				concealMarks,
 				titleLines,
+				fencedCodeLines,
 				EditorView.decorations.of((view) => view.state.field(titleLines)),
+				EditorView.decorations.of((view) => view.state.field(fencedCodeLines)),
 				clickableLinks,
 				taskMarkerClick(undoManager),
 				cmPlaceholder('Start typing…'),
@@ -131,6 +135,18 @@
 					'.cm-cursor': { borderLeftColor: 'var(--fg)' },
 					'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
 						backgroundColor: 'var(--accent-soft) !important'
+					},
+					'.cm-fenced-code': {
+						backgroundColor: 'var(--bg-subtle)',
+						paddingInline: '0.75rem'
+					},
+					'.cm-fenced-code-start': {
+						borderTopLeftRadius: 'var(--radius)',
+						borderTopRightRadius: 'var(--radius)'
+					},
+					'.cm-fenced-code-end': {
+						borderBottomLeftRadius: 'var(--radius)',
+						borderBottomRightRadius: 'var(--radius)'
 					}
 				})
 			]

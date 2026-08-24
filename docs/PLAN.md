@@ -93,6 +93,12 @@ browser-reservation audit of every chord):
   (or More-options → Keyboard shortcuts) opens a small overlay listing every
   chord plus the typing and pointer aids; read-only shared views show only the
   rows that work there, and closing the sheet restores editor focus
+- Code-fence language highlighting: a fenced block with a known language
+  info-string is syntax-highlighted in the editor (all ~140 CodeMirror
+  languages, lazy-loaded per fence) and in the preview (curated ~15-language
+  highlight.js set); unknown or missing languages render as plain escaped
+  code, fenced blocks get a subtle background/padding/radius in both views,
+  and inline code is styled exactly as before
 
 ### Export to disk
 
