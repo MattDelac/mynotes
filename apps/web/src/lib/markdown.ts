@@ -113,15 +113,20 @@ function renderTokens(tokens: Token[], renderer: Renderer): string {
 export function titleWrappedHtml(content: string, readOnly = true): string {
 	const tokens = marked.lexer(content);
 	const renderer = taskCheckboxRenderer(scanTaskLines(content), readOnly);
-	const first = tokens.find((t) => {
+	const firstIndex = tokens.findIndex((t) => {
 		if (t.type === 'space') return false;
 		if (t.type === 'paragraph') return t.text.trim() !== '';
 		return true;
 	});
-	if (first && first.type === 'paragraph') {
-		const head = renderTokens([first], renderer).replace('<p>', '<p class="note-title">');
-		const rest = renderTokens(tokens.slice(tokens.indexOf(first) + 1), renderer);
-		return head + rest;
+	if (firstIndex >= 0) {
+		const first = tokens[firstIndex];
+		const next = tokens[firstIndex + 1];
+		const tightList = next !== undefined && next.type === 'list' && !next.ordered;
+		if (first.type === 'paragraph' && !tightList) {
+			const head = renderTokens([first], renderer).replace('<p>', '<p class="note-title">');
+			const rest = renderTokens(tokens.slice(firstIndex + 1), renderer);
+			return head + rest;
+		}
 	}
 	return renderTokens(tokens, renderer);
 }

@@ -26,6 +26,18 @@ describe('titleWrappedHtml', () => {
 		expect(titleWrappedHtml('- item\n\nBody')).toBe('<ul>\n<li>item</li>\n</ul>\n<p>Body</p>\n');
 	});
 
+	it('does not add it to a first paragraph directly followed by a tight list', () => {
+		expect(titleWrappedHtml('Some text\n- item1\n- item2')).toBe(
+			'<p>Some text</p>\n<ul>\n<li>item1</li>\n<li>item2</li>\n</ul>\n'
+		);
+	});
+
+	it('adds it to a first paragraph followed by a list after a blank line', () => {
+		expect(titleWrappedHtml('Some text\n\n- item1\n- item2')).toBe(
+			'<p class="note-title">Some text</p>\n<ul>\n<li>item1</li>\n<li>item2</li>\n</ul>\n'
+		);
+	});
+
 	it('adds it to a multi-line first paragraph', () => {
 		expect(titleWrappedHtml('Title\nbody line\n\nMore')).toBe(
 			'<p class="note-title">Title<br>body line</p>\n<p>More</p>\n'
