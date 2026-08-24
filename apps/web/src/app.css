@@ -25,6 +25,17 @@
 		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 	--mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 	--font-serif: charter, 'Bitstream Charter', 'Source Serif 4', Georgia, serif;
+	--code-keyword: #b03052;
+	--code-string: #2f8a46;
+	--code-number: #a05a00;
+	--code-comment: #86868b;
+	--code-operator: #75757a;
+	--code-type: #0f7490;
+	--code-attr: #8a5a33;
+	--code-title: #7048c6;
+	--code-meta: #86868b;
+	--code-deleted: #c43535;
+	--code-inserted: #4a6b4e;
 
 	color-scheme: light;
 }
@@ -45,6 +56,17 @@
 		--success: #6a9b6e;
 		--info-soft: #30302c;
 		--shadow: 0 1px 3px rgb(0 0 0 / 0.2), 0 8px 24px rgb(0 0 0 / 0.3);
+		--code-keyword: #e59aa7;
+		--code-string: #a3c776;
+		--code-number: #d19a66;
+		--code-comment: #9a9a94;
+		--code-operator: #b0b0a8;
+		--code-type: #7fc6c1;
+		--code-attr: #c9a86a;
+		--code-title: #c4a5e8;
+		--code-meta: #9a9a94;
+		--code-deleted: #d45555;
+		--code-inserted: #6a9b6e;
 
 		color-scheme: dark;
 	}
@@ -182,4 +204,65 @@ select:focus-visible {
 .preview td {
 	border: 1px solid var(--border);
 	padding: 0.4em 0.8em;
+}
+.cm-fenced-code .tok-keyword,
+.preview pre .hljs-keyword,
+.preview pre .hljs-selector-tag {
+	color: var(--code-keyword);
+}
+.cm-fenced-code .tok-string,
+.cm-fenced-code .tok-string2,
+.preview pre .hljs-string,
+.preview pre .hljs-char,
+.preview pre .hljs-string-escape {
+	color: var(--code-string);
+}
+.cm-fenced-code .tok-number,
+.cm-fenced-code .tok-atom,
+.cm-fenced-code .tok-bool,
+.cm-fenced-code .tok-literal,
+.preview pre .hljs-number,
+.preview pre .hljs-literal,
+.preview pre .hljs-bool,
+.preview pre .hljs-symbol {
+	color: var(--code-number);
+}
+.cm-fenced-code .tok-comment,
+.preview pre .hljs-comment {
+	color: var(--code-comment);
+}
+.cm-fenced-code .tok-operator,
+.preview pre .hljs-operator {
+	color: var(--code-operator);
+}
+.cm-fenced-code .tok-typeName,
+.cm-fenced-code .tok-className,
+.cm-fenced-code .tok-namespace,
+.preview pre .hljs-type,
+.preview pre .hljs-built_in {
+	color: var(--code-type);
+}
+.cm-fenced-code .tok-propertyName,
+.preview pre .hljs-attr,
+.preview pre .hljs-attribute {
+	color: var(--code-attr);
+}
+.preview pre .hljs-title,
+.preview pre .hljs-function {
+	color: var(--code-title);
+}
+.cm-fenced-code .tok-meta,
+.preview pre .hljs-meta,
+.preview pre .hljs-doctype,
+.preview pre .hljs-tag,
+.preview pre .hljs-name {
+	color: var(--code-meta);
+}
+.cm-fenced-code .tok-deleted,
+.preview pre .hljs-deletion {
+	color: var(--code-deleted);
+}
+.cm-fenced-code .tok-inserted,
+.preview pre .hljs-addition {
+	color: var(--code-inserted);
 }

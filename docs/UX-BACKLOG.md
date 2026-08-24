@@ -6,7 +6,41 @@ smallest useful slice with tests, verify (`pnpm lint && pnpm check && pnpm test`
 and re-prioritize. Open items are listed by priority (numbering is stable across runs;
 done items are kept in place as the audit trail).
 
-## Status (2026-08-23, run 5, iteration 1)
+## Status (2026-08-23, run 6, iteration 1)
+
+- Iteration 1 (run 6) shipped item 35 — code-fence language highlighting
+  (human mandate), editor AND preview. `codeLanguages: languages`
+  (@codemirror/language-data, 143 lazy chunks) in `Editor.svelte`; new
+  `cm-fenced-code.ts` StateField decorating every FencedCode line
+  (`cm-fenced-code`/`-start`/`-end`) with the block styling in
+  `EditorView.theme` (CM6's prefixed base-theme selector beats app.css —
+  see the item-35 evidence); `markdown.ts` renderer.code override on
+  highlight.js/lib/core + 13 curated modules with aliases (js/jsx, ts/tsx,
+  py, rs, sh/bash/shell, html/xml, yml, md, patch) — known info-string →
+  `hljs.highlight` spans, unknown/missing → byte-identical marked default;
+  inline code untouched (separate `inlineCode` renderer, frozen). `--code-*`
+  light+dark palette in app.css, grouped `.cm-fenced-code .tok-*` +
+  `.preview pre .hljs-*` rules. Key screenshot-safety finding (probe-
+  verified): classHighlighter already emits tok-heading/tok-link/tok-meta
+  on the fixture's plain markdown, so the palette is scoped to fenced
+  lines / `.preview pre` — no committed PNG can change (the fixture has no
+  fence; inline code byte-frozen). 16 unit + 7 e2e (both headline e2e
+  sensitivity-verified), full suite green: 532 unit + 176 e2e (5
+  pre-existing skips). The pre-existing "preview links open in a new tab"
+  e2e caught a self-inflicted regression (the markdown.ts rewrite dropped
+  the DOMPurify `target=_blank` hook) — restored, suite green. Friction
+  found while validating, parked below: `vite preview` binds `localhost`
+  which here resolves ::1-ONLY (headless Chromium then fails to connect —
+  every e2e "element not found"); run e2e against a manually started
+  `vite preview --host` + `cargo run` (generous e2e envs) and let
+  `reuseExistingServer` adopt them; plus CM6 `Line.to`/`doc.line` vs
+  `doc.lineAt` semantics, the missing-extensions `Field is not present`
+  trap, and `hljs.highlight` returning `{ value }` in 11.12. Re-audit
+  (writing experience): no further unblocked gap found — item 35 was the
+  last mandated feature; every remaining candidate is a Parked item
+  blocked on a named human product/design decision (typewriter scrolling
+  default = the only open numbered item, item 23). No unblocked items
+  remain.
 
 - Iteration 1 (run 5) shipped item 34 — the keyboard-shortcuts help sheet
   (human mandate). New `src/lib/shortcuts.ts` (declarative registry of every
@@ -1727,7 +1761,7 @@ registry.
   item 23 (typewriter scrolling) is the only remaining open numbered item and
   is BLOCKED on a human product decision (see Parked).
 
-### 35. OPEN (2026-08-23, human mandate): Code-fence language highlighting (editor + preview)
+### 35. DONE (2026-08-23, run 6, iteration 1): Code-fence language highlighting (editor + preview)
 
 Syntax-highlight code inside ```` ```lang ```` fences. Product decisions
 already made (do not relitigate):
@@ -1781,6 +1815,85 @@ already made (do not relitigate):
 Non-goals (do not start): code formatter, language labels, copy buttons,
 inline-code restyle, new keybindings, highlight.js full bundle.
 
+- Evidence (run 6, iteration 1): **Editor** — `@codemirror/language-data`
+  `languages` (143 descriptions, lazy Vite chunks) wired into
+  `markdown({ base: markdownLanguage, codeLanguages: languages })` in
+  `Editor.svelte`; new `src/lib/cm-fenced-code.ts` — pure
+  `fencedCodeDecorationSet` + `fencedCodeLines` StateField (same
+  docChanged-recompute/`map(tr.changes)` pattern as `cm-title.ts`) that
+  decorates every line a `FencedCode` node touches with `cm-fenced-code`
+  (plus `-start`/`-end` for the rounded corners; spans are merged so a
+  fence-inside-fence nesting can never overlap; indented `CodeBlock`s are
+  not decorated, per scope). The block styling (bg
+  `var(--bg-subtle)`, `padding-inline: 0.75rem`, radius) lives in
+  `Editor.svelte`'s `EditorView.theme`, NOT app.css — CM6 6.43.x's base
+  theme ships a PREFIXED selector (`.ͼ1 .cm-line { padding: 0 2px 0 6px }`,
+  specificity (0,2,0)) that beats a plain `.cm-fenced-code` app.css rule,
+  and `EditorView.theme` emits into the same prefixed scope after the base
+  theme, so it wins the cascade (verified: computed 12px/12px padding,
+  bg-subtle, 6px radius). **Preview** — `markdown.ts` now imports
+  `highlight.js/lib/core` + 13 curated language modules registered under
+  canonical names AND aliases (`js`/`jsx`, `ts`/`tsx`, `py`, `rs`,
+  `sh`/`bash`/`shell`, `html`/`xml`, `yml`, `md`, `patch` — the spec's
+  ~15-language set); `renderer.code` override: first word of the info
+  string (`/^\s*(\S+)/`, marked's own rule) + `hljs.getLanguage` hit →
+  `<pre><code class="hljs language-X">` + `hljs.highlight(text,
+  { language }).value` (try/catch fallback); anything else renders
+  BYTE-IDENTICAL to marked's default (trailing-newline normalize
+  `replace(/\n$/, '') + '\n'` + the same 5-char escape), incl. the no-class
+  no-info form. Inline code is untouched — marked routes codespans through
+  the separate `inlineCode` renderer, so the frozen
+  `` `const x = 1;` `` fixture byte-for-byte cannot change.
+  `hljs.highlight` in 11.12 returns a `{ value: string }` object (NOT a
+  string, contrary to older docs). **DOMPurify** — `span` + `class` are on
+  the default allow list, so the highlighted spans survive `sanitize`
+  (locked by the e2e preview assertions; a node unit test is impossible —
+  dompurify's default export outside a browser is the inert factory, per
+  the parked note). **Palette** — `--code-*` custom properties for light +
+  dark in app.css, grouped rules `.cm-fenced-code .tok-*` (editor, the
+  classHighlighter classes — which the spec already had applied and
+  unstyled) + `.preview pre .hljs-*` (hljs's default prefix; no
+  `classPrefix` reconfigure). LOAD-BEARING SAFETY DETAIL, probe-verified
+  with `highlightTree(fixture, classHighlighter)`: classHighlighter
+  ALREADY emits `tok-heading` (headings), `tok-link` (links) and
+  `tok-meta` (all fence/quote/list/link/inline-code delimiter marks) on
+  PLAIN markdown spans — the screenshots fixture contains all three — so
+  the palette is scoped to `.cm-fenced-code` / `.preview pre` and those
+  markdown classes are deliberately left unstyled; unscoped `tok-*` rules
+  would have restyled the fixture's heading/link/marks and changed the
+  committed PNGs. No chrome (no labels, no copy buttons), no new chord,
+  guards untouched (conceal fence marks, format no-op in fences, and
+  fence auto-close all regression-locked by e2e). 16 new unit tests
+  (6 `markdown.test.ts` code-fence: known lang exact HTML, alias, unknown
+  → `language-klingon` plain, no-info → classless plain, HTML escaping in
+  highlighted output, inline-code frozen; 10 `cm-fenced-code.test.ts`:
+  start/middle/end classes, fence after content, empty fence, lone
+  delimiter, blockquoted fence, unclosed fence to doc end, two separate
+  fences, indented-code exclusion, fence-less doc, StateField recompute on
+  docChanged) + 7 e2e (`e2e/code-fences.spec.ts`): ```` ```js ```` fence
+  shows `tok-keyword`=const / `tok-number`=1 in the editor with 3
+  decorated lines (SENSITIVITY-VERIFIED: fails `element(s) not found` with
+  `codeLanguages` removed), preview shows `hljs` + `language-js` classes
+  with `hljs-keyword`=const / `hljs-number`=1 (SENSITIVITY-VERIFIED: fails
+  `toHaveClass` with the override removed), unknown lang → plain spans
+  count 0 + `language-klingon` class, no-info → no class attribute at all,
+  fence delimiter marks stay visible with the caret on the content line
+  (document byte-identical), ```` ``` ```` + Enter still auto-closes,
+  Mod+B inside a fence is a no-op. Full suite green: 532 unit + 176 e2e
+  (5 pre-existing skips). **Regression caught by the suite during
+  validation:** the markdown.ts rewrite had silently dropped the
+  pre-existing `DOMPurify.addHook('afterSanitizeAttributes')` that adds
+  `target="_blank"` + `rel` to links — the pre-existing "preview links
+  open in a new tab" e2e failed on the first full run and locked it; hook
+  restored. `docs/PLAN.md` scope line added in the same change set; both
+  new deps' justifications are the spec's own (language-aware fence
+  highlighting with lazy chunks; sync marked integration for the curated
+  preview set). Screenshots: NO committed PNG can change — the fixture has
+  no fenced block and its inline code is byte-frozen, and the palette is
+  scoped so the fixture's tok-heading/tok-link/tok-meta spans stay
+  unstyled (docker still unavailable in this env, so no regeneration was
+  attempted — none is needed).
+
 ### 23. BLOCKED (product decision): Typewriter scrolling (keep the caret near mid-viewport while typing)
 
 - Candidate found by the run-3 writing-experience re-audit: no
@@ -1830,6 +1943,49 @@ platforms (NVDA/JAWS use different modifiers).
 
 ## Parked (noticed, not yet scoped)
 
+- **`vite preview` binds `localhost` → ::1 ONLY in this env (run 6,
+  iteration 1):** `getent hosts localhost` returns `::1` first, so
+  `pnpm preview` listens on `[::1]:4173` only — headless Chromium in the
+  e2e suite connects to 127.0.0.1 and every test fails with
+  "element(s) not found" (looks exactly like a client-side crash; the
+  production build itself is fine). Recipe for a green local e2e here
+  (config untouched, `reuseExistingServer: !CI` adopts the manual
+  servers): kill stale procs, then start
+  `DATABASE_URL=sqlite:/tmp/… RATE_CREATE/WRITE/WS_PER_MIN=1000
+  RATE_READ_PER_MIN=5000 MAX_WS_PER_IP=100 cargo run --manifest-path
+  api/Cargo.toml` AND `npx vite preview --host` (all interfaces) in
+  background, verify `curl http://127.0.0.1:4173/` + `:3000/healthz`,
+  then `npx playwright test --workers=2`. A full suite is ~1.2 min on
+  2 workers.
+- **CM6 document/line API traps (run 6, iteration 1):** (1)
+  `doc.line(n)` takes a 1-BASED LINE NUMBER (throws `Invalid line number
+  …` for a position); use `doc.lineAt(pos)` for positions. (2)
+  `Line.to` is the position BEFORE the line break (start-of-next-line
+  minus 1) — a `for (pos = lineAt(pos).to)` walk stalls on the line
+  before the last one; advance with `lineAt(pos).to + 1`. (3)
+  `EditorState` has no `.dispatch()` — that's on `EditorView`; build new
+  states with `state.update(spec).state`. (4) a StateField referenced by
+  `EditorView.decorations.of((view) => view.state.field(x))` MUST also be
+  in the same `extensions` array — the mount throws `RangeError: Field
+  is not present in this state` and the whole editor fails to render
+  (silent in logs, page shows only the header).
+- **CM6 6.43.x base theme uses prefixed selectors (run 6, iteration 1):**
+  every base-theme rule is namespaced under a generated class (e.g.
+  `.ͼ1 .cm-line { padding: 0 2px 0 6px }` — specificity (0,2,0)), so a
+  plain single-class app.css rule for a line decoration LOSES the cascade
+  (observed: `padding-inline: .75rem` silently not applied, computed
+  `6px 2px`). Line/block styling for decorations belongs in
+  `EditorView.theme({ '.my-line': { … } })` — user themes emit into the
+  same prefixed scope after the base theme and win at equal specificity.
+  (Color rules on INNER spans, e.g. `.cm-fenced-code .tok-keyword`
+  (0,2,0) vs no competing rule, are fine in app.css.)
+- **highlight.js 11.12 `hljs.highlight` returns an OBJECT (run 6,
+  iteration 1):** `{ value, language, relevance, illegal, … }` — use
+  `.value` for the HTML string (older guides show a bare string). Also:
+  `lib/languages/*.js` exports a `LanguageFn` (function of the hljs
+  instance), so `registerLanguage('sh', bash)` registers only under the
+  given name — aliases must be registered explicitly, one
+  `registerLanguage` call per name.
 - **Strip-then-recompose generalizes from Enter to Backspace (run 3,
   iteration 9):** item 29's path-(b) pattern (delete the `[x]` token into a
   base state, run the built-in on the STRIPPED state with a captured

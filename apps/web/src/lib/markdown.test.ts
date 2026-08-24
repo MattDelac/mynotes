@@ -89,6 +89,42 @@ describe('task checkboxes', () => {
 	});
 });
 
+describe('code fences', () => {
+	it('highlights a fenced block with a curated language', () => {
+		expect(titleWrappedHtml('```js\nconst a = 1;\n```')).toBe(
+			'<pre><code class="hljs language-js"><span class="hljs-keyword">const</span> a = <span class="hljs-number">1</span>;</code></pre>\n'
+		);
+	});
+
+	it('highlights language aliases', () => {
+		expect(titleWrappedHtml('```sh\necho "hi"\n```')).toBe(
+			'<pre><code class="hljs language-sh"><span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;hi&quot;</span></code></pre>\n'
+		);
+	});
+
+	it('renders an unknown fence language as plain escaped code', () => {
+		expect(titleWrappedHtml('```klingon\nconst a = 1;\n```')).toBe(
+			'<pre><code class="language-klingon">const a = 1;\n</code></pre>\n'
+		);
+	});
+
+	it('renders a fence without an info string as plain code', () => {
+		expect(titleWrappedHtml('```\nplain text\n```')).toBe('<pre><code>plain text\n</code></pre>\n');
+	});
+
+	it('escapes HTML inside highlighted code', () => {
+		const html = titleWrappedHtml('```js\nconst s = "<b>&";\n```');
+		expect(html).toContain('<span class="hljs-string">&quot;&lt;b&gt;&amp;&quot;</span>');
+		expect(html).not.toContain('<b>');
+	});
+
+	it('leaves inline code untouched', () => {
+		expect(titleWrappedHtml('Title\n\nx `a = 1` y')).toBe(
+			'<p class="note-title">Title</p>\n<p>x <code>a = 1</code> y</p>\n'
+		);
+	});
+});
+
 describe('table alignment', () => {
 	it('keeps column alignment attributes on th and td', () => {
 		const html = titleWrappedHtml('| L | C | R |\n| :--- | :-: | ---: |\n| 1 | 2 | 3 |');
