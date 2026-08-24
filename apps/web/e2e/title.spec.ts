@@ -14,6 +14,38 @@ test('a plain first line shows title styling in the editor', async ({ page }) =>
 	await expect(page.locator('.cm-line').nth(2)).not.toHaveClass(/cm-note-title/);
 });
 
+test('a first line directly followed by a tight list is not styled as a title', async ({
+	page
+}) => {
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('Some text\n- item1\n- item2');
+
+	const first = page.locator('.cm-line').first();
+	await expect(first).toHaveText('Some text');
+	await expect(first).not.toHaveClass(/cm-note-title/);
+});
+
+test('a first line followed by a list after a blank line keeps title styling', async ({ page }) => {
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('Some text\n\n- item1\n- item2');
+
+	const first = page.locator('.cm-line').first();
+	await expect(first).toHaveText('Some text');
+	await expect(first).toHaveClass(/cm-note-title/);
+});
+
+test('the preview does not title a first paragraph directly followed by a tight list', async ({
+	page
+}) => {
+	await page.goto('/');
+	await page.getByRole('textbox', { name: 'Note' }).fill('Some text\n- item1\n- item2');
+	await page.getByRole('button', { name: 'Toggle preview' }).click();
+
+	await expect(page.locator('.preview p.note-title')).toHaveCount(0);
+	await expect(page.locator('.preview p').first()).toHaveText('Some text');
+	await expect(page.locator('.preview li')).toHaveText(['item1', 'item2']);
+});
+
 test('an ATX heading first line is not re-styled as a title', async ({ page }) => {
 	await page.goto('/');
 	await page.getByRole('textbox', { name: 'Note' }).fill('# Title\n\nBody text');

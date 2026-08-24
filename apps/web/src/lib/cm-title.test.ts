@@ -51,6 +51,16 @@ describe('cm-title', () => {
 		expect(titleLinesOf(state)).toEqual([]);
 	});
 
+	it('does not style a first line directly followed by a tight list', () => {
+		const state = makeState('Some text\n- item1\n- item2');
+		expect(titleLinesOf(state)).toEqual([]);
+	});
+
+	it('styles a first line followed by a list after a blank line', () => {
+		const state = makeState('Some text\n\n- item1\n- item2');
+		expect(titleLinesOf(state)).toEqual([1]);
+	});
+
 	it('does not style a note that starts with a fenced block', () => {
 		const state = makeState('```\ncode\n```\ntail');
 		expect(titleLinesOf(state)).toEqual([]);

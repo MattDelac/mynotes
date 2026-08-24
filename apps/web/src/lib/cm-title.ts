@@ -27,6 +27,14 @@ export function titleDecorationSet(state: EditorState): DecorationSet {
 		break;
 	}
 	if (!block || block.name !== 'Paragraph') return Decoration.none;
+	const next = block.nextSibling;
+	if (
+		next &&
+		next.name === 'BulletList' &&
+		doc.lineAt(next.from).number === doc.lineAt(block.to - 1).number + 1
+	) {
+		return Decoration.none;
+	}
 	return Decoration.set([titleLine.range(line.from)]);
 }
 
