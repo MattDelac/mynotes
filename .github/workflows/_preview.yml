@@ -51,7 +51,7 @@ jobs:
           tags: type=sha,prefix=sha-,format=short
 
       - name: Build and push API image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: api
           platforms: linux/arm64
@@ -68,7 +68,7 @@ jobs:
           tags: type=sha,prefix=sha-,format=short
 
       - name: Build and push web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
