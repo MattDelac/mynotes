@@ -64,7 +64,7 @@ Abuse-protection env vars (`api/src/config.rs`, all with defaults): `MAX_BLOB_SI
 `RATE_CREATE_PER_MIN` (10), `RATE_WRITE_PER_MIN` (30), `RATE_READ_PER_MIN` (120),
 `RATE_WS_PER_MIN` (20) — per-IP token buckets, 429 + `Retry-After`; `MAX_WS_PER_IP` (10),
 `MAX_ROOM_SUBSCRIBERS` (32), `CREATE_TOKEN` (if set, `POST /notes` requires `x-create-token`),
-`TRUST_PROXY_HEADERS` (true — rate limiting keys on `X-Forwarded-For`).
+`TRUST_PROXY_HEADERS` (false — rate limiting keys on `X-Forwarded-For` only when enabled).
 
 ## API contract (zero-knowledge — payloads are opaque ciphertext bytes)
 

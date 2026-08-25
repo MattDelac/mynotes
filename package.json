@@ -2,6 +2,15 @@
   "name": "mynotes",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
+  "homepage": "https://github.com/MattDelac/mynotes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MattDelac/mynotes.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MattDelac/mynotes/issues"
+  },
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "pnpm --filter web dev",
