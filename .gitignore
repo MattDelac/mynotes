@@ -12,3 +12,4 @@ target/
 .DS_Store
 test-results/
 .direnv/
+*-secret.yaml
