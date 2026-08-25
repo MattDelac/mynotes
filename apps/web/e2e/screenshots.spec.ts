@@ -29,7 +29,7 @@ const FIXTURE_MD = [
 const DESKTOP_VIEWPORT = { width: 1440, height: 900 };
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 const DEMO_SHARE_LINK =
-	'https://notes.mdelacour.com/s/5f2a9c1e-7d3b-4a6e-9c8f-1b2d3e4f5a6b#k9xLm2vQ8wR4tN7pJ3hF6sD1cA5eB8gUoYzW3rT';
+	'https://example.com/s/00000000-0000-4000-8000-000000000000#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 async function createContext(
 	browser: Browser,

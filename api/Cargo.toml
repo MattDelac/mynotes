@@ -3,6 +3,8 @@ name = "mynotes-api"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/MattDelac/mynotes"
+homepage = "https://github.com/MattDelac/mynotes"
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }

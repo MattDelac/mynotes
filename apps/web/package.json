@@ -3,6 +3,15 @@
 	"private": true,
 	"version": "0.1.0",
 	"type": "module",
+	"license": "MIT",
+	"homepage": "https://github.com/MattDelac/mynotes",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/MattDelac/mynotes.git"
+	},
+	"bugs": {
+		"url": "https://github.com/MattDelac/mynotes/issues"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",

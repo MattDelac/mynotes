@@ -2,7 +2,7 @@
 
 ## Architecture
 
-- **Frontend**: static SPA (SvelteKit, adapter-static). Host anywhere: GitHub Pages, nginx, S3.
+- **Frontend**: static SPA (SvelteKit, adapter-static). Host anywhere: nginx, S3, or any static file server.
 - **Backend**: Rust/Axum API, zero-knowledge encrypted blob store, SQLite on disk, optional
   Litestream replication to S3-compatible object storage.
 
@@ -15,7 +15,7 @@ docker run -d \
   --name mynotes-api \
   -p 3000:3000 \
   -v mynotes-data:/data \
-  ghcr.io/OWNER/mynotes-api:latest
+  ghcr.io/mattdelac/mynotes-api:latest
 ```
 
 Environment variables:
@@ -91,11 +91,8 @@ PUBLIC_API_URL=https://api.your-domain.com BASE_PATH= pnpm build
 ```
 
 Deploy `apps/web/build/` to any static host. Set `PUBLIC_API_URL` at build time — the backend URL
-is baked into the bundle. `BASE_PATH` is only needed when hosting under a subpath (e.g. GitHub
-Pages project sites use `/<repo-name>`).
-
-For GitHub Pages, the `deploy-pages` workflow builds automatically; set the `PUBLIC_API_URL`
-repository variable (Settings → Secrets and variables → Actions → Variables).
+is baked into the bundle. `BASE_PATH` is only needed when hosting under a subpath (e.g. behind a
+path-scoped reverse proxy).
 
 ## Security notes
 
