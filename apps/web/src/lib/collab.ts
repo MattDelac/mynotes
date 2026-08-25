@@ -79,7 +79,7 @@ export class RoomSession {
 		}
 		void encryptBytes(this.key, update).then((blob) => {
 			if (this.ws?.readyState === WebSocket.OPEN) {
-				this.ws.send(blob);
+				this.ws.send(blob as BufferSource);
 			}
 		});
 	};

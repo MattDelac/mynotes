@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Copy, Mail, X } from 'lucide-svelte';
+	import { Copy, Mail, X } from '@lucide/svelte';
 
 	interface Props {
 		shareLink: string;
