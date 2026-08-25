@@ -16,7 +16,7 @@ jobs:
           lfs: true
 
       - name: Cache pnpm store and cargo target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ runner.temp }}/screenshots-cache/pnpm-store
