@@ -44,7 +44,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GH_TOKEN }}
 
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta-api
         with:
           images: ${{ env.API_IMAGE }}
@@ -61,7 +61,7 @@ jobs:
           cache-from: type=gha,scope=preview-api
           cache-to: type=gha,mode=max,scope=preview-api
 
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta-web
         with:
           images: ${{ env.WEB_IMAGE }}
