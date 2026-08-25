@@ -12,7 +12,7 @@
 		RefreshCw,
 		Trash2,
 		Upload
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import ShortcutsSheet from './ShortcutsSheet.svelte';
 
 	interface Props {
