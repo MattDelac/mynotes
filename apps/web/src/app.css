@@ -113,6 +113,11 @@ select:focus-visible {
 	font-size: 1.05rem;
 	word-wrap: break-word;
 }
+.preview::after {
+	content: '';
+	display: block;
+	height: 50vh;
+}
 .preview h1 {
 	font-size: 1.7em;
 	margin: 1.2em 0 0.5em;
