@@ -10,6 +10,7 @@
 	import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 	import { classHighlighter, tags } from '@lezer/highlight';
 	import { concealMarks } from './cm-conceal';
+	import { lineBreaks } from './cm-line-breaks';
 	import { titleLines } from './cm-title';
 	import { fencedCodeLines } from './cm-fenced-code';
 	import { clickableLinks } from './cm-links';
@@ -101,8 +102,10 @@
 				concealMarks,
 				titleLines,
 				fencedCodeLines,
+				lineBreaks,
 				EditorView.decorations.of((view) => view.state.field(titleLines)),
 				EditorView.decorations.of((view) => view.state.field(fencedCodeLines)),
+				EditorView.decorations.of((view) => view.state.field(lineBreaks)),
 				clickableLinks,
 				taskMarkerClick(undoManager),
 				cmPlaceholder('Start typing…'),

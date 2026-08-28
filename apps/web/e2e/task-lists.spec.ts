@@ -11,16 +11,22 @@ async function shareCurrentSession(page: Page): Promise<string> {
 async function clickChar(page: Page, linePrefix: string, index: number): Promise<void> {
 	const point = await page.evaluate(
 		({ prefix, index }: { prefix: string; index: number }): { x: number; y: number } | null => {
-			const line = Array.from(document.querySelectorAll<HTMLElement>('.cm-line')).find((el) =>
-				(el.textContent ?? '').startsWith(prefix)
-			);
+			const line = Array.from(document.querySelectorAll<HTMLElement>('.cm-line')).find((el) => {
+				const text = (el.textContent ?? '').replace(/^\n/, '');
+				return text.startsWith(prefix);
+			});
 			if (!line) return null;
 			const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
 			let offset = 0;
 			for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-				const text = node.textContent ?? '';
+				let text = node.textContent ?? '';
+				let shift = 0;
+				if (offset === 0 && text.startsWith('\n')) {
+					shift = 1;
+					text = text.slice(shift);
+				}
 				if (index < offset + text.length) {
-					const at = index - offset;
+					const at = index - offset + shift;
 					const range = document.createRange();
 					range.setStart(node, at);
 					range.setEnd(node, at + 1);
