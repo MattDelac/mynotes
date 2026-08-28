@@ -8,7 +8,7 @@ function linkUrlAtExact(tree: Tree, doc: string, pos: number): string | null {
 		if (node.name === 'URL') {
 			return doc.slice(node.from, node.to).replace(/^</, '').replace(/>$/, '');
 		}
-		if (node.name === 'Link' || node.name === 'Image') {
+		if (node.name === 'Link' || node.name === 'Image' || node.name === 'Autolink') {
 			const url = node.getChild('URL');
 			if (url) return doc.slice(url.from, url.to);
 		}
