@@ -11,13 +11,13 @@ jobs:
       id-token: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           lfs: true
           ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Cache pnpm store and cargo target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ runner.temp }}/screenshots-cache/pnpm-store
@@ -31,7 +31,7 @@ jobs:
           SCREENSHOTS_CACHE: ${{ runner.temp }}/screenshots-cache
         run: bash scripts/screenshots.sh
 
-      - uses: peter-evans/create-pull-request@v6
+      - uses: peter-evans/create-pull-request@v8
         with:
           branch: chore/screenshots
           token: ${{ secrets.GH_TOKEN}}
