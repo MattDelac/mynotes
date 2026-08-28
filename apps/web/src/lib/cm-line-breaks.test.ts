@@ -56,7 +56,7 @@ describe('cm-line-breaks', () => {
 	it('keeps the separator on a line whose marks are concealed', () => {
 		const view = mount('## title\nbody', [concealMarks]);
 		view.dispatch({ selection: { anchor: 13 } });
-		expect(view.contentDOM.textContent).toBe(' title\nbody');
+		expect(view.contentDOM.textContent).toBe('title\nbody');
 	});
 
 	it('shows marks and separators on the cursor line', () => {

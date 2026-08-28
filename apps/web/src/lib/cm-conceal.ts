@@ -1,5 +1,5 @@
 import { syntaxTree } from '@codemirror/language';
-import { EditorState, Range } from '@codemirror/state';
+import { EditorState } from '@codemirror/state';
 import {
 	Decoration,
 	EditorView,
@@ -54,18 +54,34 @@ export function isFencedCodeMark(state: EditorState, pos: number): boolean {
 	return false;
 }
 
-export function buildDecorations(state: EditorState): DecorationSet {
+export interface ConcealRange {
+	from: number;
+	to: number;
+}
+
+export function concealRanges(state: EditorState): ConcealRange[] {
 	const active = activeLines(state);
-	const ranges: Range<Decoration>[] = [];
+	const ranges: ConcealRange[] = [];
 	syntaxTree(state).iterate({
 		enter(cursor) {
 			const node = cursor.node;
 			if (!concealNode(node)) return;
 			if (active.has(state.doc.lineAt(node.from).number)) return;
 			if (node.name === 'CodeMark' && isFencedCodeMark(state, node.from)) return;
-			ranges.push(Decoration.replace({}).range(node.from, node.to));
+			let to = node.to;
+			if (node.name === 'HeaderMark' && /^#+$/.test(state.doc.sliceString(node.from, node.to))) {
+				while (state.doc.sliceString(to, to + 1) === ' ') to += 1;
+			}
+			ranges.push({ from: node.from, to });
 		}
 	});
+	return ranges;
+}
+
+export function buildDecorations(state: EditorState): DecorationSet {
+	const ranges = concealRanges(state).map((range) =>
+		Decoration.replace({}).range(range.from, range.to)
+	);
 	return Decoration.set(ranges, true);
 }
 
