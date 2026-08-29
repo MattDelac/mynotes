@@ -120,8 +120,15 @@
 					'.cm-note-title': {
 						fontSize: '1.7em',
 						fontWeight: '700',
-						lineHeight: '1.3',
+						lineHeight: 'normal',
 						fontFamily: 'var(--font-serif)'
+					},
+					'.cm-title-separator': {
+						borderBottom: '1px solid var(--border)',
+						paddingBottom: 'var(--space-3)'
+					},
+					'.cm-title-separator + .cm-line': {
+						paddingTop: 'var(--space-3)'
 					},
 					'.cm-content': {
 						padding: '1.5rem 0',

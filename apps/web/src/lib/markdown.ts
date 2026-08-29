@@ -115,6 +115,7 @@ export function titleWrappedHtml(content: string, readOnly = true): string {
 	const renderer = taskCheckboxRenderer(scanTaskLines(content), readOnly);
 	const firstIndex = tokens.findIndex((t) => {
 		if (t.type === 'space') return false;
+		if (t.type === 'heading' && t.text.trim() === '') return false;
 		if (t.type === 'paragraph') return t.text.trim() !== '';
 		return true;
 	});
@@ -123,9 +124,13 @@ export function titleWrappedHtml(content: string, readOnly = true): string {
 		const next = tokens[firstIndex + 1];
 		const tightList = next !== undefined && next.type === 'list' && !next.ordered;
 		if (first.type === 'paragraph' && !tightList) {
+			const before = renderTokens(
+				tokens.slice(0, firstIndex).filter((t) => t.type !== 'space'),
+				renderer
+			);
 			const head = renderTokens([first], renderer).replace('<p>', '<p class="note-title">');
 			const rest = renderTokens(tokens.slice(firstIndex + 1), renderer);
-			return head + rest;
+			return before + head + rest;
 		}
 	}
 	return renderTokens(tokens, renderer);

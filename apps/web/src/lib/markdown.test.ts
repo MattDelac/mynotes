@@ -16,6 +16,10 @@ describe('titleWrappedHtml', () => {
 		expect(titleWrappedHtml('Title\n====\n\nBody')).toBe('<h1>Title</h1>\n<p>Body</p>\n');
 	});
 
+	it('treats the first paragraph as the title past an empty heading line', () => {
+		expect(titleWrappedHtml('# \nBody')).toBe('<h1></h1>\n<p class="note-title">Body</p>\n');
+	});
+
 	it('finds the title past a leading blank line', () => {
 		expect(titleWrappedHtml('\n\nMeeting Notes\nBody')).toBe(
 			'<p class="note-title">Meeting Notes<br>Body</p>\n'

@@ -20,6 +20,13 @@ function titleLinesOf(state: EditorState): number[] {
 	return lines.sort((a, b) => a - b);
 }
 
+function titleClassOf(state: EditorState): string | null {
+	const cursor = titleDecorationSet(state).iter();
+	if (!cursor.value) return null;
+	const spec = cursor.value.spec as { class?: string };
+	return spec.class ?? null;
+}
+
 describe('cm-title', () => {
 	it('styles a plain first line as the title', () => {
 		const state = makeState('Meeting Notes\n\nBody text');
@@ -104,5 +111,43 @@ describe('cm-title', () => {
 		expect(cursor.value?.spec).toMatchObject({ class: 'cm-note-title' });
 		cursor.next();
 		expect(cursor.value).toBeNull();
+	});
+
+	it('marks the title line with the separator class when content follows', () => {
+		expect(titleClassOf(makeState('Meeting Notes\n\nBody text'))).toBe(
+			'cm-note-title cm-title-separator'
+		);
+		expect(titleClassOf(makeState('Meeting Notes\nBody text'))).toBe(
+			'cm-note-title cm-title-separator'
+		);
+	});
+
+	it('omits the separator class when the title is the whole note', () => {
+		expect(titleClassOf(makeState('Meeting Notes'))).toBe('cm-note-title');
+	});
+
+	it('omits the separator class when only blank lines follow the title', () => {
+		expect(titleClassOf(makeState('Meeting Notes\n\n'))).toBe('cm-note-title');
+	});
+
+	it('omits the separator class when there is no title', () => {
+		expect(titleClassOf(makeState('- item\n- two'))).toBeNull();
+		expect(titleClassOf(makeState('# Heading\n\nBody'))).toBeNull();
+	});
+
+	it('drops the separator when the following content is deleted', () => {
+		const state = makeState('Meeting Notes\n\nBody');
+		const trimmed = state.update({ changes: { from: 15, to: 19, insert: '' } }).state;
+		expect(titleClassOf(trimmed)).toBe('cm-note-title');
+	});
+
+	it('styles the line after a bare heading marker as the title', () => {
+		const state = makeState('# \nBody text');
+		expect(titleLinesOf(state)).toEqual([2]);
+	});
+
+	it('styles nothing when the note is only bare heading markers and blanks', () => {
+		expect(titleLinesOf(makeState('#'))).toEqual([]);
+		expect(titleLinesOf(makeState('# \n\n'))).toEqual([]);
 	});
 });
