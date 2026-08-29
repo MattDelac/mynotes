@@ -43,6 +43,7 @@ describe('shortcuts registry', () => {
 			'Mod+Alt+S',
 			'Mod+Alt+P',
 			'Mod+E',
+			'Mod+Shift+E',
 			'Mod+O',
 			'Mod+Z',
 			'Mod+Shift+Z',
@@ -95,6 +96,11 @@ describe('visibleShortcuts', () => {
 		const rows = visibleShortcuts(true);
 		expect(rows.length).toBeGreaterThan(0);
 		for (const row of rows) expect(row.readOnlySafe).toBe(true);
-		expect(rows.map((row) => row.label)).toEqual(['Export', 'Sidebar', 'This sheet']);
+		expect(rows.map((row) => row.label)).toEqual([
+			'Export',
+			'Export all notes',
+			'Sidebar',
+			'This sheet'
+		]);
 	});
 });

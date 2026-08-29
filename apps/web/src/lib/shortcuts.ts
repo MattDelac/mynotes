@@ -38,6 +38,7 @@ export const shortcuts: ShortcutRow[] = [
 	{ group: 'App', label: 'New session', keys: ['Mod+Alt+S'] },
 	{ group: 'App', label: 'Preview', keys: ['Mod+Alt+P'] },
 	{ group: 'App', label: 'Export', keys: ['Mod+E'], readOnlySafe: true },
+	{ group: 'App', label: 'Export all notes', keys: ['Mod+Shift+E'], readOnlySafe: true },
 	{ group: 'App', label: 'Sidebar', keys: ['Mod+O'], readOnlySafe: true },
 	{ group: 'App', label: 'Undo', keys: ['Mod+Z'] },
 	{ group: 'App', label: 'Redo', keys: ['Mod+Shift+Z'] },

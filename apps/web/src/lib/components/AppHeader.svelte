@@ -108,6 +108,7 @@
 		const isNewSession = e.altKey && (isMac ? e.code === 'KeyS' : e.key.toLowerCase() === 's');
 		const isPreview = e.altKey && (isMac ? e.code === 'KeyP' : e.key.toLowerCase() === 'p');
 		const isGrammar = e.altKey && (isMac ? e.code === 'KeyG' : e.key.toLowerCase() === 'g');
+		const isExportAll = e.shiftKey && e.code === 'KeyE';
 		if (mod && isNewNote) {
 			e.preventDefault();
 			onMenuAction?.('newNote');
@@ -120,6 +121,9 @@
 		} else if (mod && isGrammar && !readOnly) {
 			e.preventDefault();
 			onGrammarCheck?.();
+		} else if (mod && isExportAll) {
+			e.preventDefault();
+			onMenuAction?.('exportAll');
 		} else if (mod && e.key === 'e') {
 			e.preventDefault();
 			onMenuAction?.('export');

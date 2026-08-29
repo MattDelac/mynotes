@@ -51,6 +51,17 @@ test('? with the editor focused types a literal ? into the document', async ({ p
 	await expect(sheet(page)).toHaveCount(0);
 });
 
+test('the sheet lists the export-all shortcut', async ({ page }) => {
+	await page.goto('/');
+	const editor = page.getByRole('textbox', { name: 'Note' });
+	await editor.fill('sheet export all');
+	await page.waitForTimeout(700);
+
+	await openSheetWithQuestion(page);
+	await expect(sheet(page)).toContainText('Export all notes');
+	await expect(sheet(page)).toContainText('Ctrl+Shift+E');
+});
+
 test('the menu entry opens the sheet', async ({ page }) => {
 	await page.goto('/');
 	const editor = page.getByRole('textbox', { name: 'Note' });

@@ -31,7 +31,7 @@
 	import * as Y from 'yjs';
 	import { debounce } from '$lib/debounce';
 	import { mailtoLink, sessionOwnerLink, sessionViewLink } from '$lib/share';
-	import { downloadNote } from '$lib/export';
+	import { downloadNote, downloadExportArchive } from '$lib/export';
 	import { scanTaskLines } from '$lib/task-lines';
 	import { forgetSelection } from '$lib/selection-memory';
 	import { forgetUndoManager, getUndoManager } from '$lib/undo-memory';
@@ -110,6 +110,22 @@
 		const ok = confirm('This will export an unencrypted copy of the note. Continue?');
 		if (ok) {
 			downloadNote({ id: noteId, content, createdAt: 0, updatedAt: Date.now() });
+		}
+	}
+
+	function exportAllNotes() {
+		const doc = sessionDoc;
+		if (!doc) return;
+		const entries = [...doc.notes.entries()].map(([id, text]) => ({
+			id,
+			content: text.toString()
+		}));
+		if (entries.length === 0) return;
+		const ok = confirm(
+			'This will export unencrypted copies of all notes in the session. Continue?'
+		);
+		if (ok) {
+			downloadExportArchive(entries);
 		}
 	}
 
@@ -474,6 +490,7 @@
 
 	function handleMenuAction(action: string) {
 		if (action === 'export') exportNote();
+		else if (action === 'exportAll') exportAllNotes();
 		else if (action === 'import') fileInput?.click();
 		else if (action === 'newNote' && canWrite) void newNote();
 		else if (action === 'newSession') startEmptySession();
