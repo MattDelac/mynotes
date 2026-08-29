@@ -46,6 +46,7 @@ describe('shortcuts registry', () => {
 			'Mod+O',
 			'Mod+Z',
 			'Mod+Shift+Z',
+			'Mod+Alt+G',
 			'?'
 		];
 		for (const chord of expected) expect(all).toContain(chord);

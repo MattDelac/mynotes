@@ -10,6 +10,7 @@
 		LogOut,
 		Pencil,
 		RefreshCw,
+		SpellCheck,
 		Trash2,
 		Upload
 	} from '@lucide/svelte';
@@ -26,6 +27,8 @@
 		onLeave?: () => void;
 		onTogglePreview?: () => void;
 		onMenuAction?: (action: string) => void;
+		onGrammarCheck?: () => void;
+		grammarEnabled?: boolean;
 		showNewSession?: boolean;
 		showDeleteNote?: boolean;
 		preview?: boolean;
@@ -43,6 +46,8 @@
 		onLeave,
 		onTogglePreview,
 		onMenuAction,
+		onGrammarCheck,
+		grammarEnabled = false,
 		showNewSession = false,
 		showDeleteNote = false,
 		preview = false,
@@ -102,6 +107,7 @@
 		const isNewNote = e.altKey && (isMac ? e.code === 'KeyN' : e.key.toLowerCase() === 'n');
 		const isNewSession = e.altKey && (isMac ? e.code === 'KeyS' : e.key.toLowerCase() === 's');
 		const isPreview = e.altKey && (isMac ? e.code === 'KeyP' : e.key.toLowerCase() === 'p');
+		const isGrammar = e.altKey && (isMac ? e.code === 'KeyG' : e.key.toLowerCase() === 'g');
 		if (mod && isNewNote) {
 			e.preventDefault();
 			onMenuAction?.('newNote');
@@ -111,6 +117,9 @@
 		} else if (mod && isPreview && !readOnly) {
 			e.preventDefault();
 			onTogglePreview?.();
+		} else if (mod && isGrammar && !readOnly) {
+			e.preventDefault();
+			onGrammarCheck?.();
 		} else if (mod && e.key === 'e') {
 			e.preventDefault();
 			onMenuAction?.('export');
@@ -258,6 +267,20 @@
 							<span>Delete note</span>
 						</button>
 					{/if}
+					{#if onGrammarCheck && !readOnly}
+						<button
+							class="menu-item"
+							onclick={() => {
+								onMenuAction('toggleGrammar');
+								closeMenu();
+							}}
+							aria-label="Grammar check"
+						>
+							<SpellCheck size={15} />
+							<span>Grammar check</span>
+							{#if grammarEnabled}<span class="menu-check">✓</span>{/if}
+						</button>
+					{/if}
 					<button
 						class="menu-item"
 						onclick={() => {
@@ -385,6 +408,11 @@
 	}
 	.menu-item:hover {
 		background: var(--bg-hover);
+	}
+	.menu-check {
+		margin-left: auto;
+		color: var(--fg-muted);
+		font-size: 0.8rem;
 	}
 	.backdrop {
 		position: fixed;
