@@ -41,6 +41,7 @@ export const shortcuts: ShortcutRow[] = [
 	{ group: 'App', label: 'Sidebar', keys: ['Mod+O'], readOnlySafe: true },
 	{ group: 'App', label: 'Undo', keys: ['Mod+Z'] },
 	{ group: 'App', label: 'Redo', keys: ['Mod+Shift+Z'] },
+	{ group: 'App', label: 'Grammar check', keys: ['Mod+Alt+G'] },
 	{ group: 'App', label: 'This sheet', keys: ['?'], readOnlySafe: true },
 	{ group: 'Typing', label: 'Task line: `- [ ]` + space starts a task item' },
 	{ group: 'Typing', label: 'Code fence: ``` + Enter auto-closes the fence' },

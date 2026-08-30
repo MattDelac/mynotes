@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
@@ -33,13 +34,17 @@
 	import { downloadNote } from '$lib/export';
 	import { scanTaskLines } from '$lib/task-lines';
 	import { forgetSelection } from '$lib/selection-memory';
-	import { forgetUndoManager } from '$lib/undo-memory';
+	import { forgetUndoManager, getUndoManager } from '$lib/undo-memory';
 	import { showToast } from '$lib/toast';
+	import { GrammarChecker, type GrammarSuggestion } from '$lib/grammar';
+	import { loadGrammarModel, type ModelLoadProgress } from '$lib/grammar-model';
+	import { grammarCheckEnabled, setGrammarCheckEnabled } from '$lib/grammar-prefs';
 	import Editor from '$lib/Editor.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import SharePanel from '$lib/components/SharePanel.svelte';
 	import ToastStack from '$lib/components/ToastStack.svelte';
+	import GrammarPanel from '$lib/components/GrammarPanel.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -62,6 +67,13 @@
 	let sessionState = $state<SessionState | 'idle'>('idle');
 	let collab: RoomSession | null = null;
 	let textObserver: (() => void) | null = null;
+	let grammarOn = $state(grammarCheckEnabled());
+	let grammarPanelOpen = $state(false);
+	let grammarChecking = $state(false);
+	let grammarModelState = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
+	let grammarModelProgress = $state<ModelLoadProgress>({ percent: null, loadedBytes: 0 });
+	let grammarSuggestions = $state<GrammarSuggestion[]>([]);
+	let dismissedSuggestionKey = $state('');
 
 	const canWrite = $derived(!data.shared || data.shared.owner);
 	const title = $derived(noteTitle(content));
@@ -156,20 +168,116 @@
 
 	const syncMeta = debounce(syncMetadata, 300);
 
+	const suggestionKey = (list: GrammarSuggestion[]) =>
+		list.map((s) => `${s.from}:${s.to}:${s.correction}`).join('|');
+
+	const grammar = new GrammarChecker({
+		isReady: () => grammarOn && canWrite && grammarModelState === 'ready',
+		model: async (sentence) => (await loadGrammarModel())(sentence),
+		onSuggestions: (list) => {
+			grammarSuggestions = list;
+			if (list.length > 0 && suggestionKey(list) !== dismissedSuggestionKey) {
+				grammarPanelOpen = true;
+			}
+		},
+		onState: (state) => (grammarChecking = state === 'checking'),
+		onError: () => showToast('danger', 'Grammar check failed')
+	});
+
+	onDestroy(() => grammar.cancel());
+
+	$effect(() => {
+		if (grammarOn && canWrite) startModelLoad();
+	});
+
+	function startModelLoad() {
+		if (grammarModelState === 'loading' || grammarModelState === 'ready') return;
+		grammarModelState = 'loading';
+		grammarModelProgress = { percent: null, loadedBytes: 0 };
+		void loadGrammarModel((p) => (grammarModelProgress = p))
+			.then(() => {
+				grammarModelState = 'ready';
+				if (grammarOn && ytext) grammar.checkNow(ytext.toString());
+			})
+			.catch(() => {
+				grammarModelState = 'error';
+				showToast('danger', 'Grammar model failed to load');
+			});
+	}
+
+	function toggleGrammar() {
+		grammarOn = !grammarOn;
+		setGrammarCheckEnabled(grammarOn);
+		if (grammarOn) {
+			grammarPanelOpen = true;
+			if (grammarModelState === 'ready') {
+				if (ytext) grammar.checkNow(ytext.toString());
+			} else {
+				startModelLoad();
+			}
+		} else {
+			grammar.cancel();
+			grammarPanelOpen = false;
+			grammarChecking = false;
+		}
+	}
+
+	function runGrammarCheck() {
+		if (!canWrite) return;
+		if (!grammarOn) {
+			grammarOn = true;
+			setGrammarCheckEnabled(true);
+		}
+		grammarPanelOpen = true;
+		if (grammarModelState === 'ready') {
+			if (ytext) grammar.checkNow(ytext.toString());
+		} else {
+			startModelLoad();
+		}
+	}
+
+	function dismissGrammar() {
+		grammarPanelOpen = false;
+		dismissedSuggestionKey = suggestionKey(grammarSuggestions);
+	}
+
+	function applyGrammarSuggestion(suggestion: GrammarSuggestion) {
+		const text = ytext;
+		const doc = text?.doc;
+		if (!text || !doc) return;
+		const current = text.toString();
+		if (current.slice(suggestion.from, suggestion.to) !== suggestion.original) {
+			grammarSuggestions = grammarSuggestions.filter((s) => s !== suggestion);
+			return;
+		}
+		const undoManager = getUndoManager(text);
+		undoManager.stopCapturing();
+		doc.transact(() => {
+			text.delete(suggestion.from, suggestion.to - suggestion.from);
+			text.insert(suggestion.from, suggestion.correction);
+		});
+		undoManager.stopCapturing();
+		grammarSuggestions = [];
+		dismissedSuggestionKey = '';
+	}
+
 	function openNote(id: string) {
 		const doc = sessionDoc;
 		if (!doc) return;
 		const text = doc.notes.get(id);
 		if (!text) return;
 		if (textObserver && ytext) ytext.unobserve(textObserver);
+		grammar.cancel();
 		noteId = id;
 		ytext = text;
 		content = text.toString();
 		textObserver = () => {
 			content = text.toString();
 			void syncMeta();
+			grammar.schedule(text.toString());
 		};
 		text.observe(textObserver);
+		grammar.schedule(text.toString());
 	}
 
 	function selectNote(id: string) {
@@ -370,6 +478,7 @@
 		else if (action === 'newNote' && canWrite) void newNote();
 		else if (action === 'newSession') startEmptySession();
 		else if (action === 'deleteNote') void deleteCurrentNote();
+		else if (action === 'toggleGrammar' && canWrite) toggleGrammar();
 	}
 
 	function toggleTaskLine(line: number, expectChecked: boolean) {
@@ -410,6 +519,8 @@
 		onTogglePreview={() => (preview = !preview)}
 		{preview}
 		onMenuAction={handleMenuAction}
+		onGrammarCheck={runGrammarCheck}
+		grammarEnabled={grammarOn}
 		showNewSession={!data.shared}
 		showDeleteNote={isMobile}
 	/>
@@ -460,6 +571,16 @@
 			{#key noteId}
 				<Editor {ytext} {noteId} editable={canWrite} />
 			{/key}
+			{#if grammarPanelOpen && grammarOn && canWrite}
+				<GrammarPanel
+					checking={grammarChecking}
+					modelLoading={grammarModelState === 'loading'}
+					modelProgress={grammarModelProgress}
+					suggestions={grammarSuggestions}
+					onApply={applyGrammarSuggestion}
+					onDismiss={dismissGrammar}
+				/>
+			{/if}
 		{/if}
 	</main>
 
