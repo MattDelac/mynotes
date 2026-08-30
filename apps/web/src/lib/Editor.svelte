@@ -68,6 +68,7 @@
 		{ tag: tags.strikethrough, textDecoration: 'line-through' },
 		{ tag: tags.monospace, fontFamily: 'var(--mono)' },
 		{ tag: tags.link, color: 'var(--accent)', textDecoration: 'underline' },
+		{ tag: tags.url, color: 'var(--accent)', textDecoration: 'underline' },
 		{ tag: tags.quote, color: 'var(--fg-muted)', fontStyle: 'italic' },
 		{ tag: tags.processingInstruction, color: 'var(--fg-muted)' }
 	]);
