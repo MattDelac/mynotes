@@ -156,3 +156,57 @@ describe('note selections', () => {
 		expect(await db.getNote(note.id)).toEqual(note);
 	});
 });
+
+describe('outbox', () => {
+	beforeEach(() => {
+		vi.resetModules();
+		indexedDB = new IDBFactory();
+	});
+
+	it('creates the outbox store when upgrading from v3', async () => {
+		const { openDB } = await import('idb');
+		const previous = await openDB('mynotes', 3, {
+			upgrade(database) {
+				const notes = database.createObjectStore('notes', { keyPath: 'id' });
+				notes.createIndex('by-updated', 'updatedAt');
+				const sessions = database.createObjectStore('sessions', { keyPath: 'id' });
+				sessions.createIndex('by-updated', 'updatedAt');
+				database.createObjectStore('selections', { keyPath: 'id' });
+			}
+		});
+		previous.close();
+		const db = await import('./db');
+		await db.appendOutbox('room-1', new Uint8Array([1, 2, 3]));
+		expect(await db.getOutbox('room-1')).toEqual([new Uint8Array([1, 2, 3])]);
+	});
+
+	it('returns an empty list for a room that was never queued', async () => {
+		const db = await freshDb();
+		expect(await db.getOutbox('room-1')).toEqual([]);
+	});
+
+	it('appends updates per room in order', async () => {
+		const db = await freshDb();
+		await db.appendOutbox('room-1', new Uint8Array([1]));
+		await db.appendOutbox('room-2', new Uint8Array([9]));
+		await db.appendOutbox('room-1', new Uint8Array([2]));
+		expect(await db.getOutbox('room-1')).toEqual([new Uint8Array([1]), new Uint8Array([2])]);
+		expect(await db.getOutbox('room-2')).toEqual([new Uint8Array([9])]);
+	});
+
+	it('clears a room outbox', async () => {
+		const db = await freshDb();
+		await db.appendOutbox('room-1', new Uint8Array([1]));
+		await db.clearOutbox('room-1');
+		expect(await db.getOutbox('room-1')).toEqual([]);
+	});
+
+	it('deletes a session', async () => {
+		const db = await freshDb();
+		const session = db.createSession();
+		await db.saveSession(session);
+		expect(await db.getSession(session.id)).toEqual(session);
+		await db.deleteSession(session.id);
+		expect(await db.getSession(session.id)).toBeUndefined();
+	});
+});

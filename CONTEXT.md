@@ -40,6 +40,26 @@ _Avoid_: toolbar, feature set
 The read-only rendered view of a note's markdown.
 _Avoid_: reading mode, rendered mode
 
+**Library**:
+The home page listing every session the user owns or has subscribed to, with
+open, delete, and new-session actions.
+_Avoid_: dashboard, home, note list
+
+**Owned session**:
+A session the user can edit and sync — created locally or added to the
+library with an edit token.
+_Avoid_: local session, primary session
+
+**Subscribed session**:
+A session the user added to the library from a view-only share link; readable
+offline but never synced from the user's client.
+_Avoid_: follower, watched session
+
+**Pending edits**:
+Local Yjs updates made without a live connection, held in a per-room outbox
+until a snapshot compaction succeeds.
+_Avoid_: queue, dirty state, backlog
+
 **UX Backlog**:
 The committed plan of record that autonomous UX runs consume and update.
 _Avoid_: roadmap, TODO

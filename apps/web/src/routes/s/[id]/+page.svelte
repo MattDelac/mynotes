@@ -25,6 +25,7 @@
 		destroySessionDoc,
 		getSessionDoc,
 		rememberCurrentNote,
+		rememberSession,
 		removeNote,
 		type SessionDoc
 	} from '$lib/sessions';
@@ -54,7 +55,15 @@
 	let ytext = $state<Y.Text | null>(null);
 	let content = $state('');
 	let notes = $state<Note[]>([]);
-	let share = $state<ShareInfo | null>(null);
+	let share = $state<ShareInfo | null>(
+		data.shared
+			? {
+					remoteId: data.shared.remoteId,
+					key: data.shared.key,
+					editToken: data.shared.editToken
+				}
+			: null
+	);
 	let preview = $state(false);
 	let sidebarOpen = $state(false);
 	let isMobile = $state(window.matchMedia('(max-width: 640px)').matches);
@@ -65,6 +74,7 @@
 	let previewEl = $state<HTMLElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let sessionState = $state<SessionState | 'idle'>('idle');
+	let pendingCount = $state(0);
 	let collab: RoomSession | null = null;
 	let textObserver: (() => void) | null = null;
 	let grammarOn = $state(grammarCheckEnabled());
@@ -75,7 +85,7 @@
 	let grammarSuggestions = $state<GrammarSuggestion[]>([]);
 	let dismissedSuggestionKey = $state('');
 
-	const canWrite = $derived(!data.shared || data.shared.owner);
+	const canWrite = $derived(!share || Boolean(share.editToken));
 	const title = $derived(noteTitle(content));
 	const rendered = $derived(renderMarkdown(content, !canWrite));
 	const headerTitle = $derived(
@@ -157,9 +167,28 @@
 		await goto(resolve('/'));
 	}
 
+	async function addToLibrary() {
+		const shared = data.shared;
+		if (!shared) return;
+		const now = Date.now();
+		await saveSession({
+			id: shared.remoteId,
+			createdAt: now,
+			updatedAt: now,
+			share: {
+				remoteId: shared.remoteId,
+				key: shared.key,
+				editToken: shared.editToken
+			}
+		});
+		rememberSession(shared.remoteId);
+		window.location.href = resolve(`/s/${shared.remoteId}`);
+	}
+
 	async function syncMetadata() {
 		const doc = sessionDoc;
 		if (!doc) return;
+		const sessionId = data.sessionId ?? data.shared?.remoteId;
 		const ids = [...doc.notes.keys()];
 		const all = await listNotes();
 		const byId = new Map(all.map((n) => [n.id, n]));
@@ -167,11 +196,14 @@
 		for (const id of ids) {
 			const text = doc.notes.get(id)?.toString() ?? '';
 			const existing = byId.get(id);
-			const changed = !existing || existing.content !== text;
 			const meta: Note = existing
 				? { ...existing, content: text }
 				: { id, content: text, createdAt: Date.now(), updatedAt: Date.now() };
-			if (data.sessionId) meta.sessionId = data.sessionId;
+			if (sessionId) meta.sessionId = sessionId;
+			const changed =
+				!existing ||
+				existing.content !== text ||
+				(sessionId !== undefined && existing.sessionId !== sessionId);
 			if (changed) {
 				meta.updatedAt = Date.now();
 				await saveNote(meta);
@@ -311,7 +343,8 @@
 			roomId: info.remoteId,
 			key: await importKey(info.key),
 			editToken: info.editToken,
-			onState: (state) => (sessionState = state)
+			onState: (state) => (sessionState = state),
+			onPending: (count) => (pendingCount = count)
 		});
 		try {
 			await collab.start();
@@ -353,6 +386,7 @@
 			sessionDoc = null;
 			ytext = null;
 			noteId = '';
+			pendingCount = 0;
 		};
 	});
 
@@ -365,21 +399,6 @@
 		void (async () => {
 			const shared = data.shared;
 			const doc = await getSessionDoc(remoteId);
-			if (cancelled) return;
-			const room = new RoomSession({
-				ydoc: doc.ydoc,
-				roomId: remoteId,
-				key: await importKey(shared.key),
-				editToken: shared.editToken,
-				onState: (state) => (sessionState = state)
-			});
-			collab = room;
-			try {
-				await room.start();
-			} catch {
-				sessionState = 'offline';
-				return;
-			}
 			if (cancelled) return;
 			sessionDoc = doc;
 			boundDoc = doc;
@@ -394,6 +413,25 @@
 			doc.notes.observeDeep(mapObserver);
 			const id = data.noteId && doc.notes.has(data.noteId) ? data.noteId : (notes[0]?.id ?? '');
 			if (id) openNote(id);
+			if (cancelled) return;
+			const room = new RoomSession({
+				ydoc: doc.ydoc,
+				roomId: remoteId,
+				key: await importKey(shared.key),
+				editToken: shared.editToken,
+				onState: (state) => (sessionState = state),
+				onPending: (count) => (pendingCount = count)
+			});
+			if (cancelled) {
+				room.stop();
+				return;
+			}
+			collab = room;
+			try {
+				await room.start();
+			} catch {
+				sessionState = 'offline';
+			}
 		})();
 		return () => {
 			cancelled = true;
@@ -406,6 +444,7 @@
 			ytext = null;
 			noteId = '';
 			sessionState = 'idle';
+			pendingCount = 0;
 		};
 	});
 
@@ -526,9 +565,12 @@
 	<AppHeader
 		title={headerTitle}
 		sharedMode={Boolean(data.shared)}
-		readOnly={data.shared ? !data.shared.owner : false}
+		readOnly={!canWrite}
 		{showSync}
 		{sessionState}
+		{pendingCount}
+		showHome
+		onHome={() => goto(resolve('/'))}
 		{sidebarOpen}
 		onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
 		onShare={shareSession}
@@ -537,6 +579,7 @@
 		{preview}
 		onMenuAction={handleMenuAction}
 		onGrammarCheck={runGrammarCheck}
+		onAddToLibrary={data.shared ? addToLibrary : undefined}
 		grammarEnabled={grammarOn}
 		showNewSession={!data.shared}
 		showDeleteNote={isMobile}

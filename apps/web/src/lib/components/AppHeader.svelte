@@ -4,6 +4,8 @@
 		Download,
 		Eye,
 		FilePlus2,
+		House,
+		HousePlus,
 		Keyboard,
 		Link2,
 		List,
@@ -22,12 +24,16 @@
 		readOnly?: boolean;
 		showSync?: boolean;
 		sessionState?: 'idle' | 'live' | 'connecting' | 'offline';
+		pendingCount?: number;
+		showHome?: boolean;
+		onHome?: () => void;
 		onToggleSidebar?: () => void;
 		onShare?: () => void;
 		onLeave?: () => void;
 		onTogglePreview?: () => void;
 		onMenuAction?: (action: string) => void;
 		onGrammarCheck?: () => void;
+		onAddToLibrary?: () => void;
 		grammarEnabled?: boolean;
 		showNewSession?: boolean;
 		showDeleteNote?: boolean;
@@ -41,12 +47,16 @@
 		readOnly = false,
 		showSync = false,
 		sessionState = 'idle',
+		pendingCount = 0,
+		showHome = false,
+		onHome,
 		onToggleSidebar,
 		onShare,
 		onLeave,
 		onTogglePreview,
 		onMenuAction,
 		onGrammarCheck,
+		onAddToLibrary,
 		grammarEnabled = false,
 		showNewSession = false,
 		showDeleteNote = false,
@@ -148,6 +158,11 @@
 </script>
 
 <header>
+	{#if showHome}
+		<button class="icon" aria-label="Sessions" title="Back to sessions" onclick={() => onHome?.()}>
+			<House size={18} />
+		</button>
+	{/if}
 	{#if onToggleSidebar}
 		<button
 			class="icon toggle-notes"
@@ -165,9 +180,13 @@
 		<span class="sync">
 			<span class="sync-dot" style="background-color: {syncColor}"></span>
 			{#if sessionState === 'connecting'}
-				<span class="sync-text">connecting…</span>
+				<span class="sync-text"
+					>{pendingCount > 0 ? `connecting — ${pendingCount} changes pending` : 'connecting…'}</span
+				>
 			{:else if sessionState === 'offline'}
-				<span class="sync-text">offline</span>
+				<span class="sync-text"
+					>{pendingCount > 0 ? `offline — ${pendingCount} changes pending` : 'offline'}</span
+				>
 			{/if}
 		</span>
 	{/if}
@@ -283,6 +302,19 @@
 							<SpellCheck size={15} />
 							<span>Grammar check</span>
 							{#if grammarEnabled}<span class="menu-check">✓</span>{/if}
+						</button>
+					{/if}
+					{#if onAddToLibrary}
+						<button
+							class="menu-item"
+							onclick={() => {
+								onAddToLibrary?.();
+								closeMenu();
+							}}
+							aria-label="Add to my sessions"
+						>
+							<HousePlus size={15} />
+							<span>Add to my sessions</span>
 						</button>
 					{/if}
 					<button
