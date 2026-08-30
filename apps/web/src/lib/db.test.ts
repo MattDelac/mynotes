@@ -23,6 +23,50 @@ describe('noteTitle', () => {
 		expect(noteTitle('## My heading')).toBe('My heading');
 	});
 
+	it('strips indented headings', () => {
+		expect(noteTitle('  # Indented heading')).toBe('Indented heading');
+	});
+
+	it('returns Untitled for a bare heading marker', () => {
+		expect(noteTitle('#')).toBe('Untitled');
+		expect(noteTitle('# ')).toBe('Untitled');
+	});
+
+	it('uses the first line with text past a bare heading marker', () => {
+		expect(noteTitle('# \nBody')).toBe('Body');
+		expect(noteTitle('#\n\nBody')).toBe('Body');
+	});
+
+	it('keeps hashes that do not form a heading', () => {
+		expect(noteTitle('#NoSpace')).toBe('#NoSpace');
+	});
+
+	it('returns Untitled when the first line is a list item', () => {
+		expect(noteTitle('- item\n- two')).toBe('Untitled');
+		expect(noteTitle('1. first\n2. second')).toBe('Untitled');
+	});
+
+	it('returns Untitled when the first line is a quote, fence, indented code, table, or break', () => {
+		expect(noteTitle('> quoted')).toBe('Untitled');
+		expect(noteTitle('```\ncode\n```')).toBe('Untitled');
+		expect(noteTitle('    indented code')).toBe('Untitled');
+		expect(noteTitle('| a | b |\n| - | - |')).toBe('Untitled');
+		expect(noteTitle('---\n\nBody')).toBe('Untitled');
+	});
+
+	it('returns Untitled for a first line directly followed by a tight bullet list', () => {
+		expect(noteTitle('Some text\n- item1\n- item2')).toBe('Untitled');
+		expect(noteTitle('Line one\nLine two\n- item')).toBe('Untitled');
+	});
+
+	it('keeps the title when a list follows after a blank line', () => {
+		expect(noteTitle('Some text\n\n- item1')).toBe('Some text');
+	});
+
+	it('keeps the title when a tight ordered list follows', () => {
+		expect(noteTitle('Some text\n1. item')).toBe('Some text');
+	});
+
 	it('truncates long titles', () => {
 		expect(noteTitle('x'.repeat(100))).toHaveLength(60);
 	});
