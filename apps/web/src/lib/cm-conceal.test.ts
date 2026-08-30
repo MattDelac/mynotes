@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { EditorSelection, EditorState } from '@codemirror/state';
-import { buildDecorations } from './cm-conceal';
+import { buildDecorations, concealRanges } from './cm-conceal';
 
 type Span = [number, number];
 
@@ -143,5 +143,96 @@ describe('link concealment', () => {
 		expect(lineSpans(makeState(doc, 3), 1)).toEqual([]);
 		expect(lineSpans(makeState(doc, 33), 2)).toEqual([]);
 		expect(lineSpans(makeState(doc, doc.length), 3)).toEqual([]);
+	});
+});
+
+function makeState(doc: string, anchor?: number): EditorState {
+	return EditorState.create({
+		doc,
+		extensions: [markdown({ base: markdownLanguage })],
+		...(anchor !== undefined ? { selection: { anchor } } : {})
+	});
+}
+
+function visibleLines(state: EditorState): string[] {
+	const concealed = new Set<number>();
+	for (const range of concealRanges(state)) {
+		for (let i = range.from; i < range.to; i++) concealed.add(i);
+	}
+	const lines: string[] = [];
+	for (let n = 1; n <= state.doc.lines; n++) {
+		const line = state.doc.line(n);
+		let text = '';
+		for (let i = line.from; i < line.to; i++) {
+			if (!concealed.has(i)) text += state.doc.sliceString(i, i + 1);
+		}
+		lines.push(text);
+	}
+	return lines;
+}
+
+describe('heading separator concealment (#66)', () => {
+	function inactive(doc: string): EditorState {
+		const withSentinel = doc + '\n';
+		return makeState(withSentinel, withSentinel.length);
+	}
+
+	it('keeps a heading line aligned with plain lines', () => {
+		expect(visibleLines(makeState('|\n#### |\n|'))).toEqual(['|', '|', '|']);
+	});
+
+	it('conceals the separator space after every heading level', () => {
+		expect(visibleLines(inactive('# a\n## b\n### c\n#### d\n##### e\n###### f'))).toEqual([
+			'a',
+			'b',
+			'c',
+			'd',
+			'e',
+			'f',
+			''
+		]);
+	});
+
+	it('conceals all separator spaces, matching rendered heading text', () => {
+		expect(visibleLines(inactive('##  two spaces'))).toEqual(['two spaces', '']);
+	});
+
+	it('keeps the mark and its separator visible on the active line', () => {
+		expect(visibleLines(makeState('|\n#### |\n|', 7))).toEqual(['|', '#### |', '|']);
+	});
+
+	it('conceals the separator of a heading inside a blockquote', () => {
+		expect(visibleLines(inactive('> # h'))).toEqual(['> h', '']);
+	});
+
+	it('conceals the separator of an empty heading without going past the line', () => {
+		expect(visibleLines(inactive('# '))).toEqual(['', '']);
+	});
+
+	it('extends the concealed range over the separator space', () => {
+		expect(concealRanges(inactive('# h'))).toEqual([{ from: 0, to: 2 }]);
+	});
+
+	it('leaves a lone heading mark at the end of the doc untouched', () => {
+		expect(visibleLines(inactive('#'))).toEqual(['', '']);
+	});
+});
+
+describe('marks that are not concealed (concealment premise)', () => {
+	it('leaves blockquote marks and their separator untouched', () => {
+		expect(visibleLines(makeState('> quote line'))).toEqual(['> quote line']);
+	});
+
+	it('leaves list and task markers untouched', () => {
+		expect(visibleLines(makeState('- [ ] task\n- plain'))).toEqual(['- [ ] task', '- plain']);
+	});
+
+	it('conceals setext underlines without extending them', () => {
+		expect(concealRanges(makeState('Title\n===='))).toEqual([{ from: 6, to: 10 }]);
+		expect(visibleLines(makeState('Title\n===='))).toEqual(['Title', '']);
+	});
+
+	it('leaves heading-like text inside fenced code untouched', () => {
+		expect(visibleLines(makeState('```\n# x\n```'))).toEqual(['```', '# x', '```']);
 	});
 });
