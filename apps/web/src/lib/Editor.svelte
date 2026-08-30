@@ -125,7 +125,7 @@
 						fontFamily: 'var(--font-serif)'
 					},
 					'.cm-content': {
-						padding: '1.5rem 0',
+						padding: '1.5rem 0 50vh',
 						fontFamily: 'inherit',
 						lineHeight: '1.7',
 						color: 'var(--fg)',
