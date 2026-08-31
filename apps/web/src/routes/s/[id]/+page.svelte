@@ -88,9 +88,7 @@
 	const canWrite = $derived(!share || Boolean(share.editToken));
 	const title = $derived(noteTitle(content));
 	const rendered = $derived(renderMarkdown(content, !canWrite));
-	const headerTitle = $derived(
-		data.shared && !data.shared.owner ? 'Shared session (read-only)' : title
-	);
+	const headerTitle = $derived(!canWrite ? 'Shared session (read-only)' : title);
 	const activeShareLink = $derived(
 		share ? (shareKind === 'edit' ? sessionOwnerLink(share) : sessionViewLink(share)) : ''
 	);

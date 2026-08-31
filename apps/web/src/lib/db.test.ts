@@ -194,6 +194,22 @@ describe('outbox', () => {
 		expect(await db.getOutbox('room-2')).toEqual([new Uint8Array([9])]);
 	});
 
+	it('keeps all updates when several appends fire at once', async () => {
+		const db = await freshDb();
+		await db.getOutbox('room-1');
+		const pending = [
+			db.appendOutbox('room-1', new Uint8Array([1])),
+			db.appendOutbox('room-1', new Uint8Array([2])),
+			db.appendOutbox('room-1', new Uint8Array([3]))
+		];
+		await Promise.all(pending);
+		expect(await db.getOutbox('room-1')).toEqual([
+			new Uint8Array([1]),
+			new Uint8Array([2]),
+			new Uint8Array([3])
+		]);
+	});
+
 	it('clears a room outbox', async () => {
 		const db = await freshDb();
 		await db.appendOutbox('room-1', new Uint8Array([1]));

@@ -43,12 +43,16 @@ export class RoomSession {
 	}
 
 	async start(): Promise<void> {
+		if (this.stopped) return;
+		this.ydoc.on('update', this.onLocalUpdate);
 		if (this.editToken) {
-			this.pending = await getOutbox(this.roomId);
+			const stored = await getOutbox(this.roomId).catch(() => [] as Uint8Array[]);
+			this.pending = [...stored, ...this.pending];
 			this.onPending?.(this.pending.length);
 		}
-		await this.catchUp();
-		this.ydoc.on('update', this.onLocalUpdate);
+		if (this.stopped) return;
+		await this.catchUp().catch(() => {});
+		if (this.stopped) return;
 		this.connect();
 	}
 
@@ -81,21 +85,36 @@ export class RoomSession {
 		}
 	}
 
+	private queueLocalUpdate(update: Uint8Array): void {
+		this.pending.push(update);
+		void appendOutbox(this.roomId, update)
+			.then(() => {
+				this.onPending?.(this.pending.length);
+			})
+			.catch(() => {});
+	}
+
 	private onLocalUpdate = (update: Uint8Array, origin: unknown): void => {
 		if (origin === REMOTE_ORIGIN) return;
 		if (!this.editToken) return;
 		if (this.writable && this.ws && this.ws.readyState === WebSocket.OPEN) {
-			void encryptBytes(this.key, update).then((blob) => {
-				if (this.ws?.readyState === WebSocket.OPEN) {
-					this.ws.send(blob as BufferSource);
-				}
-			});
+			void encryptBytes(this.key, update)
+				.then((blob) => {
+					const socket = this.ws;
+					if (socket && socket.readyState === WebSocket.OPEN) {
+						try {
+							socket.send(blob as BufferSource);
+							return;
+						} catch {
+							// the socket closed between the check and the send
+						}
+					}
+					this.queueLocalUpdate(update);
+				})
+				.catch(() => this.queueLocalUpdate(update));
 			return;
 		}
-		this.pending.push(update);
-		void appendOutbox(this.roomId, update).then(() => {
-			this.onPending?.(this.pending.length);
-		});
+		this.queueLocalUpdate(update);
 	};
 
 	private async flushPending(): Promise<void> {
@@ -103,12 +122,18 @@ export class RoomSession {
 		this.flushing = true;
 		try {
 			for (const update of this.pending) {
-				if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+				const socket = this.ws;
+				if (!socket || socket.readyState !== WebSocket.OPEN) return;
 				const blob = await encryptBytes(this.key, update);
-				if (this.ws?.readyState === WebSocket.OPEN) {
-					this.ws.send(blob as BufferSource);
+				if (this.ws !== socket || socket.readyState !== WebSocket.OPEN) return;
+				try {
+					socket.send(blob as BufferSource);
+				} catch {
+					return;
 				}
 			}
+		} catch {
+			// pending stays queued; the next writable ack retries
 		} finally {
 			this.flushing = false;
 		}
@@ -159,7 +184,9 @@ export class RoomSession {
 			this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS);
 			setTimeout(() => {
 				if (this.stopped) return;
-				void this.catchUp().finally(() => this.connect());
+				void this.catchUp()
+					.catch(() => {})
+					.finally(() => this.connect());
 			}, delay);
 		};
 

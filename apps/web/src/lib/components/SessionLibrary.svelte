@@ -5,6 +5,7 @@
 	import { resolve } from '$app/paths';
 	import { HousePlus, Plus, Trash2 } from '@lucide/svelte';
 	import {
+		clearOutbox,
 		createSession,
 		deleteNote,
 		deleteSession,
@@ -24,6 +25,7 @@
 	let { sessions }: Props = $props();
 
 	let titles = new SvelteMap<string, string>();
+	let recency = new SvelteMap<string, number>();
 	let removed = new SvelteSet<string>();
 
 	const visible = $derived(sessions.filter((s) => !removed.has(s.id)));
@@ -35,7 +37,11 @@
 			if (note.sessionId && !best.has(note.sessionId)) best.set(note.sessionId, note);
 		}
 		titles.clear();
-		for (const [id, note] of best) titles.set(id, noteTitle(note.content));
+		recency.clear();
+		for (const [id, note] of best) {
+			titles.set(id, noteTitle(note.content));
+			recency.set(id, note.updatedAt);
+		}
 	}
 
 	onMount(() => {
@@ -69,6 +75,7 @@
 		if (!confirm(`Delete "${title}" and all its notes from this device?`)) return;
 		const notes = await listNotes();
 		await Promise.all(notes.filter((n) => n.sessionId === session.id).map((n) => deleteNote(n.id)));
+		await clearOutbox(session.share?.remoteId ?? session.id);
 		await destroySessionDoc(session.id);
 		await deleteSession(session.id);
 		if (session.share) forgetShareKey(session.share.remoteId);
@@ -106,7 +113,7 @@
 						{#if session.share && !session.share.editToken}
 							<span class="badge">Read-only</span>
 						{/if}
-						<span class="row-time">{timeAgo(session.updatedAt)}</span>
+						<span class="row-time">{timeAgo(recency.get(session.id) ?? session.updatedAt)}</span>
 					</button>
 					<button
 						class="delete"

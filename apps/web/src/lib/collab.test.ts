@@ -175,6 +175,37 @@ describe('RoomSession outbox', () => {
 		room.stop();
 	});
 
+	it('arms the outbox when starting offline and flushes on reconnect', async () => {
+		const { collab, db } = await freshModules();
+		vi.mocked(fetchRoomUpdates).mockRejectedValue(new Error('offline'));
+		const ydoc = new Y.Doc();
+		const room = makeRoom(collab, ydoc, { editToken: 'token' });
+
+		const starting = room.start();
+		const updates: Uint8Array[] = [];
+		ydoc.on('update', (update) => updates.push(update));
+		ydoc.getText('t').insert(0, 'queued while offline');
+		await starting;
+
+		await vi.waitFor(() => expect(db.getOutbox('room-1')).resolves.toHaveLength(1));
+		expect(pendings).toContain(1);
+
+		vi.mocked(fetchRoomUpdates).mockResolvedValue([]);
+		const failed = lastWs();
+		failed.close();
+
+		await vi.waitFor(() => expect(lastWs()).not.toBe(failed), { timeout: 5000 });
+		const ws = lastWs();
+		ws.open();
+		ws.ackWritable();
+
+		await vi.waitFor(() => expect(ws.sent).toHaveLength(2), { timeout: 5000 });
+		expect(ws.sent[0]).toBe(JSON.stringify({ edit_token: 'token' }));
+		expect(ws.sent[1]).toBe(updates[0]);
+		expect(states).toContain('live');
+		room.stop();
+	});
+
 	it('never queues updates for viewers without an edit token', async () => {
 		const { collab, db } = await freshModules();
 		const ydoc = new Y.Doc();

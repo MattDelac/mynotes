@@ -200,11 +200,22 @@ export async function getOutbox(roomId: string): Promise<Uint8Array[]> {
 	return entry?.updates ?? [];
 }
 
-export async function appendOutbox(roomId: string, update: Uint8Array): Promise<void> {
-	const database = await db();
-	const entry = (await database.get('outbox', roomId)) ?? { roomId, updates: [] };
-	entry.updates.push(update);
-	await database.put('outbox', entry);
+const outboxChains = new Map<string, Promise<void>>();
+
+export function appendOutbox(roomId: string, update: Uint8Array): Promise<void> {
+	const run = async (): Promise<void> => {
+		const database = await db();
+		const entry = (await database.get('outbox', roomId)) ?? { roomId, updates: [] };
+		entry.updates.push(update);
+		await database.put('outbox', entry);
+	};
+	const previous = outboxChains.get(roomId) ?? Promise.resolve();
+	const next = previous.then(run);
+	outboxChains.set(
+		roomId,
+		next.catch(() => {})
+	);
+	return next;
 }
 
 export async function clearOutbox(roomId: string): Promise<void> {

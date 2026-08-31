@@ -45,7 +45,10 @@ test('subscribed session renders cached content while offline', async ({ page, b
 
 	await openMenu(viewer);
 	await viewer.getByRole('button', { name: 'Add to my sessions' }).click();
-	await expect(viewer.locator('header .title')).toHaveText('offline shared content', {
+	await viewer.waitForURL((u) => u.pathname === `/s/${remoteId}` && u.hash === '', {
+		timeout: 15_000
+	});
+	await expect(viewer.locator('header .title')).toHaveText('Shared session (read-only)', {
 		timeout: 15_000
 	});
 
@@ -115,6 +118,7 @@ test('view-only session added to the library stays read-only', async ({ page, br
 	await page.getByRole('textbox', { name: 'Note' }).fill('read only after adding');
 	await page.waitForTimeout(700);
 	const link = await shareCurrentSession(page);
+	const remoteId = new URL(link).pathname.slice('/s/'.length);
 
 	const context = await browser.newContext();
 	const viewer = await context.newPage();
@@ -126,7 +130,10 @@ test('view-only session added to the library stays read-only', async ({ page, br
 
 	await openMenu(viewer);
 	await viewer.getByRole('button', { name: 'Add to my sessions' }).click();
-	await expect(viewer.locator('header .title')).toHaveText('read only after adding', {
+	await viewer.waitForURL((u) => u.pathname === `/s/${remoteId}` && u.hash === '', {
+		timeout: 15_000
+	});
+	await expect(viewer.locator('header .title')).toHaveText('Shared session (read-only)', {
 		timeout: 15_000
 	});
 	await expect(viewer.locator('.cm-content')).toContainText('read only after adding', {
