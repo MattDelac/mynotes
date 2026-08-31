@@ -3,7 +3,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 export interface ShareInfo {
 	remoteId: string;
 	key: string;
-	editToken: string;
+	editToken?: string;
 }
 
 export interface Note {
@@ -15,7 +15,7 @@ export interface Note {
 	share?: ShareInfo;
 }
 
-interface Session {
+export interface Session {
 	id: string;
 	createdAt: number;
 	updatedAt: number;
@@ -26,6 +26,11 @@ export interface NoteSelection {
 	id: string;
 	anchor: number;
 	head: number;
+}
+
+interface OutboxEntry {
+	roomId: string;
+	updates: Uint8Array[];
 }
 
 interface NotesDB extends DBSchema {
@@ -43,13 +48,17 @@ interface NotesDB extends DBSchema {
 		key: string;
 		value: NoteSelection;
 	};
+	outbox: {
+		key: string;
+		value: OutboxEntry;
+	};
 }
 
 let dbPromise: Promise<IDBPDatabase<NotesDB>> | null = null;
 
 function db(): Promise<IDBPDatabase<NotesDB>> {
 	if (!dbPromise) {
-		dbPromise = openDB<NotesDB>('mynotes', 3, {
+		dbPromise = openDB<NotesDB>('mynotes', 4, {
 			upgrade(database, oldVersion) {
 				if (oldVersion < 1) {
 					const store = database.createObjectStore('notes', { keyPath: 'id' });
@@ -61,6 +70,9 @@ function db(): Promise<IDBPDatabase<NotesDB>> {
 				}
 				if (oldVersion < 3) {
 					database.createObjectStore('selections', { keyPath: 'id' });
+				}
+				if (oldVersion < 4) {
+					database.createObjectStore('outbox', { keyPath: 'roomId' });
 				}
 			}
 		});
@@ -175,4 +187,38 @@ export async function saveSession(session: Session): Promise<void> {
 export function createSession(): Session {
 	const now = Date.now();
 	return { id: crypto.randomUUID(), createdAt: now, updatedAt: now };
+}
+
+export async function deleteSession(id: string): Promise<void> {
+	const database = await db();
+	await database.delete('sessions', id);
+}
+
+export async function getOutbox(roomId: string): Promise<Uint8Array[]> {
+	const database = await db();
+	const entry = await database.get('outbox', roomId);
+	return entry?.updates ?? [];
+}
+
+const outboxChains = new Map<string, Promise<void>>();
+
+export function appendOutbox(roomId: string, update: Uint8Array): Promise<void> {
+	const run = async (): Promise<void> => {
+		const database = await db();
+		const entry = (await database.get('outbox', roomId)) ?? { roomId, updates: [] };
+		entry.updates.push(update);
+		await database.put('outbox', entry);
+	};
+	const previous = outboxChains.get(roomId) ?? Promise.resolve();
+	const next = previous.then(run);
+	outboxChains.set(
+		roomId,
+		next.catch(() => {})
+	);
+	return next;
+}
+
+export async function clearOutbox(roomId: string): Promise<void> {
+	const database = await db();
+	await database.delete('outbox', roomId);
 }
