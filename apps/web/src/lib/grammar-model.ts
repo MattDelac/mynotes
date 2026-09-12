@@ -1,4 +1,4 @@
-import type { ProgressCallback, Text2TextGenerationSingle } from '@huggingface/transformers';
+import type { ProgressCallback } from '@huggingface/transformers';
 import { normalizeForCompare } from './grammar';
 
 export const GRAMMAR_MODEL_ID = 'onnx-community/t5-base-grammar-correction-ONNX';
@@ -38,6 +38,9 @@ export function createModelProgressTracker(onProgress: ModelProgressListener) {
 	return (info: Parameters<ProgressCallback>[0]): void => {
 		if (info.status === 'ready') {
 			report(true);
+			return;
+		}
+		if (info.status === 'progress_total') {
 			return;
 		}
 		const entry = files.get(info.file) ?? { loaded: 0, total: 0, sized: false };
@@ -115,8 +118,7 @@ async function createGrammarModel(): Promise<SentenceCorrector> {
 			max_new_tokens: MAX_NEW_TOKENS,
 			do_sample: false
 		});
-		const items = (Array.isArray(result[0]) ? result[0] : result) as Text2TextGenerationSingle[];
-		const corrected = (items[0]?.generated_text ?? '')
+		const corrected = (result[0]?.generated_text ?? '')
 			.replace(/^grammar\s*:\s*/i, '')
 			.replace(/\s+/g, ' ')
 			.trim();
