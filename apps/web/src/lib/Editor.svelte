@@ -22,6 +22,7 @@
 	import { taskToggleKeymap } from './cm-task-toggle';
 	import { orderedTaskNewlineKeymap } from './cm-task-newline';
 	import { orderedTaskBackspaceKeymap } from './cm-task-backspace';
+	import { emojiAutocomplete } from './cm-emoji';
 	import { getNoteSelection } from './db';
 	import {
 		clampSelection,
@@ -84,6 +85,7 @@
 			doc: docText,
 			selection: savedSelection(noteId, docText.length),
 			extensions: [
+				emojiAutocomplete(undoManager),
 				Prec.highest(keymap.of(orderedTaskNewlineKeymap(undoManager))),
 				Prec.highest(keymap.of(orderedTaskBackspaceKeymap(undoManager))),
 				keymap.of([
