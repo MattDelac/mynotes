@@ -8,7 +8,7 @@ Try it live at **[notes.mdelacour.com](https://notes.mdelacour.com)**.
 
 MyNotes is a note-taking app built around a single idea borrowed from Excalidraw: **one blank page**. No folders, no dashboards, no accounts — you open the app, write, and it's saved.
 
-- **Local-first** — every note lives in your browser's IndexedDB and works fully offline. Your data is yours before it is ever sent anywhere.
+- **Local-first** — every note lives in your browser's IndexedDB and works fully offline. Edits made offline queue locally and sync the moment you're back. Your data is yours before it is ever sent anywhere.
 - **End-to-end encrypted** — every note is encrypted with AES-GCM before it leaves your device. The key lives only in the URL fragment of your share link; it is never sent to the server and never logged.
 - **Live collaboration** — share a link and co-edit in real time. Plaintext never touches the network; only ciphertext does.
 - **Zero-knowledge server** — the backend is a dumb relay. It stores and broadcasts encrypted bytes it structurally cannot read, which means there is nothing to leak, subpoena, or mine.
@@ -60,6 +60,8 @@ Three pillars hold the whole thing up.
 ### 1. Local-first (the client)
 
 A **session** is a single Yjs document holding every note as a `Y.Map<Y.Text>`. It persists in the browser via y-indexeddb, so the entire session works offline and survives reloads. Collaboration is built on the CRDT, not on a server.
+
+The home page is a **library** of your sessions: owned sessions you created or added with edit rights, plus shared sessions you subscribed to from view-only links (read-only). When you edit without a connection, updates queue in a local outbox and re-send on reconnect — the header shows the pending count. The app is installable as a PWA and its shell loads from the service-worker cache when offline.
 
 ### 2. End-to-end encryption
 

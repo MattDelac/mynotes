@@ -1,4 +1,4 @@
-const CACHE = 'mynotes-v2';
+const CACHE = 'mynotes-v3';
 
 self.addEventListener('install', (event) => {
 	event.waitUntil(self.skipWaiting());
@@ -24,6 +24,14 @@ async function networkFirst(request) {
 		}
 		return response;
 	} catch {
+		if (request.mode === 'navigate') {
+			const cache = await caches.open(CACHE);
+			const fallback =
+				(await cache.match(request)) ||
+				(await cache.match('/')) ||
+				(await cache.match('/index.html'));
+			if (fallback) return fallback;
+		}
 		const cached = await caches.match(request);
 		if (cached) return cached;
 		throw new Error('offline and not cached');

@@ -24,7 +24,8 @@ Local-first, end-to-end encrypted, fully open source. Share via encrypted link.
 - Local persistence: IndexedDB via `idb` + y-indexeddb (Yjs documents), autosave
 - Crypto: Web Crypto API, AES-GCM-256. Key gen → encrypt → export key to URL
   fragment
-- PWA manifest for "add to home screen" on mobile
+- PWA: manifest + service worker — installable on mobile, offline app shell,
+  offline edits queue in a local outbox and re-sync on reconnect (ADR 0002)
 
 ### Session model
 
@@ -141,7 +142,7 @@ focused on notes + collaboration.
 | **M3**    | Share: crypto module, blob API, share/view links, mailto-with-link flow |
 | **M4**    | AI chat: BYOK panel (later removed)                                 |
 | **M5**    | Voice + Export: Web Speech API dictation (later removed), plaintext export-to-disk |
-| **M6**    | Polish: PWA, mobile UX, self-host docs, MIT license                |
+| **M6**    | Polish: PWA + offline (shipped), mobile UX, self-host docs, MIT license |
 
 ## Explicitly Out of Scope (v1)
 
