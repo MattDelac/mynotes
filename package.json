@@ -11,7 +11,7 @@
   "bugs": {
     "url": "https://github.com/MattDelac/mynotes/issues"
   },
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
