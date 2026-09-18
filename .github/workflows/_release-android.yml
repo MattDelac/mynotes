@@ -40,12 +40,11 @@ jobs:
 
       - name: Compute preview version
         run: |
-          count="$(git rev-list --count HEAD)"
-          short_sha="$(echo "$GITHUB_SHA" | cut -c1-7)"
+          eval "$(scripts/android/preview-version.sh)"
           {
             echo "PREVIEW_COUNT=$count"
             echo "PREVIEW_SHORT_SHA=$short_sha"
-            echo "PREVIEW_TAG=android-preview-$count-$short_sha"
+            echo "PREVIEW_TAG=$tag"
           } >> "$GITHUB_ENV"
 
       - name: Build signed release APK
@@ -66,6 +65,15 @@ jobs:
           "$tools/zipalign" -c -P 16 -v 4 "$apk"
           fingerprint="$("$tools/apksigner" verify --print-certs "$apk" | grep -m1 'SHA-256 digest' | awk '{print $NF}')"
           echo "PREVIEW_CERT_SHA256=$fingerprint" >> "$GITHUB_ENV"
+          normalized="$(printf '%s' "$fingerprint" | tr -d ':' | tr 'A-F' 'a-f')"
+          assetlinks="apps/web/static/.well-known/assetlinks.json"
+          if ! tr -d ':' < "$assetlinks" | tr 'A-F' 'a-f' | grep -q "$normalized"; then
+            echo "preview certificate $fingerprint is not listed in $assetlinks" >&2
+            exit 1
+          fi
+
+      - name: Verify release APK package
+        run: scripts/android/verify-apk.sh apps/android/app/build/outputs/apk/release/app-release.apk --expected-version-code "$PREVIEW_COUNT" --expected-version-name "0.1.0-preview.$PREVIEW_COUNT"
 
       - name: Publish prerelease
         env:

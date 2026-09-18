@@ -36,9 +36,15 @@ apps/android/
 scripts/android/
   rebuild-engine.sh     rebuild engine/libs/engine.aar
   verify-engine.sh      normalized comparison of a fresh AAR against the committed one
+  inspect-engine.sh     print committed-AAR evidence (entries, classes, native libs, deps)
+  verify-apk.sh         assert packaged-APK metadata, ABIs and manifest declarations
   privacy-audit.sh      fail if source logging references secrets or note content
   gradle.sh             Gradle wrapper with the NixOS AAPT2 workaround
   gen-fixtures.sh       regenerate the JS/Go interop fixtures
+  preview-version.sh    print count/short_sha/tag for a preview release
+  check-docs.sh         fail if a script or documented Gradle task is unreferenced/unknown
+  tests/
+    preview-version-test.sh   self-test for preview-version.sh
 ```
 
 ## Build and test
@@ -48,7 +54,8 @@ SDK 36 / build-tools 37.0.0 / NDK 29:
 
 ```sh
 nix develop .#android -c ./scripts/android/gradle.sh :app:assembleDebug
-nix develop .#android -c ./scripts/android/gradle.sh lintDebug testDebugUnitTest
+nix develop .#android -c ./scripts/android/gradle.sh lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+nix develop .#android -c bash -c 'cd apps/android/engine && go test ./...'
 ```
 
 `scripts/android/gradle.sh` passes `-Pandroid.aapt2FromMavenOverride=<sdk aapt2>` when the SDK's
@@ -56,8 +63,46 @@ AAPT2 exists, because AGP's downloaded AAPT2 cannot run on NixOS without nix-ld.
 is skipped and the downloaded AAPT2 is used.
 
 `scripts/android/privacy-audit.sh` runs from the repo root with no Nix shell and fails if a source
-line logs a secret-bearing identifier or note content. CI runs it before Gradle; run it locally
-after touching logging in `app/src/main`.
+line logs a secret-bearing identifier or note content. CI runs it first; run it locally after
+touching logging in `app/src/main`.
+
+`scripts/android/check-docs.sh` (also no Nix shell) fails if a script under `scripts/android/` is
+not referenced in this file or `AGENTS.md`, or if the docs name a Gradle task the build does not
+have. It needs only bash, find, grep and sed.
+
+### Test suite
+
+The JVM suite is 260 tests in 37 classes. Most are pure logic, but it also contains Robolectric
+tests for the Compose note surface and editor body, the Room migration/DAOs, the backup rules, the
+FileProvider, and `SettingsStore`. Robolectric tests must use `@Config(sdk = [35])`: SDK 36 needs
+Java 21 and CI pins Java 17, so a Java 21 + SDK 36 upgrade is a separate change.
+
+`app/src/androidTest/` holds the instrumented Keystore-vault and FileProvider tests. CI compiles
+them with `assembleDebugAndroidTest` so they cannot rot, but does not run them; they run on the
+device pass when a preview APK is sideloaded.
+
+`apps/android/testdata/parity-fixtures.json` is the shared title/export fixture consumed by
+`ParityFixtureTest` and the web `apps/web/src/lib/parity.test.ts`, so a title or filename change on
+one side without the other fails that side's CI.
+
+### Packaging checks
+
+`scripts/android/verify-apk.sh <apk>` asserts the package, `versionCode`, `versionName`, minSdk 26 /
+targetSdk 36, the launchable `.MainActivity`, `classes.dex`/`resources.arsc` and
+`lib/<abi>/libgojni.so` for every expected ABI, plus `allowBackup=false`, the `.fileprovider`
+authority and the App Link filter (`autoVerify`, host `notes.mdelacour.com`, `pathPrefix` `/s/`).
+It takes optional `--expected-version-code`, `--expected-version-name`, `--expected-package` and
+`--expected-abis` flags; CI runs it after `assembleDebug`, and the release workflow runs it on the
+signed APK. `aapt2` comes from `$ANDROID_HOME/build-tools/37.0.0/aapt2` when present, else PATH.
+
+`verify-engine.sh` compares a rebuilt AAR's entries, manifest, `classes.jar`, ABI set and native
+symbol set. The `.so` bytes themselves are intentionally not compared: Go build ids and linker
+layout differ per run.
+
+`scripts/android/preview-version.sh` prints the preview version (`count`, `short_sha`, `tag`) from
+the commit count, and `scripts/android/tests/preview-version-test.sh` self-tests it. The release
+workflow sources the script instead of recomputing the values inline, and fails when the signing
+certificate's normalized SHA-256 is not listed in `apps/web/static/.well-known/assetlinks.json`.
 
 ## Version matrix
 
@@ -88,11 +133,11 @@ were pinned to the newest AGP-8-compatible releases.
 - **Backup is off.** `android:allowBackup="false"` plus `backup_rules.xml` and
   `data_extraction_rules.xml` exclude databases, shared prefs, files and external storage. Room
   (`mynotes.db`) and DataStore (`mynotes-settings`) use the defaults, i.e. app-private storage.
-- **Key loss keeps the data.** Losing the Android Keystore wrapping key never deletes notes.
-  `SessionRepository.startupCleanup()` tries to unwrap every session's room key and, on failure,
-  marks the session `KEY_MISSING`; the wrapped key and ciphertext are left untouched. Restoring
-  the same keystore (for example from an Android backup) recovers the session, but a freshly
-  regenerated key cannot unwrap the existing blobs.
+- **Key loss keeps the data but is not recoverable.** Losing the Android Keystore wrapping key never
+  deletes notes: `SessionRepository.startupCleanup()` tries to unwrap every session's room key and,
+  on failure, marks the session `KEY_MISSING`, leaving the wrapped key and ciphertext untouched.
+  The Keystore key is non-exportable and `allowBackup="false"` keeps it out of device backups, so a
+  freshly generated key cannot unwrap the existing blobs; key loss is unrecoverable on the device.
 
 ## App icon
 

@@ -66,10 +66,13 @@ and release-preview notes:
 
 ```sh
 nix develop .#android -c ./scripts/android/gradle.sh :app:assembleDebug   # NixOS AAPT2 handled here
-nix develop .#android -c ./scripts/android/gradle.sh lintDebug testDebugUnitTest
+nix develop .#android -c ./scripts/android/gradle.sh lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
 nix develop .#android -c bash -c 'cd apps/android/engine && go test ./...'
 nix develop .#android -c ./scripts/android/rebuild-engine.sh   # AAR (ANDROID_ABIS, default arm64-v8a,x86_64)
+nix develop .#android -c ./scripts/android/verify-apk.sh apps/android/app/build/outputs/apk/debug/app-debug.apk --expected-version-code 1 --expected-version-name 0.1.0-preview
 ./scripts/android/gen-fixtures.sh                              # deterministic JS/Go interop fixtures
+./scripts/android/check-docs.sh                                # docs/command drift, no Nix needed
+./scripts/android/preview-version.sh                           # count/short_sha/tag for a preview release
 ```
 
 `scripts/android/verify-engine.sh <fresh.aar>` compares a rebuilt AAR against the committed one
@@ -77,6 +80,10 @@ nix develop .#android -c ./scripts/android/rebuild-engine.sh   # AAR (ANDROID_AB
 it. Fixtures come from the workspace's resolved `yjs@13.6.32` and are verified back against it.
 `scripts/android/privacy-audit.sh` (no Nix needed) fails if any `Log.`/`println`/`System.out` line
 mentions a key, token, ciphertext, blob, content, or URL fragment; CI runs it before Gradle.
+`scripts/android/verify-apk.sh <apk>` checks the packaged manifest metadata, ABIs and App
+Link/FileProvider declarations; `check-docs.sh` fails when a script or documented Gradle task is
+missing. Robolectric tests run on the JVM but need `@Config(sdk = [35])` (SDK 36 requires Java 21,
+CI uses 17); instrumented tests are compiled by CI (`assembleDebugAndroidTest`) and run on device.
 
 Env vars: `DATABASE_URL` (default `sqlite:mynotes.db`), `BIND_ADDR` (default `0.0.0.0:3000`).
 Abuse-protection env vars (`api/src/config.rs`, all with defaults): `MAX_BLOB_SIZE` (64KB),
