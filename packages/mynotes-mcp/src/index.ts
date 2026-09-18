@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { createServer, type Server } from 'node:http';
+import type { Server } from 'node:http';
 import { join } from 'node:path';
 import { ensureStateDir, readConfig, readTokens, resolveStateDir } from './config.js';
 import { RelayClient } from './relay.js';
+import { startMcpServer } from './server.js';
 import { SessionManager } from './session.js';
 
 export interface ServeOptions {
@@ -116,33 +117,27 @@ export async function startDaemon(options: ServeOptions): Promise<RunningDaemon>
 	});
 	manager.start();
 
-	const server = createServer((request, response) => {
-		if (request.method === 'GET' && request.url === '/healthz') {
-			response.writeHead(200, { 'content-type': 'text/plain' });
-			response.end('ok');
-			return;
-		}
-		response.writeHead(404, { 'content-type': 'application/json' });
-		response.end(JSON.stringify({ error: 'not_found' }));
-	});
-
-	const port = await new Promise<number>((resolve, reject) => {
-		server.once('error', reject);
-		server.listen(options.port, options.host, () => {
-			const address = server.address();
-			resolve(address !== null && typeof address === 'object' ? address.port : options.port);
-		});
+	const mcp = await startMcpServer({
+		manager,
+		host: options.host,
+		port: options.port,
+		allowedHosts: options.allowedHosts,
+		allowedOrigins: options.allowedOrigins,
+		maxSessions: options.maxMcpSessions,
+		sessionTtlMs: options.sessionTtlMs,
+		auditPath: options.auditPath,
+		log: (message) => log(`[mcp] ${message}`)
 	});
 
 	let closed = false;
 	const close = async (): Promise<void> => {
 		if (closed) return;
 		closed = true;
-		await new Promise<void>((resolve) => server.close(() => resolve()));
+		await mcp.close();
 		await manager.stop();
 	};
 
-	return { manager, server, port, close };
+	return { manager, server: mcp.server, port: mcp.port, close };
 }
 
 export function log(message: string): void {

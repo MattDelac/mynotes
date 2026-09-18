@@ -141,6 +141,7 @@ export interface SessionOptions {
 	maxIndexedChars?: number;
 	createWebSocket?: WebSocketFactory;
 	now?: () => number;
+	accessClock?: () => number;
 	log?: (message: string) => void;
 	onChanged?: () => void;
 }
@@ -170,6 +171,7 @@ export class Session {
 	private readonly maxIndexedChars: number;
 	private readonly createWebSocket: WebSocketFactory;
 	private readonly now: () => number;
+	private readonly accessClock: () => number;
 	private readonly log: (message: string) => void;
 	private readonly onChanged: () => void;
 
@@ -209,9 +211,10 @@ export class Session {
 		this.createWebSocket =
 			options.createWebSocket ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
 		this.now = options.now ?? (() => Date.now());
+		this.accessClock = options.accessClock ?? this.now;
 		this.log = options.log ?? (() => undefined);
 		this.onChanged = options.onChanged ?? (() => undefined);
-		this.accessAt = this.now();
+		this.accessAt = this.accessClock();
 	}
 
 	get loaded(): boolean {
@@ -466,7 +469,7 @@ export class Session {
 	}
 
 	markAccessed(): void {
-		this.accessAt = this.now();
+		this.accessAt = this.accessClock();
 	}
 
 	setLive(desired: boolean): void {
@@ -624,6 +627,8 @@ export class SessionManager {
 	private catchUpSlots: number;
 	private catchUpQueue: (() => void)[] = [];
 	private now: () => number;
+	private accessCounter = 0;
+	private accessClock: () => number;
 
 	constructor(options: SessionManagerOptions) {
 		this.stateDir = options.stateDir;
@@ -645,6 +650,10 @@ export class SessionManager {
 		this.createWebSocket = options.createWebSocket;
 		this.log = options.log ?? (() => undefined);
 		this.now = options.now ?? (() => Date.now());
+		this.accessClock = () => {
+			this.accessCounter = Math.max(this.accessCounter + 1, this.now());
+			return this.accessCounter;
+		};
 		this.config = options.config ?? { api_url: this.relay.apiUrl, sessions: [] };
 		this.tokens = options.tokens ?? { tokens: [] };
 		this.catchUpSlots = this.options.maxCatchUpsInFlight;
@@ -670,6 +679,7 @@ export class SessionManager {
 			maxEncodedBytes: this.options.maxEncodedBytes,
 			maxIndexedChars: this.options.maxIndexedChars,
 			now: this.now,
+			accessClock: this.accessClock,
 			log: this.log,
 			onChanged: () => this.onSessionChanged()
 		};

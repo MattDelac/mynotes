@@ -11,88 +11,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { CHECKPOINTS_DIR, ensureStateDir, writeConfig, type SessionEntry } from '../src/config.js';
+import { CHECKPOINTS_DIR, ensureStateDir, writeConfig } from '../src/config.js';
 import { exportKey, generateKey } from '../src/crypto.js';
-import { RelayClient } from '../src/relay.js';
-import { Session, SessionManager, type SessionOptions } from '../src/session.js';
-import { FakeWebSocket, MockRelay } from './helpers/mock-relay.js';
-
-interface Fixture {
-	relay: MockRelay;
-	entry: SessionEntry;
-	key: CryptoKey;
-	doc: Y.Doc;
-}
-
-async function fixture(
-	contents: Record<string, string> = { 'note-a': '# Hello' },
-	name = 'work'
-): Promise<Fixture> {
-	const relay = new MockRelay();
-	const doc = new Y.Doc();
-	const notes = doc.getMap<Y.Text>('notes');
-	doc.transact(() => {
-		for (const [id, content] of Object.entries(contents)) {
-			const text = new Y.Text();
-			text.insert(0, content);
-			notes.set(id, text);
-		}
-	});
-	const key = await generateKey();
-	const roomId = crypto.randomUUID();
-	await relay.seed(roomId, key, doc);
-	return {
-		relay,
-		key,
-		doc,
-		entry: {
-			name,
-			room_id: roomId,
-			key: await exportKey(key),
-			edit_token: null,
-			writable: false
-		}
-	};
-}
-
-function relayFor(relay: MockRelay): RelayClient {
-	return new RelayClient({
-		apiUrl: relay.apiUrl,
-		fetchImpl: relay.fetch as unknown as typeof fetch,
-		requestTimeoutMs: 500
-	});
-}
-
-function makeSession(fx: Fixture, dir: string, overrides: Partial<SessionOptions> = {}): Session {
-	return new Session({
-		entry: fx.entry,
-		relay: relayFor(fx.relay),
-		checkpointPath: join(dir, CHECKPOINTS_DIR, `${fx.entry.room_id}.json`),
-		...overrides
-	});
-}
-
-async function pushContent(
-	fx: Fixture,
-	noteId: string,
-	content: string,
-	mode: 'append' | 'replace' = 'replace'
-): Promise<number> {
-	const before = Y.encodeStateVector(fx.doc);
-	fx.doc.transact(() => {
-		const notes = fx.doc.getMap<Y.Text>('notes');
-		const existing = notes.get(noteId);
-		if (mode === 'append' && existing) {
-			existing.insert(existing.length, content);
-			return;
-		}
-		const text = new Y.Text();
-		text.insert(0, content);
-		notes.set(noteId, text);
-	});
-	const update = Y.encodeStateAsUpdate(fx.doc, before);
-	return fx.relay.push(fx.entry.room_id, fx.key, update);
-}
+import { Session } from '../src/session.js';
+import { FakeWebSocket } from './helpers/mock-relay.js';
+import {
+	createFixture as fixture,
+	makeSession,
+	managerFor,
+	pushContent,
+	relayFor
+} from './helpers/session-fixture.js';
 
 describe('session checkpointing and catch-up', () => {
 	let dir: string;
@@ -243,26 +172,10 @@ describe('session manager', () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	function managerFor(
-		fixtures: Fixture[],
-		options: Partial<ConstructorParameters<typeof SessionManager>[0]> = {}
-	): SessionManager {
-		return new SessionManager({
-			stateDir: dir,
-			relay: relayFor(fixtures[0]?.relay ?? new MockRelay()),
-			config: {
-				api_url: fixtures[0]?.relay.apiUrl ?? 'http://mock-relay.invalid',
-				sessions: fixtures.map((fx) => fx.entry)
-			},
-			createWebSocket: (url) => new FakeWebSocket(url),
-			...options
-		});
-	}
-
 	it('evicts the least recently used loaded session over quota', async () => {
 		const first = await fixture({}, 'first');
 		const second = await fixture({}, 'second');
-		const manager = managerFor([first, second], { maxLoadedSessions: 1 });
+		const manager = managerFor([first, second], dir, { maxLoadedSessions: 1 });
 		const s1 = manager.resolve('first');
 		const s2 = manager.resolve('second');
 		expect(s1).not.toBeNull();
@@ -278,7 +191,7 @@ describe('session manager', () => {
 	it('caps live websockets at the pool size and prefers recent access', async () => {
 		const first = await fixture({}, 'first');
 		const second = await fixture({}, 'second');
-		const manager = managerFor([first, second], { maxLiveSockets: 1 });
+		const manager = managerFor([first, second], dir, { maxLiveSockets: 1 });
 		manager.start();
 		const s1 = manager.resolve('first')!;
 		const s2 = manager.resolve('second')!;
@@ -299,7 +212,7 @@ describe('session manager', () => {
 
 	it('applies socket updates without advancing the sequence cursor', async () => {
 		const fx = await fixture();
-		const manager = managerFor([fx], { maxLiveSockets: 1 });
+		const manager = managerFor([fx], dir, { maxLiveSockets: 1 });
 		manager.start();
 		const session = manager.resolve(fx.entry.name)!;
 		await manager.ensureLoaded(session);
@@ -330,7 +243,7 @@ describe('session manager', () => {
 	it('evicts checkpoints over the disk budget but pins gone rooms', async () => {
 		const first = await fixture({}, 'first');
 		const second = await fixture({}, 'second');
-		const manager = managerFor([first, second], { maxDiskBytes: 10 });
+		const manager = managerFor([first, second], dir, { maxDiskBytes: 10 });
 		const checkpoints = join(dir, CHECKPOINTS_DIR);
 		const firstPath = join(checkpoints, `${first.entry.room_id}.json`);
 		const secondPath = join(checkpoints, `${second.entry.room_id}.json`);
@@ -348,7 +261,7 @@ describe('session manager', () => {
 
 	it('reloads config changes and replaces changed sessions', async () => {
 		const fx = await fixture();
-		const manager = managerFor([]);
+		const manager = managerFor([], dir);
 		manager.start();
 		expect(manager.all()).toHaveLength(0);
 		writeConfig(dir, { api_url: fx.relay.apiUrl, sessions: [fx.entry] });

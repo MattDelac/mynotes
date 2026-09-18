@@ -1,6 +1,25 @@
+import { createServer } from 'node:net';
 import * as Y from 'yjs';
 import { encryptBytes, toBase64Url } from '../../src/crypto.js';
 import type { WebSocketLike } from '../../src/session.js';
+
+export async function freePort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.unref();
+		server.on('error', reject);
+		server.listen(0, '127.0.0.1', () => {
+			const address = server.address();
+			if (address === null || typeof address === 'string') {
+				server.close();
+				reject(new Error('failed to allocate a port'));
+				return;
+			}
+			const port = address.port;
+			server.close(() => resolve(port));
+		});
+	});
+}
 
 export interface MockRow {
 	seq: number;
