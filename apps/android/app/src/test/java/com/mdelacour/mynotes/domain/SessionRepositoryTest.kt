@@ -5,6 +5,7 @@ import com.mdelacour.mynotes.crypto.ShareCredentials
 import com.mdelacour.mynotes.data.FakeDb
 import com.mdelacour.mynotes.data.db.NoteOrderEntity
 import com.mdelacour.mynotes.data.db.OutboxEntity
+import com.mdelacour.mynotes.data.vault.VaultException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -278,6 +279,49 @@ class SessionRepositoryTest {
 		val rawKey = db.vault.lastPlaintext
 		assertNotNull(rawKey)
 		assertTrue(db.sessions.rows.values.none { it.wrappedRoomKey?.contentEquals(rawKey!!) == true })
+	}
+
+	@Test
+	fun openRoomKeyReturnsTheUnwrappedKey() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val result = repository.importShare(
+			ShareCredentials("room-1", Base64Url.encode(roomKey), editToken = "edit-token"),
+		)
+
+		assertArrayEquals(roomKey, repository.openRoomKey(result.session.localId))
+	}
+
+	@Test
+	fun openRoomKeyThrowsWhenTheKeyIsMissingOrUnwrappable() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val session = repository.createLocal(null)
+		val stored = db.sessions.rows.getValue(session.localId)
+
+		db.sessions.update(stored.copy(wrappedRoomKey = null))
+		assertThrows(VaultException::class.java) {
+			runBlocking { repository.openRoomKey(session.localId) }
+		}
+
+		db.sessions.update(stored.copy(wrappedRoomKey = byteArrayOf(1, 2, 3)))
+		assertThrows(VaultException::class.java) {
+			runBlocking { repository.openRoomKey(session.localId) }
+		}
+		Unit
+	}
+
+	@Test
+	fun editTokenReturnsTheUnwrappedTokenOrNull() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val owner = repository.importShare(
+			ShareCredentials("room-1", Base64Url.encode(roomKey), editToken = "edit-token"),
+		)
+		val viewer = repository.importShare(ShareCredentials("room-2", Base64Url.encode(roomKey)))
+
+		assertEquals("edit-token", repository.editToken(owner.session.localId))
+		assertNull(repository.editToken(viewer.session.localId))
 	}
 
 	private fun session(access: Access): Session = Session(

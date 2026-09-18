@@ -103,6 +103,10 @@ class FakeNoteOrderDao(private val sessionIds: () -> Set<String> = { emptySet() 
 		rows.removeAll { it.sessionId == sessionId }
 	}
 
+	override suspend fun deleteNote(sessionId: String, noteId: String) {
+		rows.removeAll { it.sessionId == sessionId && it.noteId == noteId }
+	}
+
 	override suspend fun deleteOrphans() {
 		val ids = sessionIds()
 		rows.removeAll { it.sessionId !in ids }
@@ -114,8 +118,10 @@ class FakeNoteOrderDao(private val sessionIds: () -> Set<String> = { emptySet() 
 
 class FakeOutboxDao(private val sessionIds: () -> Set<String> = { emptySet() }) : OutboxDao {
 	val rows = mutableListOf<OutboxEntity>()
+	var failOnInsert = false
 
 	override suspend fun insert(entry: OutboxEntity) {
+		if (failOnInsert) throw IllegalStateException("outbox insert failed")
 		rows += entry
 	}
 

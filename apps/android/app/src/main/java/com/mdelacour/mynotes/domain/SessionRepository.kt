@@ -6,6 +6,7 @@ import com.mdelacour.mynotes.crypto.ShareCredentials
 import com.mdelacour.mynotes.data.db.MyNotesDb
 import com.mdelacour.mynotes.data.db.NoteOrderDao
 import com.mdelacour.mynotes.data.db.OutboxDao
+import com.mdelacour.mynotes.data.db.OutboxEntity
 import com.mdelacour.mynotes.data.db.SessionDao
 import com.mdelacour.mynotes.data.db.SessionEntity
 import com.mdelacour.mynotes.data.vault.VaultException
@@ -154,6 +155,31 @@ class SessionRepository(
 
 	suspend fun checkpoint(localId: String, encryptedCheckpoint: ByteArray, lastSeq: Long) = tx.run {
 		sessions.setCheckpoint(localId, encryptedCheckpoint, lastSeq, clock())
+	}
+
+	suspend fun appendOutboxAndCheckpoint(outboxEntity: OutboxEntity, encryptedCheckpoint: ByteArray) = tx.run {
+		outbox.insert(outboxEntity)
+		val entity = sessions.get(outboxEntity.sessionId) ?: return@run
+		sessions.update(entity.copy(encryptedCheckpoint = encryptedCheckpoint, updatedAt = clock()))
+	}
+
+	suspend fun openRoomKey(localId: String): ByteArray {
+		val wrapped = sessions.get(localId)?.wrappedRoomKey
+			?: throw VaultException("session $localId has no room key")
+		return try {
+			vault.unwrap(wrapped)
+		} catch (e: VaultException) {
+			throw VaultException("failed to unwrap room key for session $localId", e)
+		}
+	}
+
+	suspend fun editToken(localId: String): String? {
+		val wrapped = sessions.get(localId)?.wrappedEditToken ?: return null
+		return try {
+			vault.unwrap(wrapped).toString(Charsets.UTF_8)
+		} catch (e: VaultException) {
+			throw VaultException("failed to unwrap edit token for session $localId", e)
+		}
 	}
 
 	suspend fun markKeyMissing(localId: String) = tx.run {

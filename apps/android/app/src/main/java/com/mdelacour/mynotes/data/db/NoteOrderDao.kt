@@ -15,6 +15,9 @@ interface NoteOrderDao {
 	@Query("DELETE FROM note_order WHERE sessionId = :sessionId")
 	suspend fun deleteForSession(sessionId: String)
 
+	@Query("DELETE FROM note_order WHERE sessionId = :sessionId AND noteId = :noteId")
+	suspend fun deleteNote(sessionId: String, noteId: String)
+
 	@Query("DELETE FROM note_order WHERE sessionId NOT IN (SELECT localId FROM sessions)")
 	suspend fun deleteOrphans()
 
