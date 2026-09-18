@@ -1,6 +1,8 @@
 package com.mdelacour.mynotes.ui.sessions
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,13 +10,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -39,6 +46,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mdelacour.mynotes.domain.Session
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+
+private const val REMOVE_WARNING =
+	"Removes this device's encrypted copy, local name/order, and credentials. " +
+		"The relay copy is unchanged; re-entry requires the share link."
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,10 +61,13 @@ fun SessionListScreen(
 	onOpenSettings: () -> Unit,
 ) {
 	val sessions by viewModel.sessions.collectAsStateWithLifecycle()
+	val titles by viewModel.titles.collectAsStateWithLifecycle()
 	val importError by viewModel.importError.collectAsStateWithLifecycle()
 	val openSessionId by viewModel.openSessionId.collectAsStateWithLifecycle()
 	val busy by viewModel.busy.collectAsStateWithLifecycle()
 	var importDialogOpen by remember { mutableStateOf(false) }
+	var renameTarget by remember { mutableStateOf<Session?>(null) }
+	var removeTarget by remember { mutableStateOf<Session?>(null) }
 
 	LaunchedEffect(openSessionId) {
 		val localId = openSessionId
@@ -59,6 +75,17 @@ fun SessionListScreen(
 			onOpenSession(localId)
 			viewModel.consumeOpenSession()
 		}
+	}
+
+	val listState = rememberLazyListState()
+	var orderedSessions by remember { mutableStateOf(sessions) }
+	val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+		orderedSessions = orderedSessions.toMutableList().apply {
+			add(to.index, removeAt(from.index))
+		}
+	}
+	LaunchedEffect(sessions) {
+		if (!reorderState.isAnyItemDragging) orderedSessions = sessions
 	}
 
 	Scaffold(
@@ -97,13 +124,25 @@ fun SessionListScreen(
 			}
 		} else {
 			LazyColumn(
+				state = listState,
 				modifier = Modifier
 					.fillMaxSize()
 					.padding(padding),
 			) {
-				items(sessions, key = { it.localId }) { session ->
-					SessionRow(session = session, onClick = { onOpenSession(session.localId) })
-					HorizontalDivider()
+				itemsIndexed(orderedSessions, key = { _, session -> session.localId }) { _, session ->
+					ReorderableItem(reorderState, session.localId) {
+						SessionRow(
+							session = session,
+							title = sessionTitle(session, titles),
+							onOpen = { onOpenSession(session.localId) },
+							onRename = { renameTarget = session },
+							onRemove = { removeTarget = session },
+							dragHandleModifier = Modifier.draggableHandle(
+								onDragStopped = { viewModel.reorder(orderedSessions.map { it.localId }) },
+							),
+						)
+						HorizontalDivider()
+					}
 				}
 			}
 		}
@@ -120,23 +159,60 @@ fun SessionListScreen(
 			onImport = { viewModel.importLink(it) },
 		)
 	}
+
+	renameTarget?.let { session ->
+		RenameDialog(
+			initialName = sessionTitle(session, titles),
+			onDismiss = { renameTarget = null },
+			onSave = { name ->
+				viewModel.rename(session.localId, name)
+				renameTarget = null
+			},
+		)
+	}
+
+	removeTarget?.let { session ->
+		RemoveDialog(
+			onDismiss = { removeTarget = null },
+			onConfirm = {
+				viewModel.remove(session.localId)
+				removeTarget = null
+			},
+		)
+	}
 }
 
+private fun sessionTitle(session: Session, titles: Map<String, String>): String =
+	session.nameOverride?.takeIf { it.isNotBlank() }
+		?: titles[session.localId]
+		?: SessionTitleCache.UNTITLED
+
 @Composable
-private fun SessionRow(session: Session, onClick: () -> Unit) {
+private fun SessionRow(
+	session: Session,
+	title: String,
+	onOpen: () -> Unit,
+	onRename: () -> Unit,
+	onRemove: () -> Unit,
+	dragHandleModifier: Modifier,
+) {
+	var menuOpen by remember { mutableStateOf(false) }
 	Row(
 		modifier = Modifier
 			.fillMaxWidth()
-			.padding(horizontal = 16.dp, vertical = 12.dp),
+			.clickable(onClick = onOpen)
+			.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
 		verticalAlignment = Alignment.CenterVertically,
-		horizontalArrangement = Arrangement.spacedBy(12.dp),
+		horizontalArrangement = Arrangement.spacedBy(4.dp),
 	) {
 		Text(
-			text = session.nameOverride?.takeIf { it.isNotBlank() } ?: "Untitled session",
+			text = title,
 			style = MaterialTheme.typography.titleMedium,
 			maxLines = 1,
 			overflow = TextOverflow.Ellipsis,
-			modifier = Modifier.weight(1f),
+			modifier = Modifier
+				.weight(1f)
+				.padding(vertical = 8.dp),
 		)
 		Surface(
 			shape = MaterialTheme.shapes.small,
@@ -149,8 +225,84 @@ private fun SessionRow(session: Session, onClick: () -> Unit) {
 				modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
 			)
 		}
-		TextButton(onClick = onClick) { Text("Open") }
+		TextButton(onClick = onOpen) { Text("Open") }
+		IconButton(
+			onClick = {},
+			modifier = dragHandleModifier,
+		) {
+			Icon(Icons.Default.DragHandle, contentDescription = "Reorder")
+		}
+		Box {
+			IconButton(onClick = { menuOpen = true }) {
+				Icon(Icons.Default.MoreVert, contentDescription = "More options")
+			}
+			DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+				DropdownMenuItem(
+					text = { Text("Rename") },
+					onClick = {
+						menuOpen = false
+						onRename()
+					},
+				)
+				DropdownMenuItem(
+					text = { Text("Remove") },
+					onClick = {
+						menuOpen = false
+						onRemove()
+					},
+				)
+			}
+		}
 	}
+}
+
+@Composable
+private fun RenameDialog(
+	initialName: String,
+	onDismiss: () -> Unit,
+	onSave: (String?) -> Unit,
+) {
+	var name by remember { mutableStateOf(initialName) }
+
+	AlertDialog(
+		onDismissRequest = onDismiss,
+		title = { Text("Rename session") },
+		text = {
+			OutlinedTextField(
+				value = name,
+				onValueChange = { name = it },
+				label = { Text("Name") },
+				singleLine = true,
+				modifier = Modifier.fillMaxWidth(),
+			)
+		},
+		confirmButton = {
+			TextButton(onClick = { onSave(name.takeIf { it.isNotBlank() }) }) {
+				Text("Save")
+			}
+		},
+		dismissButton = {
+			TextButton(onClick = onDismiss) { Text("Cancel") }
+		},
+	)
+}
+
+@Composable
+private fun RemoveDialog(
+	onDismiss: () -> Unit,
+	onConfirm: () -> Unit,
+) {
+	AlertDialog(
+		onDismissRequest = onDismiss,
+		title = { Text("Remove session?") },
+		text = { Text(REMOVE_WARNING) },
+		confirmButton = {
+			TextButton(onClick = onConfirm) { Text("Remove") }
+		},
+		dismissButton = {
+			TextButton(onClick = onDismiss) { Text("Cancel") }
+		},
+	)
 }
 
 @Composable

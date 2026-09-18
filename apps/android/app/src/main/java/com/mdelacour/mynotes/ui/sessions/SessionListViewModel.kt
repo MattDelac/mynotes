@@ -7,16 +7,24 @@ import com.mdelacour.mynotes.AppGraph
 import com.mdelacour.mynotes.crypto.ShareLink
 import com.mdelacour.mynotes.domain.Session
 import com.mdelacour.mynotes.domain.SessionStatus
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 	val sessions: StateFlow<List<Session>> = graph.repository.observeSessions()
 		.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+	private val titleCache = SessionTitleCache(graph.db.noteOrder())
+
+	private val _titles = MutableStateFlow<Map<String, String>>(emptyMap())
+	val titles: StateFlow<Map<String, String>> = _titles.asStateFlow()
 
 	private val _importError = MutableStateFlow<String?>(null)
 	val importError: StateFlow<String?> = _importError.asStateFlow()
@@ -29,6 +37,19 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 
 	init {
 		viewModelScope.launch { runCatching { graph.startup() } }
+		viewModelScope.launch {
+			graph.repository.observeSessions().collect { sessions ->
+				_titles.update { current ->
+					current.filterKeys { id -> sessions.any { it.localId == id } }
+				}
+				for (session in sessions) {
+					val title = withContext(Dispatchers.IO) {
+						titleCache.title(session) { localId -> graph.repository.openRoomKey(localId) }
+					}
+					_titles.update { it + (session.localId to title) }
+				}
+			}
+		}
 	}
 
 	fun createSession() {
@@ -70,6 +91,27 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 
 	fun consumeOpenSession() {
 		_openSessionId.value = null
+	}
+
+	fun rename(localId: String, name: String?) {
+		viewModelScope.launch {
+			graph.repository.rename(localId, name?.takeIf { it.isNotBlank() })
+			titleCache.invalidate(localId)
+		}
+	}
+
+	fun remove(localId: String) {
+		viewModelScope.launch {
+			graph.repository.remove(localId)
+			titleCache.invalidate(localId)
+			_titles.update { it - localId }
+		}
+	}
+
+	fun reorder(localIdsInOrder: List<String>) {
+		viewModelScope.launch {
+			graph.repository.reorder(localIdsInOrder)
+		}
 	}
 
 	companion object {

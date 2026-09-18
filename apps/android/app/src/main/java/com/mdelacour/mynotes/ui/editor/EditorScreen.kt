@@ -200,7 +200,10 @@ fun EditorScreen(
 			onDismissRequest = { confirmDelete = false },
 			title = { Text("Delete note?") },
 			text = {
-				Text("This deletes the note for every collaborator once the change syncs.")
+				Text(
+					"CRDT note deletion is an owner-only action: it syncs to every " +
+						"collaborator once the change reaches the relay and cannot be undone for them.",
+				)
 			},
 			confirmButton = {
 				TextButton(
