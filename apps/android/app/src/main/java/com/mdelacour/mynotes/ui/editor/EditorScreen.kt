@@ -65,9 +65,11 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mdelacour.mynotes.data.export.ExportManager
-import com.mdelacour.mynotes.ui.sessions.sessionStatusLabel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class ExportRequest { SAVE, SHARE }
@@ -88,6 +90,17 @@ fun EditorScreen(
 	var confirmDelete by remember { mutableStateOf(false) }
 	var confirmReSeed by remember { mutableStateOf(false) }
 	var pendingExport by remember { mutableStateOf<ExportRequest?>(null) }
+	var now by remember { mutableStateOf(System.currentTimeMillis()) }
+
+	LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+		viewModel.onResumed()
+	}
+	LaunchedEffect(Unit) {
+		while (true) {
+			delay(15_000)
+			now = System.currentTimeMillis()
+		}
+	}
 
 	val blocks = remember(state.text) { NoteBlocks.parse(state.text) }
 	var fieldValue by remember { mutableStateOf(TextFieldValue(state.text)) }
@@ -134,7 +147,7 @@ fun EditorScreen(
 					Column {
 						Text(state.title.ifBlank { "Untitled session" })
 						Text(
-							text = sessionStatusLabel(status),
+							text = freshnessLabel(status, state.lastVerifiedAt, now),
 							style = MaterialTheme.typography.labelSmall,
 						)
 					}
@@ -171,6 +184,15 @@ fun EditorScreen(
 						Icon(Icons.Default.MoreVert, contentDescription = "More options")
 					}
 					DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+						DropdownMenuItem(
+							text = { Text("Sync now") },
+							enabled = state.canSync,
+							onClick = {
+								menuOpen = false
+								viewModel.forceResync()
+								notify("Syncing…")
+							},
+						)
 						DropdownMenuItem(
 							text = { Text("Export as Markdown") },
 							enabled = state.selectedNoteId != null,

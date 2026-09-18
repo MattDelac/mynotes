@@ -38,6 +38,8 @@ data class EditorUiState(
 	val canReSeed: Boolean = false,
 	val warning: String? = null,
 	val rendered: Boolean = true,
+	val lastVerifiedAt: Long = 0L,
+	val canSync: Boolean = false,
 )
 
 class EditorViewModel(
@@ -59,6 +61,7 @@ class EditorViewModel(
 	private var changesJob: Job? = null
 	private var structureJob: Job? = null
 	private var warningJob: Job? = null
+	private var verifiedJob: Job? = null
 
 	init {
 		viewModelScope.launch { load() }
@@ -109,9 +112,22 @@ class EditorViewModel(
 			warningJob = viewModelScope.launch {
 				engine.warning.collect { warning -> _state.update { it.copy(warning = warning) } }
 			}
+			verifiedJob = viewModelScope.launch {
+				engine.lastVerifiedAt.collect { at ->
+					_state.update { it.copy(lastVerifiedAt = at) }
+				}
+			}
 			engine.start()
 		}
 		mutex.withLock { refresh(opened) }
+	}
+
+	fun onResumed() {
+		syncEngine?.verifyNow()
+	}
+
+	fun forceResync() {
+		syncEngine?.forceResync()
 	}
 
 	fun selectNote(id: String) {
@@ -335,6 +351,7 @@ class EditorViewModel(
 				error = null,
 				readOnly = !graph.repository.canWrite(open.session.access),
 				canReSeed = canReSeed(_syncStatus.value, open.session.access),
+				canSync = open.session.roomId != null,
 			)
 		}
 	}
@@ -393,6 +410,8 @@ class EditorViewModel(
 		syncStatusJob = null
 		warningJob?.cancel()
 		warningJob = null
+		verifiedJob?.cancel()
+		verifiedJob = null
 		syncEngine?.stop()
 		syncEngine = graph.openSyncEngine(open, viewModelScope, session).also { engine ->
 			_syncStatus.value = engine.status.value
@@ -404,6 +423,11 @@ class EditorViewModel(
 			}
 			warningJob = viewModelScope.launch {
 				engine.warning.collect { warning -> _state.update { it.copy(warning = warning) } }
+			}
+			verifiedJob = viewModelScope.launch {
+				engine.lastVerifiedAt.collect { at ->
+					_state.update { it.copy(lastVerifiedAt = at) }
+				}
 			}
 			engine.start()
 		}
@@ -421,6 +445,8 @@ class EditorViewModel(
 		syncStatusJob = null
 		warningJob?.cancel()
 		warningJob = null
+		verifiedJob?.cancel()
+		verifiedJob = null
 		changesJob?.cancel()
 		changesJob = null
 		structureJob?.cancel()

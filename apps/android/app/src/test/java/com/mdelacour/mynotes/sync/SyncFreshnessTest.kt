@@ -54,18 +54,23 @@ class SyncFreshnessTest {
 		advanceTimeBy(240_001)
 		runCurrent()
 
-		val reconnected = withTimeoutOrNull(30_000) { fake.fetchCount.first { it >= 2 } } != null
+		val converged = withTimeoutOrNull(30_000) {
+			fake.fetchCount.first { it >= 2 }
+			engine.status.first { it == SessionStatus.LIVE }
+			true
+		} == true
 		assertTrue(
 			"a silently dead socket must be detected and re-fetched; observed " +
 				"status=${engine.status.value}, fetchCount=${fake.fetchCount.value}, " +
 				"text=${harness.engineDoc.openNote("agenda")!!.string()}",
-			reconnected,
+			converged,
 		)
 		withTimeout(10_000) {
 			while (!harness.engineDoc.openNote("agenda")!!.string().contains("Sept 18")) delay(1)
 		}
 		assertEquals(SessionStatus.LIVE, engine.status.value)
-		assertEquals(listOf(-1L, 1L), fake.fetchAfters)
+		assertEquals(listOf(-1L, 1L), fake.fetchAfters.take(2))
+		assertTrue(fake.sockets.size >= 2)
 
 		engine.stop()
 		harness.openSession.close()

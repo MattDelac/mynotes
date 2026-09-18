@@ -12,7 +12,6 @@ import com.mdelacour.mynotes.domain.SessionStatus
 import com.mdelacour.mynotes.engine.EngineExecutor
 import com.mdelacour.mynotes.engine.FakeEngineDoc
 import java.net.URI
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,14 +47,21 @@ class RealBackendFreshnessReproTest {
 	}
 
 	@Test
-	fun aSilentlyDeadSocketLeavesTheAppLiveAndStale() = runBlocking {
+	fun aSilentlyDeadSocketIsRepairedByTheNextVerification() = runBlocking {
 		val url = requireNotNull(apiUrl)
 		val api = URI(url)
 		FreezableTcpProxy(api.host, api.port).use { proxy ->
 			val roomKey = roomKey()
 			val direct = OkHttpRelay(OkHttpClient(), url)
 			val relay = OkHttpRelay(OkHttpClient(), "http://127.0.0.1:${proxy.port}")
-			val harness = startEngine(direct, relay, roomKey)
+			val harness = startEngine(
+				direct,
+				relay,
+				roomKey,
+				verifyIntervalMs = 500,
+				staleAfterMs = 2_000,
+				watchdogTickMs = 500,
+			)
 			try {
 				withTimeout(15_000) { harness.engine.status.first { it == SessionStatus.LIVE } }
 				assertEquals("Fri Sept 11", harness.text())
@@ -82,17 +88,24 @@ class RealBackendFreshnessReproTest {
 	}
 
 	@Test
-	fun aPingIntervalMakesTheSameSilentDeathDetectable() = runBlocking {
+	fun aPingIntervalRepairsASilentSocketWithoutAnyVerification() = runBlocking {
 		val url = requireNotNull(apiUrl)
 		val api = URI(url)
 		FreezableTcpProxy(api.host, api.port).use { proxy ->
 			val roomKey = roomKey()
 			val direct = OkHttpRelay(OkHttpClient(), url)
-			val pingClient = OkHttpClient.Builder()
-				.pingInterval(500, TimeUnit.MILLISECONDS)
-				.build()
-			val relay = OkHttpRelay(pingClient, "http://127.0.0.1:${proxy.port}")
-			val harness = startEngine(direct, relay, roomKey)
+			val relay = OkHttpRelay(
+				OkHttpRelay.defaultClient(pingIntervalMs = 500),
+				"http://127.0.0.1:${proxy.port}",
+			)
+			val harness = startEngine(
+				direct,
+				relay,
+				roomKey,
+				verifyIntervalMs = 3_600_000,
+				staleAfterMs = 3_600_000,
+				watchdogTickMs = 3_600_000,
+			)
 			try {
 				withTimeout(15_000) { harness.engine.status.first { it == SessionStatus.LIVE } }
 				assertEquals("Fri Sept 11", harness.text())
@@ -130,6 +143,9 @@ class RealBackendFreshnessReproTest {
 		direct: Relay,
 		relay: Relay,
 		roomKey: ByteArray,
+		verifyIntervalMs: Long,
+		staleAfterMs: Long,
+		watchdogTickMs: Long,
 	): Harness {
 		val initial = RelayCrypto.seal(roomKey, stateWith("Fri Sept 11"))
 		val (roomId, editToken) = direct.postNote(initial, null)
@@ -171,6 +187,9 @@ class RealBackendFreshnessReproTest {
 			repository = repository,
 			scope = scope,
 			keepaliveMs = 1_000,
+			verifyIntervalMs = verifyIntervalMs,
+			staleAfterMs = staleAfterMs,
+			watchdogTickMs = watchdogTickMs,
 			logger = { println("engine: $it") },
 		)
 		engine.start()

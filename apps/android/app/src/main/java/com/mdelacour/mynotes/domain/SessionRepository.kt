@@ -293,6 +293,12 @@ class SessionRepository(
 		noteOrder.deleteOrphans()
 		outbox.deleteOrphans()
 		for (entity in sessions.listAll()) {
+			if (
+				entity.status == SessionStatus.CONNECTING.name ||
+				entity.status == SessionStatus.LIVE.name
+			) {
+				sessions.setStatus(entity.localId, SessionStatus.OFFLINE.name, clock())
+			}
 			val wrappedRoomKey = entity.wrappedRoomKey
 			if (wrappedRoomKey == null) {
 				sessions.setStatus(entity.localId, SessionStatus.KEY_MISSING.name, clock())

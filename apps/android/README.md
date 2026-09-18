@@ -16,7 +16,10 @@ zero-knowledge. The CRDT engine is the committed gomobile AAR in `engine/` — s
 - **Sync** — encrypted Yjs over the relay: catch-up through `GET /rooms/{id}/updates`, then a
   WebSocket; every local change is appended to the outbox and only removed when its ciphertext
   echoes back; a session is seeded into its room from an encrypted snapshot when it is first
-  shared; reconnect backoff and the server's room caps surface as `sync blocked`.
+  shared; reconnect backoff and the server's room caps surface as `sync blocked`. While live the
+  engine re-verifies its cursor against the update log every 45 s and on editor resume, a
+  contact watchdog drops a connection that stops answering, and OkHttp pings detect a half-open
+  socket; the editor shows `live · synced Xs ago` and offers a manual "Sync now".
 - **Export** — a note is written to the app cache as `.md` (unique filename, stale copies pruned
   after 24h) and shared through the `FileProvider`.
 - **Share / create** — a local session is posted to the relay as a room and turned into a view
@@ -72,7 +75,7 @@ have. It needs only bash, find, grep and sed.
 
 ### Test suite
 
-The JVM suite is 260 tests in 37 classes. Most are pure logic, but it also contains Robolectric
+The JVM suite is 281 tests in 42 classes. Most are pure logic, but it also contains Robolectric
 tests for the Compose note surface and editor body, the Room migration/DAOs, the backup rules, the
 FileProvider, and `SettingsStore`. Robolectric tests must use `@Config(sdk = [35])`: SDK 36 needs
 Java 21 and CI pins Java 17, so a Java 21 + SDK 36 upgrade is a separate change.
