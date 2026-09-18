@@ -30,6 +30,16 @@ jobs:
     name: Screenshots
     uses: ./.github/workflows/_ci-screenshots.yml
 
+  android:
+    name: Android
+    uses: ./.github/workflows/_ci-android.yml
+
+  release-android:
+    name: Release Android Preview
+    needs: [frontend, backend, e2e, android]
+    uses: ./.github/workflows/_release-android.yml
+    secrets: inherit
+
   release-frontend:
     name: Release Frontend
     needs: [frontend, backend, e2e]

@@ -30,6 +30,10 @@ jobs:
     name: Screenshots
     uses: ./.github/workflows/_ci-screenshots.yml
 
+  android:
+    name: Android
+    uses: ./.github/workflows/_ci-android.yml
+
   preview:
     name: Preview
     if: github.event.pull_request.head.repo.full_name == github.repository

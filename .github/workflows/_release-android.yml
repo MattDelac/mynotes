@@ -1,0 +1,86 @@
+name: Release Android Preview
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Install Android packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install "platforms;android-36" "build-tools;37.0.0" "platform-tools"
+
+      - name: Decode preview keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_PREVIEW_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || { echo "ANDROID_PREVIEW_KEYSTORE_BASE64 is not set"; exit 1; }
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/preview.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/preview.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_PREVIEW_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_PREVIEW_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_PREVIEW_KEY_PASSWORD }}
+        run: |
+          scripts/android/gradle.sh assembleRelease \
+            -Pmynotes.versionCode="$GITHUB_RUN_NUMBER" \
+            -Pmynotes.versionName="0.1.0-preview.$GITHUB_RUN_NUMBER"
+
+      - name: Verify signature and alignment
+        run: |
+          apk="apps/android/app/build/outputs/apk/release/app-release.apk"
+          apksigner verify --verbose --print-certs "$apk"
+          zipalign -c -P 16 -v 4 "$apk"
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="android-preview-$GITHUB_RUN_NUMBER"
+          apk="apps/android/app/build/outputs/apk/release/app-release.apk"
+          cp "$apk" "mynotes-preview-$GITHUB_RUN_NUMBER.apk"
+          short_sha="$(echo "$GITHUB_SHA" | cut -c1-7)"
+          {
+            echo "Preview Android build of MyNotes from \`$short_sha\` (workflow run $GITHUB_RUN_NUMBER)."
+            echo
+            echo "## Install"
+            echo
+            echo "1. Download \`mynotes-preview-$GITHUB_RUN_NUMBER.apk\` below."
+            echo "2. On the device, allow installing unknown apps for the app you download with (browser or files)."
+            echo "3. Tap the APK and install. Android may warn that the app is from an unknown developer: that is expected for sideloaded previews."
+            echo
+            echo "## What to test"
+            echo
+            echo "- Import a share link (\`https://notes.mdelacour.com/s/{id}#{key}\`) by pasting it or sharing it into MyNotes."
+            echo "- Edit notes, create and delete notes, and confirm the web client sees the same content."
+            echo "- Leave and return to the app, and check the session status goes live/offline as expected."
+            echo
+            echo "## Notes"
+            echo
+            echo "- Signed with a **dedicated preview key**, not the final release key. Preview updates share that key; the final release will need a separate install (uninstall first if Android refuses the signature)."
+            echo "- Default server: \`https://api-notes.mdelacour.com\`."
+            echo "- The APK is a release build, but unminified on purpose while the app is in preview."
+          } > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$tag" \
+            "mynotes-preview-$GITHUB_RUN_NUMBER.apk" \
+            --prerelease \
+            --title "MyNotes Android preview $GITHUB_RUN_NUMBER ($short_sha)" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+          echo "prerelease: $(gh release view "$tag" --json url --jq .url)"
