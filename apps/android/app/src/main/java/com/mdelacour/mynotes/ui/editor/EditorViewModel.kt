@@ -28,6 +28,8 @@ data class EditorUiState(
 	val noteIds: List<String> = emptyList(),
 	val selectedNoteId: String? = null,
 	val text: String = "",
+	val selectionStart: Int = 0,
+	val selectionEnd: Int = 0,
 	val noteTitles: Map<String, String> = emptyMap(),
 	val canUndo: Boolean = false,
 	val canRedo: Boolean = false,
@@ -50,6 +52,7 @@ class EditorViewModel(
 	val status: StateFlow<SessionStatus> = _syncStatus.asStateFlow()
 	private var syncEngine: SyncEngine? = null
 	private var syncStatusJob: Job? = null
+	private var changesJob: Job? = null
 
 	init {
 		viewModelScope.launch { load() }
@@ -74,6 +77,9 @@ class EditorViewModel(
 			return
 		}
 		openSession = opened
+		changesJob = viewModelScope.launch {
+			opened.changes.collect { noteId -> onRemoteChange(opened, noteId) }
+		}
 		syncEngine = graph.openSyncEngine(opened, viewModelScope).also { engine ->
 			_syncStatus.value = engine.status.value
 			syncStatusJob = viewModelScope.launch {
@@ -98,7 +104,14 @@ class EditorViewModel(
 				val open = openSession ?: return@withLock
 				val previous = _state.value.selectedNoteId
 				if (previous != null && previous != id) open.stopCapturing(previous)
-				_state.update { it.copy(selectedNoteId = id, text = open.text(id)) }
+				_state.update {
+					it.copy(
+						selectedNoteId = id,
+						text = open.text(id),
+						selectionStart = 0,
+						selectionEnd = 0,
+					)
+				}
 				refreshHistory(open, id)
 			}
 		}
@@ -164,6 +177,56 @@ class EditorViewModel(
 		}
 	}
 
+	fun onSelectionChanged(start: Int, end: Int) {
+		_state.update {
+			if (it.selectionStart == start && it.selectionEnd == end) {
+				it
+			} else {
+				it.copy(selectionStart = start, selectionEnd = end)
+			}
+		}
+	}
+
+	fun format(action: MarkdownAction) {
+		viewModelScope.launch {
+			mutex.withLock {
+				val open = openSession ?: return@withLock
+				val current = _state.value
+				val noteId = current.selectedNoteId ?: return@withLock
+				if (current.readOnly) return@withLock
+				try {
+					open.stopCapturing(noteId)
+					val before = open.text(noteId)
+					val result = MarkdownFormat.apply(
+						FormatState(before, current.selectionStart, current.selectionEnd),
+						action,
+					)
+					if (result.text != before) {
+						for (edit in TextDiff.between(before, result.text)) {
+							when (edit) {
+								is TextEdit.Insert -> open.insert(noteId, edit.index, edit.value)
+								is TextEdit.Delete -> open.delete(noteId, edit.index, edit.length)
+							}
+						}
+					}
+					open.stopCapturing(noteId)
+					_state.update {
+						it.copy(
+							text = result.text,
+							selectionStart = result.selectionStart,
+							selectionEnd = result.selectionEnd,
+							noteTitles = it.noteTitles + (noteId to NoteTitle.of(result.text)),
+						)
+					}
+					refreshTitle(open)
+					refreshHistory(open, noteId)
+				} catch (e: Exception) {
+					setError(e)
+				}
+			}
+		}
+	}
+
 	fun undo() = applyHistory { open, id -> open.undo(id) }
 
 	fun redo() = applyHistory { open, id -> open.redo(id) }
@@ -175,7 +238,14 @@ class EditorViewModel(
 				val id = _state.value.selectedNoteId ?: return@withLock
 				try {
 					action(open, id)
-					_state.update { it.copy(text = open.text(id)) }
+					val text = open.text(id)
+					_state.update {
+						it.copy(
+							text = text,
+							selectionStart = it.selectionStart.coerceIn(0, text.length),
+							selectionEnd = it.selectionEnd.coerceIn(0, text.length),
+						)
+					}
 					refreshTitle(open)
 					refreshHistory(open, id)
 				} catch (e: Exception) {
@@ -187,16 +257,21 @@ class EditorViewModel(
 
 	private suspend fun refresh(open: OpenSession) {
 		val ids = open.noteIds()
-		val selected = _state.value.selectedNoteId?.takeIf { it in ids } ?: ids.firstOrNull()
+		val previousSelected = _state.value.selectedNoteId
+		val selected = previousSelected?.takeIf { it in ids } ?: ids.firstOrNull()
+		val noteChanged = previousSelected != selected
 		val titles = ids.associateWith { NoteTitle.of(open.text(it)) }
 		val title = SessionTitle.of(open.session.nameOverride, ids) { noteId -> open.text(noteId) }
 		_state.update {
+			val newText = selected?.let { noteId -> open.text(noteId) } ?: ""
 			it.copy(
 				loading = false,
 				title = title,
 				noteIds = ids,
 				selectedNoteId = selected,
-				text = selected?.let { noteId -> open.text(noteId) } ?: "",
+				text = newText,
+				selectionStart = if (noteChanged) 0 else it.selectionStart.coerceIn(0, newText.length),
+				selectionEnd = if (noteChanged) 0 else it.selectionEnd.coerceIn(0, newText.length),
 				noteTitles = titles,
 				canUndo = selected?.let { noteId -> open.canUndo(noteId) } ?: false,
 				canRedo = selected?.let { noteId -> open.canRedo(noteId) } ?: false,
@@ -215,6 +290,28 @@ class EditorViewModel(
 
 	private suspend fun refreshHistory(open: OpenSession, id: String) {
 		_state.update { it.copy(canUndo = open.canUndo(id), canRedo = open.canRedo(id)) }
+	}
+
+	private suspend fun onRemoteChange(open: OpenSession, noteId: String) {
+		mutex.withLock {
+			val current = _state.value
+			val newText = open.text(noteId)
+			val titles = current.noteTitles + (noteId to NoteTitle.of(newText))
+			if (current.selectedNoteId != noteId) {
+				_state.update { it.copy(noteTitles = titles) }
+				return@withLock
+			}
+			_state.update {
+				it.copy(
+					text = newText,
+					selectionStart = it.selectionStart.coerceIn(0, newText.length),
+					selectionEnd = it.selectionEnd.coerceIn(0, newText.length),
+					noteTitles = titles,
+				)
+			}
+			refreshTitle(open)
+			refreshHistory(open, noteId)
+		}
 	}
 
 	fun reSeed() {
@@ -260,6 +357,8 @@ class EditorViewModel(
 	override fun onCleared() {
 		syncStatusJob?.cancel()
 		syncStatusJob = null
+		changesJob?.cancel()
+		changesJob = null
 		syncEngine?.stop()
 		syncEngine = null
 		openSession?.close()

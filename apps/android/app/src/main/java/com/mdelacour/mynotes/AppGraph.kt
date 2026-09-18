@@ -6,6 +6,7 @@ import com.mdelacour.mynotes.crypto.CryptoException
 import com.mdelacour.mynotes.crypto.RelayCrypto
 import com.mdelacour.mynotes.crypto.ShareCredentials
 import com.mdelacour.mynotes.data.db.MyNotesDb
+import com.mdelacour.mynotes.data.export.ExportManager
 import com.mdelacour.mynotes.data.prefs.SettingsStore
 import com.mdelacour.mynotes.data.vault.KeystoreVault
 import com.mdelacour.mynotes.domain.ImportResult
@@ -45,6 +46,7 @@ class AppGraph(context: Context) {
 	)
 	val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 	val settingsStore = SettingsStore(appContext, vault)
+	val exportManager = ExportManager(appContext)
 
 	private val httpClient = OkHttpClient()
 	private val _serverUrl = MutableStateFlow(SettingsStore.DEFAULT_SERVER_URL)
@@ -65,6 +67,7 @@ class AppGraph(context: Context) {
 
 	suspend fun startup() {
 		repository.startupCleanup()
+		exportManager.pruneStale()
 	}
 
 	suspend fun openSession(session: Session): OpenSession {

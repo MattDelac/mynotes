@@ -24,6 +24,11 @@ class OpenSession(
 	private val openNotes = HashMap<String, EngineNote>()
 	private val _outbound = MutableSharedFlow<ByteArray>(extraBufferCapacity = OUTBOUND_BUFFER)
 	val outbound: SharedFlow<ByteArray> = _outbound.asSharedFlow()
+	private val _changes = MutableSharedFlow<String>(
+		replay = 1,
+		extraBufferCapacity = CHANGES_BUFFER,
+	)
+	val changes: SharedFlow<String> = _changes.asSharedFlow()
 	private var closed = false
 
 	suspend fun noteIds(): List<String> = onEngine {
@@ -114,6 +119,7 @@ class OpenSession(
 			enqueuer.reset(engine.encodeStateVector())
 			val checkpoint = RelayCrypto.seal(roomKey, engine.encodeStateAsUpdate())
 			repository.checkpoint(session.localId, checkpoint, lastSeq)
+			for (noteId in engine.noteIds()) _changes.tryEmit(noteId)
 		}
 	}
 
@@ -146,5 +152,6 @@ class OpenSession(
 
 	companion object {
 		private const val OUTBOUND_BUFFER = 64
+		private const val CHANGES_BUFFER = 64
 	}
 }

@@ -1,5 +1,8 @@
 package com.mdelacour.mynotes.ui.editor
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,21 +33,41 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mdelacour.mynotes.data.export.ExportManager
 import com.mdelacour.mynotes.ui.sessions.sessionStatusLabel
+import kotlinx.coroutines.launch
+
+private enum class ExportRequest { SAVE, SHARE }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,11 +77,53 @@ fun EditorScreen(
 ) {
 	val state by viewModel.state.collectAsStateWithLifecycle()
 	val status by viewModel.status.collectAsStateWithLifecycle()
+	val context = LocalContext.current
+	val exportManager = remember(context) { ExportManager(context) }
+	val snackbarHostState = remember { SnackbarHostState() }
+	val scope = rememberCoroutineScope()
 	var menuOpen by remember { mutableStateOf(false) }
 	var confirmDelete by remember { mutableStateOf(false) }
 	var confirmReSeed by remember { mutableStateOf(false) }
+	var pendingExport by remember { mutableStateOf<ExportRequest?>(null) }
+
+	var fieldValue by remember { mutableStateOf(TextFieldValue(state.text)) }
+	LaunchedEffect(state.text, state.selectionStart, state.selectionEnd) {
+		val desired = TextFieldValue(
+			text = state.text,
+			selection = TextRange(
+				state.selectionStart.coerceIn(0, state.text.length),
+				state.selectionEnd.coerceIn(0, state.text.length),
+			),
+		)
+		if (fieldValue.text != desired.text || fieldValue.selection != desired.selection) {
+			fieldValue = desired
+		}
+	}
+
+	fun notify(message: String) {
+		scope.launch { snackbarHostState.showSnackbar(message) }
+	}
+
+	val createDocument = rememberLauncherForActivityResult(
+		ActivityResultContracts.CreateDocument("text/markdown"),
+	) { uri ->
+		if (uri != null) {
+			runCatching { exportManager.writeToUri(state.text, uri) }
+				.onSuccess { notify("Exported as Markdown") }
+				.onFailure { notify("Export failed: ${it.message ?: "unknown error"}") }
+		}
+	}
+
+	fun shareMarkdown() {
+		runCatching {
+			exportManager.shareIntent(exportManager.writeShareFile(state.text))
+		}.onSuccess { intent ->
+			context.startActivity(Intent.createChooser(intent, "Share note"))
+		}.onFailure { notify("Share failed: ${it.message ?: "unknown error"}") }
+	}
 
 	Scaffold(
+		snackbarHost = { SnackbarHost(snackbarHostState) },
 		topBar = {
 			TopAppBar(
 				title = {
@@ -95,6 +160,22 @@ fun EditorScreen(
 						Icon(Icons.Default.MoreVert, contentDescription = "More options")
 					}
 					DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+						DropdownMenuItem(
+							text = { Text("Export as Markdown") },
+							enabled = state.selectedNoteId != null,
+							onClick = {
+								menuOpen = false
+								pendingExport = ExportRequest.SAVE
+							},
+						)
+						DropdownMenuItem(
+							text = { Text("Share as Markdown") },
+							enabled = state.selectedNoteId != null,
+							onClick = {
+								menuOpen = false
+								pendingExport = ExportRequest.SHARE
+							},
+						)
 						DropdownMenuItem(
 							text = { Text("Delete note") },
 							leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
@@ -172,6 +253,11 @@ fun EditorScreen(
 						)
 					}
 				}
+				MarkdownToolbar(
+					enabled = !state.readOnly,
+					onAction = viewModel::format,
+					modifier = Modifier.fillMaxWidth(),
+				)
 				Box(
 					modifier = Modifier
 						.fillMaxSize()
@@ -179,12 +265,22 @@ fun EditorScreen(
 						.padding(16.dp),
 				) {
 					BasicTextField(
-						value = state.text,
-						onValueChange = viewModel::onTextChanged,
+						value = fieldValue,
+						onValueChange = { newValue ->
+							fieldValue = newValue
+							viewModel.onSelectionChanged(
+								newValue.selection.start,
+								newValue.selection.end,
+							)
+							viewModel.onTextChanged(newValue.text)
+						},
 						enabled = !state.readOnly,
 						modifier = Modifier
 							.fillMaxWidth()
-							.defaultMinSize(minHeight = 240.dp),
+							.defaultMinSize(minHeight = 240.dp)
+							.onPreviewKeyEvent { event ->
+								handleShortcut(event, state.readOnly, viewModel)
+							},
 						textStyle = MaterialTheme.typography.bodyLarge.copy(
 							fontFamily = FontFamily.Monospace,
 						),
@@ -193,6 +289,36 @@ fun EditorScreen(
 				}
 			}
 		}
+	}
+
+	if (pendingExport != null) {
+		AlertDialog(
+			onDismissRequest = { pendingExport = null },
+			title = { Text("Export as plain text?") },
+			text = {
+				Text("This exports the note as plain text, outside MyNotes' encryption.")
+			},
+			confirmButton = {
+				TextButton(
+					onClick = {
+						val request = pendingExport
+						pendingExport = null
+						when (request) {
+							ExportRequest.SAVE ->
+								createDocument.launch(exportManager.suggestedFilename(state.text))
+
+							ExportRequest.SHARE -> shareMarkdown()
+							null -> Unit
+						}
+					},
+				) {
+					Text("Continue")
+				}
+			},
+			dismissButton = {
+				TextButton(onClick = { pendingExport = null }) { Text("Cancel") }
+			},
+		)
 	}
 
 	if (confirmDelete) {
@@ -245,5 +371,37 @@ fun EditorScreen(
 				TextButton(onClick = { confirmReSeed = false }) { Text("Cancel") }
 			},
 		)
+	}
+}
+
+private fun handleShortcut(
+	event: KeyEvent,
+	readOnly: Boolean,
+	viewModel: EditorViewModel,
+): Boolean {
+	if (event.type != KeyEventType.KeyDown || readOnly) return false
+	if (!event.isCtrlPressed && !event.isMetaPressed) return false
+	return when (event.key) {
+		Key.B -> {
+			viewModel.format(MarkdownAction.BOLD)
+			true
+		}
+
+		Key.I -> {
+			viewModel.format(MarkdownAction.ITALIC)
+			true
+		}
+
+		Key.K -> {
+			viewModel.format(MarkdownAction.LINK)
+			true
+		}
+
+		Key.Z -> {
+			if (event.isShiftPressed) viewModel.redo() else viewModel.undo()
+			true
+		}
+
+		else -> false
 	}
 }

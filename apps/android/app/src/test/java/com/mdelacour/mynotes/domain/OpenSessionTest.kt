@@ -5,7 +5,9 @@ import com.mdelacour.mynotes.crypto.ShareCredentials
 import com.mdelacour.mynotes.data.FakeDb
 import com.mdelacour.mynotes.engine.EngineExecutor
 import com.mdelacour.mynotes.engine.FakeEngineDoc
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -147,5 +149,24 @@ class OpenSessionTest {
 		session.close()
 
 		assertTrue(harness.engine.closedNoteIds.contains(id))
+	}
+
+	@Test
+	fun applyRemoteUpdateEmitsEveryNoteId() = runBlocking {
+		val harness = Harness()
+		val session = harness.open()
+		session.createNote("n1")
+		session.createNote("n2")
+
+		val collected = mutableListOf<String>()
+		val collector = launch { session.changes.collect { collected += it } }
+		yield()
+
+		session.applyRemoteUpdate(harness.engine.encodeStateAsUpdate(), 1L)
+		yield()
+
+		assertEquals(listOf("n1", "n2"), collected)
+		collector.cancel()
+		session.close()
 	}
 }
