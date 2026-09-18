@@ -15,11 +15,18 @@ export interface Note {
 	share?: ShareInfo;
 }
 
-interface Session {
+export interface Session {
 	id: string;
 	createdAt: number;
 	updatedAt: number;
 	share?: ShareInfo;
+	nameOverride?: string;
+}
+
+export function sessionDisplayName(session: Session | undefined, sharedView: boolean): string {
+	const name = session?.nameOverride?.trim();
+	if (name) return name;
+	return sharedView ? 'Shared session' : 'Untitled session';
 }
 
 export interface NoteSelection {
@@ -49,7 +56,7 @@ let dbPromise: Promise<IDBPDatabase<NotesDB>> | null = null;
 
 function db(): Promise<IDBPDatabase<NotesDB>> {
 	if (!dbPromise) {
-		dbPromise = openDB<NotesDB>('mynotes', 3, {
+		dbPromise = openDB<NotesDB>('mynotes', 4, {
 			upgrade(database, oldVersion) {
 				if (oldVersion < 1) {
 					const store = database.createObjectStore('notes', { keyPath: 'id' });

@@ -15,9 +15,11 @@
 package engine
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
+	"unicode/utf16"
 
 	"github.com/Deln0r/ygo"
 )
@@ -262,6 +264,130 @@ func (t *Text) NewUndo() *Undo {
 		TrackedOrigins: map[any]struct{}{localOrigin: {}},
 	}, t.text)
 	return &Undo{manager: manager}
+}
+
+// ApplyEditsJSON applies a batch of UTF-16 range replacements in one
+// local-origin transaction and returns the relative anchors for every
+// replaced range as a JSON array of {start,end} base64url strings. Every
+// edit is validated against the live text before the transaction opens, so
+// a rejected batch leaves the document untouched. The JSON shape is an
+// array of {from,to,expected,replacement} objects; edits must be sorted and
+// non-overlapping.
+func (t *Text) ApplyEditsJSON(editsJSON []byte) ([]byte, error) {
+	type edit struct {
+		From        int    `json:"from"`
+		To          int    `json:"to"`
+		Expected    string `json:"expected"`
+		Replacement string `json:"replacement"`
+	}
+	type anchorPair struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+	}
+	var edits []edit
+	if err := json.Unmarshal(editsJSON, &edits); err != nil {
+		return nil, fmt.Errorf("engine: invalid edits: %w", err)
+	}
+	if len(edits) == 0 {
+		return nil, fmt.Errorf("engine: edits must not be empty")
+	}
+	readTxn := t.session.doc.ReadTxn()
+	current := t.text.String()
+	readTxn.Close()
+	units := utf16.Encode([]rune(current))
+	previousTo := -1
+	for _, e := range edits {
+		if e.From < 0 || e.To < e.From || e.To > len(units) {
+			return nil, fmt.Errorf("engine: edit range [%d, %d) is out of bounds", e.From, e.To)
+		}
+		if e.From < previousTo {
+			return nil, fmt.Errorf("engine: edit ranges overlap")
+		}
+		if !validBoundary(units, e.From) || !validBoundary(units, e.To) {
+			return nil, fmt.Errorf("engine: edit range splits a surrogate pair")
+		}
+		if string(utf16.Decode(units[e.From:e.To])) != e.Expected {
+			return nil, fmt.Errorf("engine: expected text does not match the current note")
+		}
+		previousTo = e.To
+	}
+	anchors := make([]anchorPair, len(edits))
+	for i, e := range edits {
+		start, err := anchorBytes(t.text, e.From)
+		if err != nil {
+			return nil, err
+		}
+		end, err := anchorBytes(t.text, e.To)
+		if err != nil {
+			return nil, err
+		}
+		anchors[i] = anchorPair{Start: start, End: end}
+	}
+	doc := t.session.doc
+	txn := doc.WriteTxn()
+	txn.Origin = localOrigin
+	defer txn.Commit()
+	for i := len(edits) - 1; i >= 0; i-- {
+		e := edits[i]
+		if err := t.text.Delete(txn, uint64(e.From), uint64(e.To-e.From)); err != nil {
+			return nil, err
+		}
+		if e.Replacement != "" {
+			if err := t.text.Insert(txn, uint64(e.From), e.Replacement); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return json.Marshal(anchors)
+}
+
+func anchorBytes(text *ygo.Text, index int) (string, error) {
+	rpos, err := ygo.CreateRelativePositionFromTypeIndex(text, uint64(index), 0)
+	if err != nil {
+		return "", err
+	}
+	encoded, err := ygo.EncodeRelativePosition(rpos)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(encoded), nil
+}
+
+func validBoundary(units []uint16, index int) bool {
+	if index <= 0 || index >= len(units) {
+		return true
+	}
+	before := units[index-1]
+	at := units[index]
+	return !(before >= 0xD800 && before <= 0xDBFF && at >= 0xDC00 && at <= 0xDFFF)
+}
+
+// CreateAnchor encodes a relative position for a UTF-16 index using the
+// yjs-compatible binary form. assoc >= 0 sticks to the character after the
+// position; assoc < 0 sticks to the character before it.
+func (t *Text) CreateAnchor(index int, assoc int) ([]byte, error) {
+	if index < 0 {
+		return nil, fmt.Errorf("engine: anchor index %d is negative", index)
+	}
+	rpos, err := ygo.CreateRelativePositionFromTypeIndex(t.text, uint64(index), int64(assoc))
+	if err != nil {
+		return nil, err
+	}
+	return ygo.EncodeRelativePosition(rpos)
+}
+
+// ResolveAnchor resolves a relative position to the current UTF-16 index,
+// or -1 when the anchor cannot be resolved against this replica.
+func (t *Text) ResolveAnchor(anchor []byte) (int, error) {
+	rpos, err := ygo.DecodeRelativePosition(anchor)
+	if err != nil {
+		return -1, err
+	}
+	absolute, ok := ygo.CreateAbsolutePositionFromRelativePosition(t.session.doc, rpos)
+	if !ok {
+		return -1, nil
+	}
+	return int(absolute.Index), nil
 }
 
 // Undo is a per-note undo/redo manager. Create one with Text.NewUndo and

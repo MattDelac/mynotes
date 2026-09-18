@@ -50,6 +50,14 @@ class NativeEngineNote(
 		text.delete(index.toLong(), length.toLong())
 	}
 
+	override fun applyEdits(editsJson: ByteArray): String =
+		text.applyEditsJSON(editsJson).toString(Charsets.UTF_8)
+
+	override fun createAnchor(index: Int, assoc: Int): ByteArray =
+		text.createAnchor(index.toLong(), assoc.toLong())
+
+	override fun resolveAnchor(anchor: ByteArray): Int = text.resolveAnchor(anchor).toInt()
+
 	override fun undo(): Boolean = undo.undo()
 
 	override fun redo(): Boolean = undo.redo()

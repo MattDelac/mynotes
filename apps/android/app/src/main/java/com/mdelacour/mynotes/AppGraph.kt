@@ -2,9 +2,16 @@ package com.mdelacour.mynotes
 
 import android.content.Context
 import android.util.Log
+import com.mdelacour.mynotes.ai.history.AiHistoryCrypto
+import com.mdelacour.mynotes.ai.history.AiHistoryDb
+import com.mdelacour.mynotes.ai.history.AiHistoryStore
+import com.mdelacour.mynotes.ai.provider.ProviderStreamer
+import com.mdelacour.mynotes.ai.provider.ProviderTransport
 import com.mdelacour.mynotes.crypto.CryptoException
 import com.mdelacour.mynotes.crypto.RelayCrypto
 import com.mdelacour.mynotes.crypto.ShareCredentials
+import com.mdelacour.mynotes.data.ai.AiKeyStore
+import com.mdelacour.mynotes.data.ai.aiCredentialsDataStore
 import com.mdelacour.mynotes.data.db.MyNotesDb
 import com.mdelacour.mynotes.data.export.ExportManager
 import com.mdelacour.mynotes.data.prefs.SettingsStore
@@ -42,12 +49,18 @@ class AppGraph(
 	relayOverride: Relay? = null,
 	engineFactoryOverride: (() -> EngineDoc)? = null,
 	maxCiphertextBytesOverride: Int = LocalChangeEnqueuer.MAX_CIPHERTEXT_BYTES,
+	aiDbOverride: AiHistoryDb? = null,
+	aiKeyStoreOverride: AiKeyStore? = null,
+	aiTransportOverride: ProviderStreamer? = null,
 ) {
-	private val appContext = context.applicationContext
+	val appContext = context.applicationContext
 	val db: MyNotesDb = dbOverride ?: MyNotesDb.open(appContext)
 	val vault: WrappingKey = vaultOverride ?: KeystoreVault()
 	val newEngine: () -> EngineDoc = engineFactoryOverride ?: { NativeEngineDoc() }
 	private val maxCiphertextBytes = maxCiphertextBytesOverride
+	val aiDb: AiHistoryDb = aiDbOverride ?: AiHistoryDb.open(appContext)
+	val aiKeyStore: AiKeyStore = aiKeyStoreOverride ?: AiKeyStore(appContext, vault)
+	val aiTransport: ProviderStreamer = aiTransportOverride ?: ProviderTransport()
 	val repository = SessionRepository(
 		sessions = db.sessions(),
 		noteOrder = db.noteOrder(),
@@ -117,6 +130,9 @@ class AppGraph(
 	}
 
 	suspend fun createLocalSession(name: String? = null): Session = repository.createLocal(name)
+
+	suspend fun aiHistoryStore(): AiHistoryStore =
+		AiHistoryStore(aiDb, AiHistoryCrypto.loadOrCreate(appContext.aiCredentialsDataStore, vault))
 
 	suspend fun importShare(credentials: ShareCredentials): ImportResult =
 		repository.importShare(credentials)

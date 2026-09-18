@@ -133,6 +133,11 @@ internal class FakeEngineNote(
 	private val state: NoteState,
 	private val captureGroups: Boolean = false,
 ) : EngineNote {
+	private fun anchorToken(index: Int): String =
+		com.mdelacour.mynotes.ai.contract.Base64UrlNoPad.encode("idx:$index".toByteArray(Charsets.UTF_8))
+
+	private data class Quad(val from: Int, val to: Int, val expected: String, val replacement: String)
+
 	private val undoStack = ArrayDeque<String>()
 	private val redoStack = ArrayDeque<String>()
 	private var capturing = false
@@ -152,6 +157,41 @@ internal class FakeEngineNote(
 	override fun delete(index: Int, length: Int) {
 		apply(state.text.removeRange(index, index + length))
 		doc.record(id, "")
+	}
+
+	override fun applyEdits(editsJson: ByteArray): String {
+		val parsed = kotlinx.serialization.json.Json.parseToJsonElement(editsJson.decodeToString())
+		val edits =
+			(parsed as kotlinx.serialization.json.JsonArray).map { element ->
+				val obj = element as kotlinx.serialization.json.JsonObject
+				val from = (obj["from"] as kotlinx.serialization.json.JsonPrimitive).content.toInt()
+				val to = (obj["to"] as kotlinx.serialization.json.JsonPrimitive).content.toInt()
+				val expected = (obj["expected"] as kotlinx.serialization.json.JsonPrimitive).content
+				val replacement = (obj["replacement"] as kotlinx.serialization.json.JsonPrimitive).content
+				Quad(from, to, expected, replacement)
+			}
+		require(edits.isNotEmpty()) { "edits must not be empty" }
+		var previousTo = -1
+		for (edit in edits) {
+			require(edit.from >= 0 && edit.to >= edit.from && edit.to <= state.text.length) { "range out of bounds" }
+			require(edit.from >= previousTo) { "overlapping edits" }
+			require(state.text.substring(edit.from, edit.to) == edit.expected) { "expected text mismatch" }
+			previousTo = edit.to
+		}
+		for (edit in edits.reversed()) {
+			apply(state.text.substring(0, edit.from) + edit.replacement + state.text.substring(edit.to))
+		}
+		doc.record(id, "")
+		return edits.joinToString(prefix = "[", postfix = "]") {
+			"{\"start\":\"" + anchorToken(it.from) + "\",\"end\":\"" + anchorToken(it.to) + "\"}"
+		}
+	}
+
+	override fun createAnchor(index: Int, assoc: Int): ByteArray = "idx:$index".toByteArray(Charsets.UTF_8)
+
+	override fun resolveAnchor(anchor: ByteArray): Int {
+		val index = anchor.toString(Charsets.UTF_8).removePrefix("idx:").toIntOrNull() ?: return -1
+		return index.coerceAtMost(state.text.length)
 	}
 
 	override fun undo(): Boolean {

@@ -9,6 +9,12 @@ interface EngineNote : AutoCloseable {
 
 	fun delete(index: Int, length: Int)
 
+	fun applyEdits(editsJson: ByteArray): String
+
+	fun createAnchor(index: Int, assoc: Int): ByteArray
+
+	fun resolveAnchor(anchor: ByteArray): Int
+
 	fun undo(): Boolean
 
 	fun redo(): Boolean

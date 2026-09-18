@@ -10,6 +10,22 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+data class EngineEdit(
+	val from: Int,
+	val to: Int,
+	val expected: String,
+	val replacement: String,
+)
+
+data class EngineAnchor(val start: String, val end: String)
 
 class OpenSession(
 	val session: Session,
@@ -37,6 +53,8 @@ class OpenSession(
 	suspend fun noteIds(): List<String> = onEngine {
 		orderer.orderedNoteIds(session.localId, engine)
 	}
+
+	suspend fun hasNote(id: String): Boolean = executor.run { engine.hasNote(id) }
 
 	suspend fun pendingOutbox(): List<OutboxEntity> = repository.pendingOutbox(session.localId)
 
@@ -119,6 +137,72 @@ class OpenSession(
 	suspend fun stopCapturing(id: String) {
 		executor.run { requireHandle(id).stopCapturing() }
 	}
+
+	suspend fun applyAgentEdits(id: String, edits: List<EngineEdit>): List<EngineAnchor> {
+		repository.checkWritable(session)
+		if (edits.isEmpty()) return emptyList()
+		val payload =
+			buildJsonArray {
+					for (edit in edits) {
+						add(
+							buildJsonObject {
+								put("from", edit.from)
+								put("to", edit.to)
+								put("expected", edit.expected)
+								put("replacement", edit.replacement)
+							},
+						)
+					}
+				}
+				.toString()
+				.toByteArray(Charsets.UTF_8)
+		val anchorsJson =
+			onMutate {
+				val handle = requireHandle(id)
+				handle.stopCapturing()
+				var result = ""
+				enqueueMutation { result = handle.applyEdits(payload) }
+				handle.stopCapturing()
+				result
+			}
+		val parsed = Json.parseToJsonElement(anchorsJson) as JsonArray
+		return parsed.map { element ->
+			val obj = element as kotlinx.serialization.json.JsonObject
+			EngineAnchor(
+				start = (obj["start"] as JsonPrimitive).content,
+				end = (obj["end"] as JsonPrimitive).content,
+			)
+		}
+	}
+
+	suspend fun createAgentNote(id: String, content: String) {
+		repository.checkWritable(session)
+		onMutate {
+			require(!engine.hasNote(id)) { "note already exists: $id" }
+			enqueueMutation {
+				engine.createNote(id)
+				if (content.isNotEmpty()) requireHandle(id).insert(0, content)
+			}
+			orderer.appendNote(session.localId, id)
+		}
+	}
+
+	suspend fun deleteAgentNote(id: String): String {
+		repository.checkWritable(session)
+		return onMutate {
+			val content = requireHandle(id).string()
+			enqueueMutation { engine.deleteNote(id) }
+			orderer.removeNote(session.localId, id)
+			openNotes.remove(id)?.close()
+			content
+		}
+	}
+
+	suspend fun createAgentAnchor(id: String, index: Int, assoc: Int = 0): ByteArray =
+		executor.run { requireHandle(id).createAnchor(index, assoc) }
+
+	suspend fun resolveAgentAnchor(id: String, anchor: ByteArray): Int =
+		executor.run { requireHandle(id).resolveAnchor(anchor) }
 
 	suspend fun applyRemoteUpdate(plaintextUpdate: ByteArray, lastSeq: Long?) {
 		onEngine {
