@@ -12,6 +12,7 @@ import java.net.ConnectException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -42,7 +43,7 @@ class SharingTest {
 		val stored = repository.getSession(session.localId)!!
 		assertEquals("room-1", stored.roomId)
 		assertEquals(Access.OWNER, stored.access)
-		assertEquals(SessionStatus.OFFLINE, stored.status)
+		assertEquals(SessionStatus.CONNECTING, stored.status)
 		assertNull(stored.createState)
 		assertEquals("edit-token", repository.editToken(session.localId))
 
@@ -159,12 +160,96 @@ class SharingTest {
 				.share(session, roomKey, FakeEngineDoc())
 		}.exceptionOrNull()
 
-		assertTrue(thrown is RelayException)
+		assertTrue(thrown is SeedFailedException)
 		val stored = repository.getSession(session.localId)!!
 		assertEquals("room-1", stored.roomId)
 		assertEquals(Access.OWNER, stored.access)
 		assertEquals("edit-token", repository.editToken(session.localId))
+		assertTrue(repository.seedPending(session.localId))
+		assertEquals(SessionStatus.SYNC_BLOCKED, stored.status)
 		assertTrue(relay.snapshots.isEmpty())
+	}
+
+	@Test
+	fun aFailedSeedIsResumedByTheNextShare() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val session = repository.createLocal(null)
+		val roomKey = repository.openRoomKey(session.localId)
+		val relay = FakeRelay().apply {
+			postNoteResult = "room-1" to "edit-token"
+			putSnapshotError = RelayException("forbidden", statusCode = 403)
+		}
+		val first = sharing(repository, relay, backoffMs = listOf(0L, 0L, 0L))
+		runCatching { first.share(session, roomKey, FakeEngineDoc()) }
+		assertTrue(repository.seedPending(session.localId))
+		assertTrue(relay.snapshots.isEmpty())
+
+		relay.putSnapshotError = null
+		val engine = FakeEngineDoc().apply { createNote("n1") }
+		val resumed = sharing(repository, relay, backoffMs = listOf(0L, 0L, 0L))
+			.share(repository.getSession(session.localId)!!, roomKey, engine)
+
+		assertEquals(1, relay.snapshots.size)
+		val snapshot = relay.snapshots.single().third
+		assertArrayEquals(engine.encodeStateAsUpdate(), RelayCrypto.open(roomKey, snapshot))
+		assertNotNull(resumed.ownerLink)
+		assertFalse(repository.seedPending(session.localId))
+		assertNull(repository.getSession(session.localId)!!.createState)
+	}
+
+	@Test
+	fun aRateLimitedSnapshotWaitsTheRetryAfterAndSucceeds() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val session = repository.createLocal(null)
+		val roomKey = repository.openRoomKey(session.localId)
+		val relay = FakeRelay().apply {
+			postNoteResult = "room-1" to "edit-token"
+			putSnapshotErrors.add(RelayException("slow down", statusCode = 429, retryAfterSeconds = 3))
+		}
+		val waits = mutableListOf<Long>()
+		val sharing = Sharing(
+			repository,
+			relay,
+			{ null },
+			{ base },
+			backoffMs = listOf(0L, 0L, 0L),
+			delayMs = { waits += it },
+		)
+
+		val links = sharing.share(session, roomKey, FakeEngineDoc())
+
+		assertEquals(1, waits.size)
+		assertEquals(3_000L, waits.single())
+		assertEquals(1, relay.snapshots.size)
+		assertNotNull(links.ownerLink)
+		assertFalse(repository.seedPending(session.localId))
+	}
+
+	@Test
+	fun anOversizeSnapshotFailsWithAReadableMessage() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val session = repository.createLocal(null)
+		val roomKey = repository.openRoomKey(session.localId)
+		val relay = FakeRelay().apply {
+			postNoteResult = "room-1" to "edit-token"
+			putSnapshotError = RelayException("too large", statusCode = 413)
+		}
+
+		val thrown = runCatching {
+			sharing(repository, relay, backoffMs = listOf(0L, 0L, 0L))
+				.share(session, roomKey, FakeEngineDoc())
+		}.exceptionOrNull()
+
+		assertTrue(thrown is SeedFailedException)
+		assertEquals(
+			"This session is too large to share (server limit is 2 MiB)",
+			thrown!!.message,
+		)
+		assertTrue(repository.seedPending(session.localId))
+		assertEquals(SessionStatus.SYNC_BLOCKED, repository.getSession(session.localId)!!.status)
 	}
 
 	@Test

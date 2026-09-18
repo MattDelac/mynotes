@@ -14,7 +14,8 @@ import kotlinx.coroutines.withContext
 class OpenSession(
 	val session: Session,
 	val roomKey: ByteArray,
-	private val engine: EngineDoc,
+	private var engine: EngineDoc,
+	private val newEngine: () -> EngineDoc,
 	private val executor: EngineExecutor,
 	private val enqueuer: LocalChangeEnqueuer,
 	private val orderer: NoteOrderer,
@@ -29,6 +30,8 @@ class OpenSession(
 		extraBufferCapacity = CHANGES_BUFFER,
 	)
 	val changes: SharedFlow<String> = _changes.asSharedFlow()
+	private val _structure = MutableSharedFlow<Unit>(extraBufferCapacity = STRUCTURE_BUFFER)
+	val structure: SharedFlow<Unit> = _structure.asSharedFlow()
 	private var closed = false
 
 	suspend fun noteIds(): List<String> = onEngine {
@@ -44,7 +47,7 @@ class OpenSession(
 
 	suspend fun createNote(id: String = UUID.randomUUID().toString()): String {
 		repository.checkWritable(session)
-		onEngine {
+		onMutate {
 			enqueueMutation { engine.createNote(id) }
 			orderer.appendNote(session.localId, id)
 		}
@@ -53,7 +56,8 @@ class OpenSession(
 
 	suspend fun deleteNote(id: String) {
 		repository.checkWritable(session)
-		onEngine {
+		onMutate {
+			requireNote(id)
 			enqueueMutation { engine.deleteNote(id) }
 			orderer.removeNote(session.localId, id)
 			openNotes.remove(id)?.close()
@@ -67,7 +71,8 @@ class OpenSession(
 	suspend fun insert(id: String, index: Int, value: String) {
 		repository.checkWritable(session)
 		if (value.isEmpty()) return
-		onEngine {
+		onMutate {
+			requireHandle(id)
 			var offset = 0
 			for (chunk in Chunker.split(value)) {
 				enqueueMutation { requireHandle(id).insert(index + offset, chunk) }
@@ -78,15 +83,15 @@ class OpenSession(
 
 	suspend fun delete(id: String, index: Int, length: Int) {
 		repository.checkWritable(session)
-		onEngine {
+		onMutate {
 			enqueueMutation { requireHandle(id).delete(index, length) }
 		}
 	}
 
 	suspend fun undo(id: String): Boolean {
 		repository.checkWritable(session)
-		return onEngine {
-			if (!requireHandle(id).canUndo()) return@onEngine false
+		return onMutate {
+			if (!requireHandle(id).canUndo()) return@onMutate false
 			var changed = false
 			enqueueMutation { changed = requireHandle(id).undo() }
 			changed
@@ -103,8 +108,8 @@ class OpenSession(
 
 	suspend fun redo(id: String): Boolean {
 		repository.checkWritable(session)
-		return onEngine {
-			if (!requireHandle(id).canRedo()) return@onEngine false
+		return onMutate {
+			if (!requireHandle(id).canRedo()) return@onMutate false
 			var changed = false
 			enqueueMutation { changed = requireHandle(id).redo() }
 			changed
@@ -117,11 +122,16 @@ class OpenSession(
 
 	suspend fun applyRemoteUpdate(plaintextUpdate: ByteArray, lastSeq: Long?) {
 		onEngine {
+			val beforeIds = engine.noteIds().toSet()
 			engine.applyUpdate(plaintextUpdate)
 			enqueuer.reset(engine.encodeStateVector())
 			val checkpoint = RelayCrypto.seal(roomKey, engine.encodeStateAsUpdate())
 			repository.checkpoint(session.localId, checkpoint, lastSeq)
-			for (noteId in engine.noteIds()) _changes.tryEmit(noteId)
+			val ids = engine.noteIds()
+			val afterIds = ids.toSet()
+			for (id in beforeIds - afterIds) openNotes.remove(id)?.close()
+			for (noteId in ids) _changes.tryEmit(noteId)
+			if (beforeIds != afterIds) _structure.tryEmit(Unit)
 		}
 	}
 
@@ -131,6 +141,33 @@ class OpenSession(
 		for (note in openNotes.values) note.close()
 		openNotes.clear()
 		executor.close()
+	}
+
+	private suspend fun <T> onMutate(block: suspend () -> T): T = onEngine {
+		try {
+			block()
+		} catch (e: UpdateTooLargeException) {
+			rollback()
+			throw EditTooLargeException(
+				"This edit is too large to sync (limit ${e.maxBytes} bytes); it was reverted",
+			)
+		}
+	}
+
+	/** Replaces the engine with a fresh one rebuilt from the last durable checkpoint. */
+	private suspend fun rollback() {
+		val beforeIds = engine.noteIds().toSet()
+		val fresh = newEngine()
+		repository.getSession(session.localId)?.encryptedCheckpoint?.let { checkpoint ->
+			fresh.applyUpdate(RelayCrypto.open(roomKey, checkpoint))
+		}
+		for (note in openNotes.values) note.close()
+		openNotes.clear()
+		engine = fresh
+		enqueuer.reset(fresh.encodeStateVector())
+		val afterIds = fresh.noteIds()
+		for (id in afterIds) _changes.tryEmit(id)
+		if (beforeIds != afterIds.toSet()) _structure.tryEmit(Unit)
 	}
 
 	private suspend fun enqueueMutation(block: () -> Unit): ByteArray {
@@ -143,17 +180,31 @@ class OpenSession(
 		withContext(executor.dispatcher) { block() }
 
 	private fun noteHandle(id: String): EngineNote? {
+		if (!engine.hasNote(id)) {
+			openNotes.remove(id)?.close()
+			return null
+		}
 		openNotes[id]?.let { return it }
 		val note = engine.openNote(id) ?: return null
 		openNotes[id] = note
 		return note
 	}
 
-	private fun requireHandle(id: String): EngineNote =
-		noteHandle(id) ?: throw IllegalArgumentException("note not found: $id")
+	private fun requireNote(id: String) {
+		if (!engine.hasNote(id)) {
+			openNotes.remove(id)?.close()
+			throw IllegalArgumentException("note not found: $id")
+		}
+	}
+
+	private fun requireHandle(id: String): EngineNote {
+		requireNote(id)
+		return noteHandle(id) ?: throw IllegalArgumentException("note not found: $id")
+	}
 
 	companion object {
 		private const val OUTBOUND_BUFFER = 64
 		private const val CHANGES_BUFFER = 64
+		private const val STRUCTURE_BUFFER = 64
 	}
 }

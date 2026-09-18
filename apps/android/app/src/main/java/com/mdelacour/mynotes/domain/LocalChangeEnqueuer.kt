@@ -11,6 +11,9 @@ class UpdateTooLargeException(
 	val maxBytes: Int,
 ) : IllegalStateException("sealed update is $actualBytes bytes, limit is $maxBytes")
 
+/** A local mutation produced a sealed update over the ciphertext limit and was rolled back. */
+class EditTooLargeException(message: String) : IllegalStateException(message)
+
 class LocalChangeEnqueuer(
 	private val sessionLocalId: String,
 	private val roomKey: ByteArray,
@@ -18,6 +21,7 @@ class LocalChangeEnqueuer(
 	private val outbox: OutboxDao,
 	private val clock: () -> Long = System::currentTimeMillis,
 	private val newId: () -> String = { UUID.randomUUID().toString() },
+	private val maxCiphertextBytes: Int = MAX_CIPHERTEXT_BYTES,
 ) {
 	private var enqueuedSV: ByteArray = ByteArray(0)
 
@@ -35,12 +39,10 @@ class LocalChangeEnqueuer(
 			throw IllegalStateException("a local mutation must produce a non-empty diff")
 		}
 		val ciphertext = RelayCrypto.seal(roomKey, diff)
-		if (ciphertext.size > MAX_CIPHERTEXT_BYTES) {
-			// Tripwire only: the engine mutation above already happened and cannot be
-			// rolled back. Callers pre-split large values with Chunker, so reaching this
-			// means a chunk-size bug. Skipping the durable append keeps the outbox and
-			// state vector consistent with each other.
-			throw UpdateTooLargeException(ciphertext.size, MAX_CIPHERTEXT_BYTES)
+		if (ciphertext.size > maxCiphertextBytes) {
+			// Callers pre-split large values with Chunker. Reaching this means a single
+			// transaction produced an oversize update; OpenSession rolls the engine back.
+			throw UpdateTooLargeException(ciphertext.size, maxCiphertextBytes)
 		}
 		val checkpoint = RelayCrypto.seal(roomKey, engine.encodeStateAsUpdate())
 		val ordinal = outbox.nextOrdinal(sessionLocalId) ?: 0L

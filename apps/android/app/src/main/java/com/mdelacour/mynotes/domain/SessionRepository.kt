@@ -193,6 +193,26 @@ class SessionRepository(
 		sessions.update(entity.copy(createState = CREATE_STATE_CREATING, updatedAt = clock()))
 	}
 
+	/** True while a room is attached but its initial snapshot is not yet confirmed on the server. */
+	suspend fun seedPending(localId: String): Boolean =
+		sessions.get(localId)?.createState == CREATE_STATE_CREATING
+
+	/** Marks the initial snapshot as confirmed; a later share can rebuild links without touching the network. */
+	suspend fun markSeeded(localId: String) = tx.run {
+		val entity = sessions.get(localId) ?: return@run
+		sessions.update(
+			entity.copy(
+				createState = null,
+				status = SessionStatus.CONNECTING.name,
+				updatedAt = clock(),
+			),
+		)
+	}
+
+	suspend fun markSyncBlocked(localId: String) = tx.run {
+		sessions.setStatus(localId, SessionStatus.SYNC_BLOCKED.name, clock())
+	}
+
 	suspend fun attachRoom(localId: String, roomId: String, wrappedEditToken: ByteArray): Session? = tx.run {
 		val entity = sessions.get(localId) ?: return@run null
 		val updated = entity.copy(
@@ -200,7 +220,6 @@ class SessionRepository(
 			access = Access.OWNER.name,
 			wrappedEditToken = wrappedEditToken,
 			lastSeq = -1,
-			createState = null,
 			status = SessionStatus.OFFLINE.name,
 			updatedAt = clock(),
 		)
@@ -321,7 +340,7 @@ class SessionRepository(
 
 	companion object {
 		private const val ROOM_KEY_LENGTH = 32
-		private const val CREATE_STATE_CREATING = "CREATING"
+		const val CREATE_STATE_CREATING = "CREATING"
 		private const val CREATE_STATE_CREATION_UNCERTAIN = "CREATION_UNCERTAIN"
 	}
 }

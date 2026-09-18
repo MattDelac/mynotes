@@ -95,6 +95,7 @@ class AppGraph(context: Context) {
 			session = session,
 			roomKey = roomKey,
 			engine = engine,
+			newEngine = { NativeEngineDoc() },
 			executor = executor,
 			enqueuer = enqueuer,
 			orderer = orderer,

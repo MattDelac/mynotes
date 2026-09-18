@@ -362,6 +362,7 @@ class SyncEngineTest {
 			session = session,
 			roomKey = roomKey,
 			engine = engineDoc,
+			newEngine = { FakeEngineDoc() },
 			executor = executor,
 			enqueuer = enqueuer,
 			orderer = orderer,

@@ -34,6 +34,7 @@ class LargePasteTest {
 			session = imported.session,
 			roomKey = roomKey,
 			engine = engine,
+			newEngine = { FakeEngineDoc() },
 			executor = EngineExecutor(),
 			enqueuer = enqueuer,
 			orderer = NoteOrderer(db.noteOrder, { db.clock.now }),

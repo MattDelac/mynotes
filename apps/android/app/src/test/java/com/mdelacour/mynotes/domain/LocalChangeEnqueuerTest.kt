@@ -166,4 +166,33 @@ class LocalChangeEnqueuerTest {
 		assertTrue(db.outbox.rows.isEmpty())
 		assertTrue(before.contentEquals(enqueuer.enqueuedStateVector()))
 	}
+
+	@Test
+	fun theInjectedCiphertextLimitIsEnforced() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val session = repository.createLocal(null)
+		val engine = FakeEngineDoc()
+		engine.createNote("n1")
+		val enqueuer = LocalChangeEnqueuer(
+			sessionLocalId = session.localId,
+			roomKey = roomKey,
+			repository = repository,
+			outbox = db.outbox,
+			clock = { db.clock.now },
+			newId = { db.ids.next() },
+			maxCiphertextBytes = 64,
+		)
+		enqueuer.reset(engine.encodeStateVector())
+
+		assertThrows(UpdateTooLargeException::class.java) {
+			runBlocking {
+				enqueuer.enqueue(engine) {
+					engine.openNote("n1")!!.insert(0, "x".repeat(100))
+				}
+			}
+		}
+
+		assertTrue(db.outbox.rows.isEmpty())
+	}
 }

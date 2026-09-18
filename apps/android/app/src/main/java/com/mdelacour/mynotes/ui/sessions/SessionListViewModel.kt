@@ -159,15 +159,11 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 			_shareState.value = ShareUiState.Working
 			try {
 				val sharing = graph.sharing()
-				val links = if (session.roomId == null) {
-					val opened = graph.openSession(session)
-					try {
-						sharing.shareSnapshot(session, opened.roomKey, opened.encodeStateAsUpdate())
-					} finally {
-						opened.close()
-					}
-				} else {
-					sharing.links(session)
+				val opened = graph.openSession(session)
+				val links = try {
+					sharing.shareSnapshot(session, opened.roomKey, opened.encodeStateAsUpdate())
+				} finally {
+					opened.close()
 				}
 				_shareState.value = ShareUiState.Links(links)
 			} catch (e: CreationUncertainException) {

@@ -69,6 +69,34 @@ class ReSeedTest {
 	}
 
 	@Test
+	fun aFailedSnapshotUploadKeepsThePreviousRoomAndCheckpoint() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val session = repository.importShare(
+			ShareCredentials("room-1", Base64Url.encode(roomKey), "old-token"),
+		).session
+		val oldCheckpoint = ByteArray(4) { 9 }
+		repository.checkpoint(session.localId, oldCheckpoint, 5L)
+		val relay = FakeRelay().apply {
+			postNoteResult = "room-2" to "new-token"
+			putSnapshotError = RelayException("too large", statusCode = 413)
+		}
+		val engine = FakeEngineDoc().apply { createNote("n1") }
+
+		val thrown = runCatching {
+			ReSeed(repository, relay, backoffMs = listOf(0L, 0L, 0L)).reSeed(session, roomKey, engine, null)
+		}.exceptionOrNull()
+
+		assertTrue(thrown is SeedFailedException)
+		val unchanged = repository.getSession(session.localId)!!
+		assertEquals("room-1", unchanged.roomId)
+		assertEquals("old-token", repository.editToken(unchanged.localId))
+		assertArrayEquals(oldCheckpoint, unchanged.encryptedCheckpoint)
+		assertEquals(5L, unchanged.lastSeq)
+		assertTrue(relay.snapshots.isEmpty())
+	}
+
+	@Test
 	fun viewersCannotReSeed() = runBlocking {
 		val db = FakeDb()
 		val repository = db.repository()

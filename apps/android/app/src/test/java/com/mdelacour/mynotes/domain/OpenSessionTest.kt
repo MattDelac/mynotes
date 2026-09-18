@@ -1,6 +1,7 @@
 package com.mdelacour.mynotes.domain
 
 import com.mdelacour.mynotes.crypto.Base64Url
+import com.mdelacour.mynotes.crypto.RelayCrypto
 import com.mdelacour.mynotes.crypto.ShareCredentials
 import com.mdelacour.mynotes.data.FakeDb
 import com.mdelacour.mynotes.engine.EngineExecutor
@@ -8,6 +9,7 @@ import com.mdelacour.mynotes.engine.FakeEngineDoc
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -20,9 +22,14 @@ class OpenSessionTest {
 		val roomKey = ByteArray(32) { (it * 3 + 1).toByte() }
 		val engine = FakeEngineDoc()
 		val executor = EngineExecutor()
+		val createdEngines = mutableListOf<FakeEngineDoc>()
+		var lastEnqueuer: LocalChangeEnqueuer? = null
 		private var roomCounter = 0
 
-		suspend fun open(editToken: String? = "edit"): OpenSession {
+		suspend fun open(
+			editToken: String? = "edit",
+			maxCiphertextBytes: Int = LocalChangeEnqueuer.MAX_CIPHERTEXT_BYTES,
+		): OpenSession {
 			val roomId = "room-${roomCounter++}"
 			val imported = repository.importShare(
 				ShareCredentials(roomId, Base64Url.encode(roomKey), editToken),
@@ -35,12 +42,15 @@ class OpenSessionTest {
 				outbox = db.outbox,
 				clock = { db.clock.now },
 				newId = { db.ids.next() },
+				maxCiphertextBytes = maxCiphertextBytes,
 			)
+			lastEnqueuer = enqueuer
 			val orderer = NoteOrderer(db.noteOrder, { db.clock.now })
 			return OpenSession(
 				session = session,
 				roomKey = roomKey,
 				engine = engine,
+				newEngine = { FakeEngineDoc().also { createdEngines += it } },
 				executor = executor,
 				enqueuer = enqueuer,
 				orderer = orderer,
@@ -167,6 +177,42 @@ class OpenSessionTest {
 
 		assertEquals(listOf("n1", "n2"), collected)
 		collector.cancel()
+		session.close()
+	}
+
+	@Test
+	fun anOversizeRedoRollsBackToTheLastDurableCheckpoint() = runBlocking {
+		val harness = Harness()
+		val session = harness.open(maxCiphertextBytes = 60_000)
+		val id = session.createNote("n1")
+		val payload = "x".repeat(62_000)
+
+		session.insert(id, 0, payload)
+		assertEquals(payload, session.text(id))
+
+		assertTrue(session.undo(id))
+		val durable = session.text(id)
+		assertEquals("x".repeat(49_152), durable)
+
+		val checkpoint = harness.repository.getSession(session.session.localId)!!.encryptedCheckpoint!!
+		val fromCheckpoint = FakeEngineDoc().apply {
+			applyUpdate(RelayCrypto.open(harness.roomKey, checkpoint))
+		}
+		assertEquals(durable, fromCheckpoint.openNote(id)!!.string())
+
+		val rowsBefore = harness.db.outbox.rows.size
+		val thrown = runCatching { session.redo(id) }.exceptionOrNull()
+		assertTrue(thrown is EditTooLargeException)
+
+		assertEquals(rowsBefore, harness.db.outbox.rows.size)
+		assertEquals(durable, session.text(id))
+		val rolledBack = harness.createdEngines.last()
+		assertEquals(durable, rolledBack.openNote(id)!!.string())
+		assertArrayEquals(harness.lastEnqueuer!!.enqueuedStateVector(), rolledBack.encodeStateVector())
+
+		session.insert(id, 0, "z")
+		assertTrue(session.text(id).startsWith("z"))
+		assertEquals(rowsBefore + 1, harness.db.outbox.rows.size)
 		session.close()
 	}
 }
