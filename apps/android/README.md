@@ -95,13 +95,13 @@ were pinned to the newest AGP-8-compatible releases.
 
 ## App icon
 
-The launcher icon is the Foldmark mark (concept 1 of the approved logo set): one vector path on a
-pure white adaptive background, with the same geometry reused as the Android 13+ monochrome layer.
-No rounded-square container is baked in; Android's mask applies. The geometry lives in exactly one
-file, `app/src/main/res/drawable/ic_launcher_mark.xml`, which is referenced by both
-`mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` as `foreground` and `monochrome`, so
-swapping to concept 2 (Cipherlink) or concept 3 (Quiet Page) means replacing that one file with the
-concept's 108x108 path. Keep the 108x108 viewport and the 21..87 safe zone.
+The launcher icon is Cipherlink (concept 2 of the approved logo set): three round-stroked vector
+paths on a pure white adaptive background, with the same geometry reused as the Android 13+
+monochrome layer. No rounded-square container is baked in; Android's mask applies. The geometry
+lives in exactly one file, `app/src/main/res/drawable/ic_launcher_mark.xml`, which is referenced by
+both `mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` as `foreground` and
+`monochrome`, so swapping to another concept means replacing that one file with the concept's
+108x108 geometry. Keep the 108x108 viewport and the 21..87 safe zone.
 
 ## Release previews
 
