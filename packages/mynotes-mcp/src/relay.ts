@@ -182,9 +182,14 @@ export class RelayClient {
 		return `${this.base.replace(/^http/, 'ws')}/ws/${encodeURIComponent(roomId)}`;
 	}
 
-	async fetchUpdates(roomId: string, after: number): Promise<RelayUpdateRow[]> {
+	async fetchUpdates(
+		roomId: string,
+		after: number,
+		options: { timeoutMs?: number } = {}
+	): Promise<RelayUpdateRow[]> {
 		const controller = new AbortController();
-		const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+		const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
+		const timer = setTimeout(() => controller.abort(), timeoutMs);
 		let response: Response;
 		try {
 			response = await this.fetchImpl(this.updatesUrl(roomId, after), {

@@ -84,7 +84,7 @@ export function resolveStateDir(explicit?: string): string {
 	return join(homedir(), '.local', 'state', 'mynotes-mcp');
 }
 
-function assertOwnedByUser(path: string, kind: 'file' | 'directory'): void {
+export function assertOwnedByUser(path: string, kind: 'file' | 'directory'): void {
 	const stats = lstatSync(path);
 	if (stats.isSymbolicLink()) {
 		throw new ConfigError('insecure_permissions', `${kind} is a symlink: ${path}`);

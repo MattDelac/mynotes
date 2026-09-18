@@ -144,6 +144,19 @@ export interface SeededSession {
 	doc: Y.Doc;
 }
 
+export async function waitFor(
+	condition: () => boolean | Promise<boolean>,
+	timeoutMs = 5000,
+	label = 'condition'
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		if (await condition()) return;
+		if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+}
+
 export async function seedSession(
 	relayUrl: string,
 	contents: Record<string, string>

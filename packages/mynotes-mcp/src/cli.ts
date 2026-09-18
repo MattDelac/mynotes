@@ -369,6 +369,10 @@ export async function runCli(argv: string[], io: CliIo = defaultIo): Promise<num
 				return commandReload(rest, io);
 			case 'token':
 				return commandToken(rest, io);
+			case 'serve': {
+				const { runServe } = await import('./index.js');
+				return await runServe(rest);
+			}
 			default:
 				throw new ConfigError('invalid_config', `unknown command: ${command}`);
 		}
