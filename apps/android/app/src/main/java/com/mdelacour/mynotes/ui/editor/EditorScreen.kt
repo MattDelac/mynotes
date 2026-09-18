@@ -244,94 +244,17 @@ fun EditorScreen(
 				}
 			}
 
-			else -> Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-				state.warning?.let { warning ->
-					Surface(
-						color = MaterialTheme.colorScheme.secondaryContainer,
-						contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-						modifier = Modifier.fillMaxWidth(),
-					) {
-						Text(
-							text = warning,
-							style = MaterialTheme.typography.bodySmall,
-							modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-						)
-					}
-				}
-				if (state.readOnly) {
-					Text(
-						text = "read-only",
-						style = MaterialTheme.typography.labelMedium,
-						modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-					)
-				}
-				LazyRow(
-					modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-					horizontalArrangement = Arrangement.spacedBy(8.dp),
-				) {
-					items(state.noteIds) { id ->
-						FilterChip(
-							selected = id == state.selectedNoteId,
-							onClick = { viewModel.selectNote(id) },
-							label = { Text(state.noteTitles[id] ?: "Untitled") },
-						)
-					}
-				}
-				if (state.rendered) {
-					NoteView(
-						blocks = blocks,
-						readOnly = state.readOnly,
-						onToggleTask = viewModel::toggleTask,
-						modifier = Modifier
-							.fillMaxWidth()
-							.weight(1f),
-					)
-				} else {
-					MarkdownToolbar(
-						enabled = !state.readOnly,
-						onAction = viewModel::format,
-						modifier = Modifier.fillMaxWidth(),
-					)
-					Surface(
-						modifier = Modifier
-							.fillMaxWidth()
-							.weight(1f),
-						color = MaterialTheme.colorScheme.background,
-						contentColor = MaterialTheme.colorScheme.onBackground,
-					) {
-						Box(
-							modifier = Modifier
-								.fillMaxSize()
-								.verticalScroll(rememberScrollState())
-								.padding(16.dp),
-						) {
-							BasicTextField(
-								value = fieldValue,
-								onValueChange = { newValue ->
-									fieldValue = newValue
-									viewModel.onSelectionChanged(
-										newValue.selection.start,
-										newValue.selection.end,
-									)
-									viewModel.onTextChanged(newValue.text)
-								},
-								enabled = !state.readOnly,
-								modifier = Modifier
-									.fillMaxWidth()
-									.defaultMinSize(minHeight = 240.dp)
-									.onPreviewKeyEvent { event ->
-										handleShortcut(event, state.readOnly, viewModel)
-									},
-								textStyle = MaterialTheme.typography.bodyLarge.copy(
-									fontFamily = FontFamily.Monospace,
-									color = MaterialTheme.colorScheme.onSurface,
-								),
-								cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-							)
-						}
-					}
-				}
-			}
+			else -> EditorBody(
+				state = state,
+				onSelectNote = viewModel::selectNote,
+				onFormat = viewModel::format,
+				onToggleTask = viewModel::toggleTask,
+				onUndo = viewModel::undo,
+				onRedo = viewModel::redo,
+				onTextChanged = viewModel::onTextChanged,
+				onSelectionChanged = viewModel::onSelectionChanged,
+				modifier = Modifier.fillMaxSize().padding(padding),
+			)
 		}
 	}
 
@@ -418,31 +341,150 @@ fun EditorScreen(
 	}
 }
 
+@Composable
+fun EditorBody(
+	state: EditorUiState,
+	onSelectNote: (String) -> Unit,
+	onFormat: (MarkdownAction) -> Unit,
+	onToggleTask: (TaskItem) -> Unit,
+	onUndo: () -> Unit,
+	onRedo: () -> Unit,
+	onTextChanged: (String) -> Unit,
+	onSelectionChanged: (Int, Int) -> Unit,
+	modifier: Modifier = Modifier,
+) {
+	val blocks = remember(state.text) { NoteBlocks.parse(state.text) }
+	var fieldValue by remember { mutableStateOf(TextFieldValue(state.text)) }
+	LaunchedEffect(state.text, state.selectionStart, state.selectionEnd) {
+		val desired = TextFieldValue(
+			text = state.text,
+			selection = TextRange(
+				state.selectionStart.coerceIn(0, state.text.length),
+				state.selectionEnd.coerceIn(0, state.text.length),
+			),
+		)
+		if (fieldValue.text != desired.text || fieldValue.selection != desired.selection) {
+			fieldValue = desired
+		}
+	}
+
+	Column(modifier = modifier) {
+		state.warning?.let { warning ->
+			Surface(
+				color = MaterialTheme.colorScheme.secondaryContainer,
+				contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+				modifier = Modifier.fillMaxWidth(),
+			) {
+				Text(
+					text = warning,
+					style = MaterialTheme.typography.bodySmall,
+					modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+				)
+			}
+		}
+		if (state.readOnly) {
+			Text(
+				text = "read-only",
+				style = MaterialTheme.typography.labelMedium,
+				modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+			)
+		}
+		LazyRow(
+			modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+			horizontalArrangement = Arrangement.spacedBy(8.dp),
+		) {
+			items(state.noteIds) { id ->
+				FilterChip(
+					selected = id == state.selectedNoteId,
+					onClick = { onSelectNote(id) },
+					label = { Text(state.noteTitles[id] ?: "Untitled") },
+				)
+			}
+		}
+		if (state.rendered) {
+			NoteView(
+				blocks = blocks,
+				readOnly = state.readOnly,
+				onToggleTask = onToggleTask,
+				modifier = Modifier
+					.fillMaxWidth()
+					.weight(1f),
+			)
+		} else {
+			MarkdownToolbar(
+				enabled = !state.readOnly,
+				onAction = onFormat,
+				modifier = Modifier.fillMaxWidth(),
+			)
+			Surface(
+				modifier = Modifier
+					.fillMaxWidth()
+					.weight(1f),
+				color = MaterialTheme.colorScheme.background,
+				contentColor = MaterialTheme.colorScheme.onBackground,
+			) {
+				Box(
+					modifier = Modifier
+						.fillMaxSize()
+						.verticalScroll(rememberScrollState())
+						.padding(16.dp),
+				) {
+					BasicTextField(
+						value = fieldValue,
+						onValueChange = { newValue ->
+							fieldValue = newValue
+							onSelectionChanged(
+								newValue.selection.start,
+								newValue.selection.end,
+							)
+							onTextChanged(newValue.text)
+						},
+						enabled = !state.readOnly,
+						modifier = Modifier
+							.fillMaxWidth()
+							.defaultMinSize(minHeight = 240.dp)
+							.onPreviewKeyEvent { event ->
+								handleShortcut(event, state.readOnly, onFormat, onUndo, onRedo)
+							},
+						textStyle = MaterialTheme.typography.bodyLarge.copy(
+							fontFamily = FontFamily.Monospace,
+							color = MaterialTheme.colorScheme.onSurface,
+						),
+						cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+					)
+				}
+			}
+		}
+	}
+}
+
 private fun handleShortcut(
 	event: KeyEvent,
 	readOnly: Boolean,
-	viewModel: EditorViewModel,
+	onFormat: (MarkdownAction) -> Unit,
+	onUndo: () -> Unit,
+	onRedo: () -> Unit,
 ): Boolean {
 	if (event.type != KeyEventType.KeyDown || readOnly) return false
 	if (!event.isCtrlPressed && !event.isMetaPressed) return false
 	return when (event.key) {
 		Key.B -> {
-			viewModel.format(MarkdownAction.BOLD)
+			onFormat(MarkdownAction.BOLD)
 			true
 		}
 
 		Key.I -> {
-			viewModel.format(MarkdownAction.ITALIC)
+			onFormat(MarkdownAction.ITALIC)
 			true
 		}
 
 		Key.K -> {
-			viewModel.format(MarkdownAction.LINK)
+			onFormat(MarkdownAction.LINK)
 			true
 		}
 
 		Key.Z -> {
-			if (event.isShiftPressed) viewModel.redo() else viewModel.undo()
+			if (event.isShiftPressed) onRedo() else onUndo()
 			true
 		}
 
