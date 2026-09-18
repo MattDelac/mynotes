@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { AuditLog } from './audit.js';
 import {
 	SessionQuotaError,
+	noteTitle,
 	type SearchHit,
 	type Session,
 	type SessionManager,
@@ -367,6 +368,7 @@ export function registerTools(
 							session: { name: session.entry.name, room_id: session.entry.room_id },
 							note: {
 								id: args.note_id,
+								title: noteTitle(content),
 								characters: content.length,
 								truncated
 							},

@@ -155,6 +155,27 @@ describe('streamable http mcp server', () => {
 		expect(afterDelete.status).toBe(404);
 	});
 
+	it('rejects malformed JSON-RPC bodies with a clean 400', async () => {
+		const sessionId = await initialize();
+		const nullBody = await fetch(url(), {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${token}`,
+				'content-type': 'application/json',
+				accept: 'application/json, text/event-stream',
+				'mcp-session-id': sessionId,
+				'mcp-protocol-version': PROTOCOL
+			},
+			body: 'null'
+		});
+		expect(nullBody.status).toBe(400);
+		await nullBody.json();
+
+		const arrayBody = await rpc('POST', sessionHeaders(sessionId), [1, 2, 3]);
+		expect(arrayBody.status).toBe(400);
+		await arrayBody.json();
+	});
+
 	it('rejects missing, wrong and revoked bearer tokens', async () => {
 		const missing = await rpc('POST', {}, INITIALIZE);
 		expect(missing.status).toBe(401);

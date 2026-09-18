@@ -637,7 +637,6 @@ export class Session {
 		socket.onopen = () => {
 			if (this.destroyed || this.ws !== socket) return;
 			this.wsConnectedAt = this.now();
-			this.reconnectIndex = 0;
 			if (this.state === 'stale' || this.state === 'polling' || this.state === 'unloaded') {
 				this.state = 'live';
 			}

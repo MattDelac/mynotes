@@ -161,6 +161,7 @@ describe('mcp tools', () => {
 			})) as CallToolResult;
 			const fullData = structured(full);
 			expect(fullData.content).toBe(content);
+			expect((fullData.note as Record<string, unknown>).title).toBe('Title');
 			expect((fullData.note as Record<string, unknown>).truncated).toBe(false);
 
 			const truncated = (await h.client.callTool({

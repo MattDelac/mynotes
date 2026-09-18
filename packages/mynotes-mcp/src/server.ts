@@ -277,9 +277,13 @@ export async function startMcpServer(options: McpServerOptions): Promise<Running
 				rpcError(response, body.status ?? 400, -32700, body.message ?? 'bad request');
 				return;
 			}
-			const message = body.value as { method?: unknown; params?: unknown } | null;
-			const isInitialize =
-				typeof message === 'object' && message !== null && message.method === 'initialize';
+			if (typeof body.value !== 'object' || body.value === null || Array.isArray(body.value)) {
+				rpcError(response, 400, -32600, 'invalid JSON-RPC message');
+				return;
+			}
+			const message = body.value as { method?: unknown; params?: unknown };
+			const messageMethod = message.method;
+			const isInitialize = messageMethod === 'initialize';
 			if (sessionId === null) {
 				if (!isInitialize) {
 					rpcError(response, 400, -32600, 'missing mcp-session-id header');
@@ -309,8 +313,7 @@ export async function startMcpServer(options: McpServerOptions): Promise<Running
 				return;
 			}
 			record.lastUsedAt = Date.now();
-			const toolCall =
-				isInitialize === false && (message as { method?: string }).method === 'tools/call';
+			const toolCall = messageMethod === 'tools/call';
 			await record.transport.handleRequest(request, response, body.value);
 			if (!toolCall) {
 				audit.append({

@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { CHECKPOINTS_DIR, ensureStateDir, writeConfig } from '../src/config.js';
 import { exportKey, generateKey } from '../src/crypto.js';
@@ -170,6 +170,33 @@ describe('session manager', () => {
 
 	afterEach(() => {
 		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it('escalates reconnect backoff for sockets that flap immediately', async () => {
+		vi.useFakeTimers();
+		try {
+			const fx = await fixture();
+			const session = makeSession(fx, dir, {
+				createWebSocket: (socketUrl) => new FakeWebSocket(socketUrl)
+			});
+			session.setLive(true);
+			const first = FakeWebSocket.instances[0];
+			expect(first).toBeDefined();
+			first!.open();
+			first!.drop();
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(FakeWebSocket.instances).toHaveLength(2);
+			const second = FakeWebSocket.instances[1]!;
+			second.open();
+			second.drop();
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(FakeWebSocket.instances).toHaveLength(2);
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(FakeWebSocket.instances).toHaveLength(3);
+			session.destroy();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('evicts the least recently used loaded session over quota', async () => {
