@@ -28,4 +28,10 @@ class ExportFilenameTest {
 	fun usesTheFirstNonEmptyLineAsTheTitle() {
 		assertEquals("body-line.md", ExportFilename.of("   \nbody line"))
 	}
+
+	@Test
+	fun treatsTheJsWhitespaceClassAsEmptyContent() {
+		assertEquals("untitled.md", ExportFilename.of("\u00A0\u3000"))
+		assertEquals("hello.md", ExportFilename.of("\u3000Hello"))
+	}
 }

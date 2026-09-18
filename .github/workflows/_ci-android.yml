@@ -52,6 +52,18 @@ jobs:
       - name: Verify Go goldens against yjs
         run: node apps/android/engine/fixtures/verify.mjs
 
+      - name: Fixture freshness
+        run: |
+          node apps/android/engine/fixtures/generate.mjs
+          (cd apps/android/engine && go test ./... -run TestGenerateGolden -update -count=1)
+          node apps/android/engine/fixtures/verify.mjs
+          node apps/android/testdata/gen-crypto-fixtures.mjs
+          if ! git diff --exit-code; then
+            echo "fixtures are stale; run scripts/android/gen-fixtures.sh and commit the result" >&2
+            git status --porcelain
+            exit 1
+          fi
+
       - name: Rebuild engine AAR
         run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865" OUT="$RUNNER_TEMP/engine.aar" scripts/android/rebuild-engine.sh
 

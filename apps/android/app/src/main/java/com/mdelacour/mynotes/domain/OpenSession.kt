@@ -117,7 +117,7 @@ class OpenSession(
 	}
 
 	suspend fun stopCapturing(id: String) {
-		executor.run { noteHandle(id)?.stopCapturing() }
+		executor.run { requireHandle(id).stopCapturing() }
 	}
 
 	suspend fun applyRemoteUpdate(plaintextUpdate: ByteArray, lastSeq: Long?) {

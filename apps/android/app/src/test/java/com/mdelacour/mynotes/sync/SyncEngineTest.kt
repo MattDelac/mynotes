@@ -12,6 +12,7 @@ import com.mdelacour.mynotes.domain.SessionRepository
 import com.mdelacour.mynotes.domain.SessionStatus
 import com.mdelacour.mynotes.engine.EngineExecutor
 import com.mdelacour.mynotes.engine.FakeEngineDoc
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -173,16 +174,19 @@ class SyncEngineTest {
 		val expected = harness.db.outbox.rows.size
 		val socket = FakeRelaySocket(writableOnOpen = false)
 		fake.socketFactory = { socket }
-		val engine = engineFor(harness, fake, backgroundScope)
+		val engine = engineFor(harness, fake, backgroundScope, connectTimeoutMs = 1_000)
 		engine.start()
-		engine.status.first { it == SessionStatus.LIVE }
+		engine.authFailed.first { it }
 
+		assertTrue(engine.authFailed.value)
 		assertFalse(engine.isWritable.value)
+		assertEquals(SessionStatus.SYNC_BLOCKED, engine.status.value)
 		assertTrue(socket.sentBinary.isEmpty())
 
 		socket.emit(RelayFrame.Writable(true))
 		withTimeout(10_000) { socket.sentBinaryCount.first { it >= expected } }
 
+		assertFalse(engine.authFailed.value)
 		assertTrue(engine.isWritable.value)
 		assertEquals(expected, socket.sentBinary.size)
 
@@ -226,9 +230,9 @@ class SyncEngineTest {
 		val remaining = harness.db.outbox.rows.size - 1
 		val socket = FakeRelaySocket(writableOnOpen = false)
 		fake.socketFactory = { socket }
-		val engine = engineFor(harness, fake, backgroundScope)
+		val engine = engineFor(harness, fake, backgroundScope, connectTimeoutMs = 1_000)
 		engine.start()
-		engine.status.first { it == SessionStatus.LIVE }
+		engine.authFailed.first { it }
 		val checkpointsBefore = harness.db.sessions.checkpointWrites.value
 
 		socket.emit(RelayFrame.Binary(target.ciphertext))
@@ -317,6 +321,216 @@ class SyncEngineTest {
 		harness.openSession.close()
 	}
 
+	@Test
+	fun a429WithRetryAfterDelaysTheRetry() = runTest {
+		val roomKey = key()
+		val update = updateWith("n1" to "one")
+		val fake = FakeRelay().apply {
+			batches = listOf(
+				emptyList(),
+				listOf(EncryptedUpdate(1L, RelayCrypto.seal(roomKey, update))),
+			)
+			fetchErrors += RelayException("rate limited", statusCode = 429, retryAfterSeconds = 3)
+		}
+		val harness = makeHarness(this, roomKey)
+		val engine = engineFor(harness, fake, backgroundScope)
+		val started = testScheduler.currentTime
+		engine.start()
+		engine.status.first { it == SessionStatus.LIVE }
+
+		assertEquals(2, fake.fetchCount.value)
+		val elapsed = testScheduler.currentTime - started
+		assertTrue("elapsed=$elapsed", elapsed >= 3_000)
+		assertTrue(harness.engineDoc.hasNote("n1"))
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun ownerHandshakeTimeoutBlocksWritesButKeepsReading() = runTest {
+		val roomKey = key()
+		val update = updateWith("n1" to "one")
+		val fake = FakeRelay().apply {
+			batches = listOf(listOf(EncryptedUpdate(1L, RelayCrypto.seal(roomKey, update))))
+		}
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val socket = FakeRelaySocket(writableOnOpen = false)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope, connectTimeoutMs = 1_000)
+		engine.start()
+		engine.authFailed.first { it }
+		withTimeout(10_000) {
+			while (!harness.engineDoc.hasNote("n1")) delay(1)
+		}
+
+		assertTrue(engine.authFailed.value)
+		assertFalse(engine.isWritable.value)
+		assertEquals(SessionStatus.SYNC_BLOCKED, engine.status.value)
+		assertEquals(
+			SessionStatus.SYNC_BLOCKED.name,
+			harness.db.sessions.rows.getValue(harness.session.localId).status,
+		)
+		assertTrue(socket.sentTexts.any { it.contains("edit_token") })
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun aFrameDuringCatchUpIsBufferedAndAppliedAfterward() = runTest {
+		val roomKey = key()
+		val catchUpUpdate = updateWith("n1" to "one")
+		val liveUpdate = updateWith("n1" to "one", "n2" to "two")
+		val fake = FakeRelay().apply {
+			batches = listOf(listOf(EncryptedUpdate(1L, RelayCrypto.seal(roomKey, catchUpUpdate))))
+			fetchGate = CompletableDeferred()
+		}
+		val harness = makeHarness(this, roomKey)
+		val socket = FakeRelaySocket(writableOnOpen = true)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		fake.fetchStarted.first { it >= 1 }
+
+		socket.emit(RelayFrame.Binary(RelayCrypto.seal(roomKey, liveUpdate)))
+		fake.fetchGate!!.complete(Unit)
+		engine.status.first { it == SessionStatus.LIVE }
+		withTimeout(10_000) {
+			while (!harness.engineDoc.hasNote("n2")) delay(1)
+		}
+
+		assertTrue(harness.engineDoc.hasNote("n1"))
+		assertEquals("two", harness.engineDoc.openNote("n2")!!.string())
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun aRestCatchUpEchoRemovesTheOutboxRowWithoutApplyingIt() = runTest {
+		val roomKey = key()
+		val fake = FakeRelay().apply { batches = listOf(emptyList()) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val id = harness.openSession.createNote("n1")
+		harness.openSession.insert(id, 0, "one")
+		val row = harness.db.outbox.rows.sortedBy { it.ordinal }.last()
+		val remaining = harness.db.outbox.rows.size - 1
+		fake.batches = listOf(listOf(EncryptedUpdate(1L, row.ciphertext)))
+		val socket = FakeRelaySocket(writableOnOpen = true)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.status.first { it == SessionStatus.LIVE }
+		awaitOutboxSize(harness, remaining)
+
+		assertTrue(harness.db.outbox.rows.none { it.id == row.id })
+		assertEquals("one", harness.engineDoc.openNote("n1")!!.string())
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun anEditEnqueuedDuringTheAuthWaitIsSentExactlyOnce() = runTest {
+		val roomKey = key()
+		val fake = FakeRelay().apply { batches = listOf(emptyList()) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val socket = FakeRelaySocket(writableOnOpen = false)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope, connectTimeoutMs = 5_000)
+		engine.start()
+		runCurrent()
+
+		val id = harness.openSession.createNote("n1")
+		harness.openSession.insert(id, 0, "one")
+		val expected = harness.db.outbox.rows.size
+		socket.emit(RelayFrame.Writable(true))
+		withTimeout(10_000) { socket.sentBinaryCount.first { it >= expected } }
+		delay(100)
+
+		assertEquals(expected, socket.sentBinary.size)
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun pressureIsMeasuredPerConnectionAndClearsOnAFreshCatchUp() = runTest {
+		val roomKey = key()
+		val smallUpdate = RelayCrypto.seal(roomKey, updateWith("n1" to "one"))
+		val big = List(5_000) { EncryptedUpdate((it + 1).toLong(), smallUpdate) }
+		val fake = FakeRelay().apply {
+			batches = listOf(
+				listOf(EncryptedUpdate(1L, smallUpdate)),
+				listOf(EncryptedUpdate(2L, smallUpdate)),
+				big,
+				listOf(EncryptedUpdate(3L, smallUpdate)),
+			)
+		}
+		val harness = makeHarness(this, roomKey)
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.status.first { it == SessionStatus.LIVE }
+
+		fake.sockets.last().closeWith()
+		fake.fetchCount.first { it >= 2 }
+		engine.status.first { it == SessionStatus.LIVE }
+
+		fake.sockets.last().closeWith()
+		fake.fetchCount.first { it >= 3 }
+		engine.status.first { it == SessionStatus.SYNC_BLOCKED }
+
+		fake.sockets.last().closeWith()
+		fake.fetchCount.first { it >= 4 }
+		engine.status.first { it == SessionStatus.LIVE }
+
+		assertEquals(4, fake.fetchCount.value)
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun aLargeCatchUpSetsTheWarningAndPersistsStatusTransitions() = runTest {
+		val roomKey = key()
+		val update = RelayCrypto.seal(roomKey, updateWith("n1" to "one"))
+		val updates = List(600) { EncryptedUpdate((it + 1).toLong(), update) }
+		val fake = FakeRelay().apply { batches = listOf(updates) }
+		val harness = makeHarness(this, roomKey)
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.warning.first { it != null }
+
+		assertTrue(engine.warning.value!!.contains("600"))
+		engine.status.first { it == SessionStatus.LIVE }
+		assertEquals(
+			SessionStatus.LIVE.name,
+			harness.db.sessions.rows.getValue(harness.session.localId).status,
+		)
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun reopensFromTheEncryptedCheckpointWithNotesIntact() = runTest {
+		val roomKey = key()
+		val fake = FakeRelay().apply { batches = listOf(emptyList()) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val id = harness.openSession.createNote("n1")
+		harness.openSession.insert(id, 0, "hello")
+		harness.openSession.close()
+
+		val checkpoint = harness.repository.getSession(harness.session.localId)!!.encryptedCheckpoint!!
+		val replayed = FakeEngineDoc().apply {
+			applyUpdate(RelayCrypto.open(roomKey, checkpoint))
+		}
+
+		assertEquals("hello", replayed.openNote("n1")!!.string())
+		assertEquals(listOf("n1"), replayed.noteIds())
+	}
+
 	private suspend fun awaitOutboxSize(harness: Harness, expected: Int) {
 		withTimeout(10_000) {
 			while (harness.db.outbox.rows.size != expected) delay(1)
@@ -327,12 +541,14 @@ class SyncEngineTest {
 		harness: Harness,
 		fake: FakeRelay,
 		scope: CoroutineScope,
+		connectTimeoutMs: Long = 15_000,
 	): SyncEngine = SyncEngine(
 		session = harness.session,
 		openSession = harness.openSession,
 		relay = fake,
 		repository = harness.repository,
 		scope = scope,
+		connectTimeoutMs = connectTimeoutMs,
 	)
 
 	private suspend fun makeHarness(

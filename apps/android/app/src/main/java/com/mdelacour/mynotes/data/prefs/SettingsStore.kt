@@ -26,12 +26,7 @@ class SettingsStore(
 	}
 
 	suspend fun setServerUrl(url: String) {
-		val normalized = RelayUrls.normalizeBase(url)
-		if (!BuildConfig.DEBUG) {
-			require(normalized.startsWith("https://", ignoreCase = true)) {
-				"server URL must use https"
-			}
-		}
+		val normalized = RelayUrls.normalizeSecureBase(url, allowHttp = BuildConfig.DEBUG)
 		context.settingsDataStore.edit { prefs -> prefs[SERVER_URL] = normalized }
 	}
 
@@ -53,7 +48,8 @@ class SettingsStore(
 		context.settingsDataStore.data.first()[SHARE_BASE_URL] ?: DEFAULT_SHARE_BASE_URL
 
 	suspend fun setShareBaseUrl(url: String) {
-		context.settingsDataStore.edit { prefs -> prefs[SHARE_BASE_URL] = RelayUrls.normalizeBase(url) }
+		val normalized = RelayUrls.normalizeSecureBase(url, allowHttp = BuildConfig.DEBUG)
+		context.settingsDataStore.edit { prefs -> prefs[SHARE_BASE_URL] = normalized }
 	}
 
 	suspend fun setCreateToken(token: String?) {

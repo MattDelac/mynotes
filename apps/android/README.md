@@ -12,11 +12,11 @@ zero-knowledge. The CRDT engine is the committed gomobile AAR in `engine/` — s
   uncertain / deleting).
 - **Notes** — multiple notes per session (`Y.Map<Y.Text>`), created, deleted and switched from
   the editor; undo/redo per note.
-- **Editor** — markdown editing with a formatting toolbar and Typora-style concealment.
+- **Editor** — markdown editing with a formatting toolbar and task-list toggles.
 - **Sync** — encrypted Yjs over the relay: catch-up through `GET /rooms/{id}/updates`, then a
   WebSocket; every local change is appended to the outbox and only removed when its ciphertext
-  echoes back; the log is compacted with an encrypted snapshot; reconnect backoff and the
-  server's room caps surface as `sync blocked`.
+  echoes back; a session is seeded into its room from an encrypted snapshot when it is first
+  shared; reconnect backoff and the server's room caps surface as `sync blocked`.
 - **Export** — a note is written to the app cache as `.md` (unique filename, stale copies pruned
   after 24h) and shared through the `FileProvider`.
 - **Share / create** — a local session is posted to the relay as a room and turned into a view
@@ -90,8 +90,9 @@ were pinned to the newest AGP-8-compatible releases.
   (`mynotes.db`) and DataStore (`mynotes-settings`) use the defaults, i.e. app-private storage.
 - **Key loss keeps the data.** Losing the Android Keystore wrapping key never deletes notes.
   `SessionRepository.startupCleanup()` tries to unwrap every session's room key and, on failure,
-  marks the session `KEY_MISSING`; the wrapped key and ciphertext are left untouched, so a
-  restored/regenerated key can still recover the session.
+  marks the session `KEY_MISSING`; the wrapped key and ciphertext are left untouched. Restoring
+  the same keystore (for example from an Android backup) recovers the session, but a freshly
+  regenerated key cannot unwrap the existing blobs.
 
 ## App icon
 

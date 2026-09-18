@@ -68,6 +68,22 @@ fun SettingsScreen(
 					isError = state.error != null,
 					modifier = Modifier.fillMaxWidth(),
 				)
+				OutlinedTextField(
+					value = state.shareBaseUrl,
+					onValueChange = viewModel::onShareBaseUrlChanged,
+					label = { Text("Share base URL") },
+					singleLine = true,
+					isError = state.error != null,
+					modifier = Modifier.fillMaxWidth(),
+				)
+				OutlinedTextField(
+					value = state.createToken,
+					onValueChange = viewModel::onCreateTokenChanged,
+					label = { Text("Create token (optional)") },
+					singleLine = true,
+					isError = state.error != null,
+					modifier = Modifier.fillMaxWidth(),
+				)
 				if (state.error != null) {
 					Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
 				}

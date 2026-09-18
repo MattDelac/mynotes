@@ -1,5 +1,6 @@
 package com.mdelacour.mynotes.data.export
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -64,6 +65,7 @@ class ExportManager(
 		return Intent(Intent.ACTION_SEND).apply {
 			type = "text/markdown"
 			putExtra(Intent.EXTRA_STREAM, uri)
+			clipData = ClipData.newUri(context.contentResolver, file.name, uri)
 			addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 		}
 	}

@@ -20,6 +20,20 @@ object RelayUrls {
 		return trimmed.trimEnd('/')
 	}
 
+	/**
+	 * Pure validation for user-entered base URLs. [allowHttp] is true in debug builds and
+	 * false in release, where cleartext relays are rejected.
+	 */
+	fun normalizeSecureBase(raw: String, allowHttp: Boolean): String {
+		val normalized = normalizeBase(raw)
+		if (!allowHttp) {
+			require(normalized.startsWith("https://", ignoreCase = true)) {
+				"URL must use https"
+			}
+		}
+		return normalized
+	}
+
 	fun updates(base: String, roomId: String, after: Long): String =
 		"${normalizeBase(base)}/rooms/$roomId/updates?after=$after"
 

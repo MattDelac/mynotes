@@ -65,26 +65,6 @@ All of this must run inside `nix develop .#android`, which provides `ANDROID_HOM
 `scripts/android/inspect-engine.sh` prints the same artifact evidence on demand (entries, sizes,
 hashes, class list, native libraries, and a forbidden-dependency check).
 
-## Kotlin smoke
-
-`apps/android/engine/smoke/Smoke.kt` round-trips text through the generated binding: create a note,
-insert UTF-16 text (`"héllo 🎉"` is 8 UTF-16 code units), sync full state to a second `SessionDoc`,
-sync a diff, exercise undo, and check the local/remote origin flags. It compiles against the AAR's
-`classes.jar`:
-
-```sh
-tmp="$(mktemp -d)"
-nix develop --extra-experimental-features 'nix-command flakes' .#android -c bash -c "
-  unzip -o -q apps/android/engine/libs/engine.aar classes.jar -d '$tmp' &&
-  kotlinc -classpath '$tmp/classes.jar' \
-    apps/android/engine/smoke/Smoke.kt -jvm-target 17 -d '$tmp/smoke.jar'
-"
-```
-
-Compiling is the M0 check. *Running* the smoke requires an Android device or emulator (and thus the
-M1/M2 milestones) — gomobile's `libgojni.so` is Android-only, so the JVM `main()` cannot be
-executed on the host.
-
 ## Measured numbers
 
 Built with `nix develop .#android` (Go 1.26.7, NDK 29.0.14206865) and the default ABIs:

@@ -209,6 +209,10 @@ class SessionRepository(
 		)
 	}
 
+	suspend fun setStatus(localId: String, status: SessionStatus) = tx.run {
+		sessions.setStatus(localId, status.name, clock())
+	}
+
 	suspend fun markSyncBlocked(localId: String) = tx.run {
 		sessions.setStatus(localId, SessionStatus.SYNC_BLOCKED.name, clock())
 	}

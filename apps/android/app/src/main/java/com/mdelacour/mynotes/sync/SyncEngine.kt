@@ -42,14 +42,20 @@ class SyncEngine(
 	private val _isWritable = MutableStateFlow(false)
 	val isWritable: StateFlow<Boolean> = _isWritable.asStateFlow()
 
+	private val _authFailed = MutableStateFlow(false)
+	val authFailed: StateFlow<Boolean> = _authFailed.asStateFlow()
+
 	private val _catchUpCount = MutableStateFlow(0)
 	val catchUpCount: StateFlow<Int> = _catchUpCount.asStateFlow()
+
+	private val _warning = MutableStateFlow<String?>(null)
+	val warning: StateFlow<String?> = _warning.asStateFlow()
 
 	private val random = Random(clock())
 	private var loopJob: Job? = null
 	private var stopped = false
 	private var blocked = false
-	private var accumulatedBytes = 0L
+	private var caughtUp = false
 	private var cursor: Long = session.lastSeq
 
 	fun start() {
@@ -64,7 +70,12 @@ class SyncEngine(
 		val job = loopJob
 		loopJob = null
 		job?.cancel()
-		if (job != null) _status.value = SessionStatus.OFFLINE
+		if (job != null) {
+			_status.value = SessionStatus.OFFLINE
+			scope.launch {
+				runCatching { repository.setStatus(session.localId, SessionStatus.OFFLINE) }
+			}
+		}
 	}
 
 	private suspend fun runLoop(roomId: String) {
@@ -101,6 +112,10 @@ class SyncEngine(
 
 	private suspend fun connect(roomId: String) {
 		_isWritable.value = false
+		// Pressure and blocking are measured per connection: a fresh catch-up under the
+		// caps clears a previous SYNC_BLOCKED instead of latching it for the engine's life.
+		blocked = false
+		caughtUp = false
 		val socket = relay.openSocket(roomId)
 		val termination = CompletableDeferred<Throwable?>()
 		val writableAck = CompletableDeferred<Boolean>()
@@ -119,7 +134,11 @@ class SyncEngine(
 
 						is RelayFrame.Writable -> {
 							_isWritable.value = frame.writable
-							if (frame.writable) writableAck.complete(true)
+							if (frame.writable) {
+								_authFailed.value = false
+								writableAck.complete(true)
+								if (caughtUp && !blocked) setStatus(SessionStatus.LIVE)
+							}
 						}
 
 						is RelayFrame.Closed -> termination.complete(null)
@@ -138,30 +157,44 @@ class SyncEngine(
 		var keepalive: Job? = null
 		var sender: Job? = null
 		try {
-			if (session.access == Access.OWNER) {
-				val token = repository.editToken(session.localId)
-				if (!token.isNullOrEmpty()) {
-					socket.sendText("""{"edit_token":"$token"}""")
-					withTimeoutOrNull(connectTimeoutMs) { writableAck.await() }
+			val token = if (session.access == Access.OWNER) repository.editToken(session.localId) else null
+			if (token.isNullOrEmpty()) {
+				_authFailed.value = false
+			} else {
+				socket.sendText("""{"edit_token":"$token"}""")
+				val ack = withTimeoutOrNull(connectTimeoutMs) { writableAck.await() }
+				if (ack == null) {
+					_authFailed.value = true
+					_isWritable.value = false
+					setStatus(SessionStatus.SYNC_BLOCKED)
+					logger("owner handshake timed out")
 				}
 			}
 
 			val updates = relay.fetchUpdates(roomId, cursor)
 			_catchUpCount.value = updates.size
-			if (updates.size > CATCH_UP_WARN_THRESHOLD) {
-				logger("catch-up returned ${updates.size} updates")
+			_warning.value = if (updates.size > CATCH_UP_WARN_THRESHOLD) {
+				"This session has a large update history (${updates.size} updates); " +
+					"first sync may take a while"
+			} else {
+				null
 			}
-			if (updates.size >= MAX_UPDATE_ROWS) {
-				block("room has ${updates.size} updates")
-			}
+			var batchBytes = 0L
 			for (update in updates) {
-				applyRemote(update.blob, update.seq)
+				if (!openSession.acknowledgeEcho(update.blob)) {
+					applyRemote(update.blob, update.seq)
+				}
+				batchBytes += update.blob.size
 				if (update.seq > cursor) cursor = update.seq
 			}
+			if (updates.size >= MAX_UPDATE_ROWS || batchBytes > MAX_ROOM_BYTES) {
+				block("room has ${updates.size} updates (${batchBytes} bytes)")
+			}
+			caughtUp = true
 			catchUpDone.complete(Unit)
 
 			sender = startSending(socket)
-			setStatus(if (blocked) SessionStatus.SYNC_BLOCKED else SessionStatus.LIVE)
+			setStatus(if (blocked || _authFailed.value) SessionStatus.SYNC_BLOCKED else SessionStatus.LIVE)
 			keepalive = scope.launch {
 				while (currentCoroutineContext().isActive) {
 					delay(keepaliveMs)
@@ -189,10 +222,12 @@ class SyncEngine(
 
 	private fun startSending(socket: RelaySocket): Job {
 		val replayGate = CompletableDeferred<Unit>()
+		val sent = mutableListOf<ByteArray>()
 		return scope.launch {
 			launch(start = CoroutineStart.UNDISPATCHED) {
 				openSession.outbound.collect { bytes ->
 					replayGate.await()
+					if (sent.any { it.contentEquals(bytes) }) return@collect
 					sendBinary(socket, bytes)
 				}
 			}
@@ -200,47 +235,46 @@ class SyncEngine(
 			if (canSend()) {
 				for (row in openSession.pendingOutbox()) {
 					if (!canSend()) break
-					sendBinary(socket, row.ciphertext)
+					if (sendBinary(socket, row.ciphertext)) sent += row.ciphertext
 				}
 			}
 			replayGate.complete(Unit)
 		}
 	}
 
-	private suspend fun sendBinary(socket: RelaySocket, bytes: ByteArray) {
-		if (!canSend()) return
-		try {
+	private suspend fun sendBinary(socket: RelaySocket, bytes: ByteArray): Boolean {
+		if (!canSend()) return false
+		return try {
 			socket.sendBinary(bytes)
+			true
 		} catch (e: CancellationException) {
 			throw e
 		} catch (e: Throwable) {
 			// The row stays in the outbox: it is only removed once its echo returns.
 			logger("binary send failed: ${e.message}")
+			false
 		}
 	}
 
 	private suspend fun applyRemote(blob: ByteArray, seq: Long?) {
 		val plaintext = RelayCrypto.open(openSession.roomKey, blob)
 		openSession.applyRemoteUpdate(plaintext, seq)
-		accumulatedBytes += blob.size
-		if (accumulatedBytes > MAX_ROOM_BYTES) {
-			block("room exceeds $MAX_ROOM_BYTES bytes")
-		}
 	}
 
 	private fun canSend(): Boolean = !stopped && !blocked && _isWritable.value
 
-	private fun block(reason: String) {
+	private suspend fun block(reason: String) {
 		if (blocked) return
 		blocked = true
 		logger("sync blocked: $reason")
 		setStatus(SessionStatus.SYNC_BLOCKED)
 	}
 
-	private fun setStatus(value: SessionStatus) {
+	private suspend fun setStatus(value: SessionStatus) {
 		if (stopped) return
-		if (blocked && value != SessionStatus.SYNC_BLOCKED && value != SessionStatus.EXPIRED) return
+		if (_status.value == value) return
 		_status.value = value
+		runCatching { repository.setStatus(session.localId, value) }
 	}
 
 	private fun backoffDelay(attempt: Int): Long {

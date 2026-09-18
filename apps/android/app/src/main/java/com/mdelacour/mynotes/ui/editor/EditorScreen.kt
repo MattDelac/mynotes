@@ -236,6 +236,19 @@ fun EditorScreen(
 			}
 
 			else -> Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+				state.warning?.let { warning ->
+					Surface(
+						color = MaterialTheme.colorScheme.secondaryContainer,
+						contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+						modifier = Modifier.fillMaxWidth(),
+					) {
+						Text(
+							text = warning,
+							style = MaterialTheme.typography.bodySmall,
+							modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+						)
+					}
+				}
 				if (state.readOnly) {
 					Text(
 						text = "read-only",

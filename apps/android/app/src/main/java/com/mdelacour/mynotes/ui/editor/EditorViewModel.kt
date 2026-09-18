@@ -36,6 +36,7 @@ data class EditorUiState(
 	val error: String? = null,
 	val readOnly: Boolean = false,
 	val canReSeed: Boolean = false,
+	val warning: String? = null,
 )
 
 class EditorViewModel(
@@ -55,6 +56,8 @@ class EditorViewModel(
 	private var syncEngine: SyncEngine? = null
 	private var syncStatusJob: Job? = null
 	private var changesJob: Job? = null
+	private var structureJob: Job? = null
+	private var warningJob: Job? = null
 
 	init {
 		viewModelScope.launch { load() }
@@ -69,9 +72,11 @@ class EditorViewModel(
 		val opened = try {
 			graph.openSession(session)
 		} catch (_: CheckpointException) {
+			graph.repository.markKeyMissing(localId)
 			_state.update { it.copy(loading = false, error = "local copy unreadable") }
 			return
 		} catch (_: VaultException) {
+			graph.repository.markKeyMissing(localId)
 			_state.update { it.copy(loading = false, error = "key missing") }
 			return
 		} catch (e: Exception) {
@@ -81,6 +86,11 @@ class EditorViewModel(
 		openSession = opened
 		changesJob = viewModelScope.launch {
 			opened.changes.collect { noteId -> onRemoteChange(opened, noteId) }
+		}
+		structureJob = viewModelScope.launch {
+			opened.structure.collect {
+				mutex.withLock { refresh(opened) }
+			}
 		}
 		syncEngine = graph.openSyncEngine(opened, viewModelScope).also { engine ->
 			_syncStatus.value = engine.status.value
@@ -94,6 +104,9 @@ class EditorViewModel(
 						mutex.withLock { refresh(opened) }
 					}
 				}
+			}
+			warningJob = viewModelScope.launch {
+				engine.warning.collect { warning -> _state.update { it.copy(warning = warning) } }
 			}
 			engine.start()
 		}
@@ -373,6 +386,8 @@ class EditorViewModel(
 		val open = openSession ?: return
 		syncStatusJob?.cancel()
 		syncStatusJob = null
+		warningJob?.cancel()
+		warningJob = null
 		syncEngine?.stop()
 		syncEngine = graph.openSyncEngine(open, viewModelScope, session).also { engine ->
 			_syncStatus.value = engine.status.value
@@ -381,6 +396,9 @@ class EditorViewModel(
 					_syncStatus.value = next
 					_state.update { it.copy(canReSeed = canReSeed(next, session.access)) }
 				}
+			}
+			warningJob = viewModelScope.launch {
+				engine.warning.collect { warning -> _state.update { it.copy(warning = warning) } }
 			}
 			engine.start()
 		}
@@ -396,8 +414,12 @@ class EditorViewModel(
 	override fun onCleared() {
 		syncStatusJob?.cancel()
 		syncStatusJob = null
+		warningJob?.cancel()
+		warningJob = null
 		changesJob?.cancel()
 		changesJob = null
+		structureJob?.cancel()
+		structureJob = null
 		syncEngine?.stop()
 		syncEngine = null
 		openSession?.close()

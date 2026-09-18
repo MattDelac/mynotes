@@ -1,5 +1,6 @@
 package com.mdelacour.mynotes.sync
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,6 +11,9 @@ class FakeRelay : Relay {
 	val fetchCount = MutableStateFlow(0)
 	var batches: List<List<EncryptedUpdate>> = emptyList()
 	var fetchError: RelayException? = null
+	val fetchErrors = ArrayDeque<RelayException>()
+	var fetchGate: CompletableDeferred<Unit>? = null
+	val fetchStarted = MutableStateFlow(0)
 	val sockets = mutableListOf<FakeRelaySocket>()
 	var socketFactory: () -> FakeRelaySocket = { FakeRelaySocket() }
 
@@ -25,6 +29,9 @@ class FakeRelay : Relay {
 		fetchAfters += after
 		val index = fetchCount.value
 		fetchCount.value = index + 1
+		fetchStarted.value = fetchStarted.value + 1
+		fetchGate?.await()
+		if (fetchErrors.isNotEmpty()) throw fetchErrors.removeFirst()
 		fetchError?.let { throw it }
 		return batches.getOrElse(index) { emptyList() }
 	}

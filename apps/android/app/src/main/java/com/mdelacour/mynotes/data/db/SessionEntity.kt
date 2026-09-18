@@ -1,9 +1,13 @@
 package com.mdelacour.mynotes.data.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "sessions")
+@Entity(
+	tableName = "sessions",
+	indices = [Index("roomId")],
+)
 data class SessionEntity(
 	@PrimaryKey val localId: String,
 	val roomId: String?,

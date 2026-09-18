@@ -74,6 +74,16 @@ class NoteTitleTest {
 	}
 
 	@Test
+	fun treatsTheJsWhitespaceClassAsBlankAndTrimsIt() {
+		assertEquals("Untitled", NoteTitle.of("\u00A0\u3000"))
+		assertEquals("Untitled", NoteTitle.of("\u00A0\n\u3000"))
+		assertEquals("Heading", NoteTitle.of("\u3000# Heading"))
+		assertEquals("Heading", NoteTitle.of("#\u00A0Heading"))
+		assertEquals("Heading", NoteTitle.of("Heading\u3000"))
+		assertEquals("Body", NoteTitle.of("\u00A0\nBody"))
+	}
+
+	@Test
 	fun truncatesLongTitles() {
 		assertEquals(60, NoteTitle.of("x".repeat(100)).length)
 	}

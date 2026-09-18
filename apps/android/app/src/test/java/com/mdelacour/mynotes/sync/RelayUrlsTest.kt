@@ -34,6 +34,21 @@ class RelayUrlsTest {
 	}
 
 	@Test
+	fun normalizeSecureBaseAllowsHttpOnlyWhenRequested() {
+		assertEquals(
+			"http://10.0.2.2:3000",
+			RelayUrls.normalizeSecureBase("http://10.0.2.2:3000/", allowHttp = true),
+		)
+		assertThrows(IllegalArgumentException::class.java) {
+			RelayUrls.normalizeSecureBase("http://10.0.2.2:3000", allowHttp = false)
+		}
+		assertEquals(
+			"https://api.example.com",
+			RelayUrls.normalizeSecureBase("https://api.example.com/", allowHttp = false),
+		)
+	}
+
+	@Test
 	fun updatesUrlCarriesTheAfterCursor() {
 		assertEquals(
 			"https://api.example.com/rooms/room-1/updates?after=7",

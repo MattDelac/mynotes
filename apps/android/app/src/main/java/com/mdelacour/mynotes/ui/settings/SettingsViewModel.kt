@@ -14,6 +14,8 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
 	val loading: Boolean = true,
 	val serverUrl: String = "",
+	val shareBaseUrl: String = "",
+	val createToken: String = "",
 	val saved: Boolean = false,
 	val error: String? = null,
 )
@@ -25,7 +27,16 @@ class SettingsViewModel(private val graph: AppGraph) : ViewModel() {
 	init {
 		viewModelScope.launch {
 			val url = graph.settingsStore.serverUrl.first()
-			_state.update { it.copy(loading = false, serverUrl = url) }
+			val share = graph.settingsStore.shareBaseUrl()
+			val token = runCatching { graph.settingsStore.createToken() }.getOrNull().orEmpty()
+			_state.update {
+				it.copy(
+					loading = false,
+					serverUrl = url,
+					shareBaseUrl = share,
+					createToken = token,
+				)
+			}
 		}
 	}
 
@@ -33,13 +44,23 @@ class SettingsViewModel(private val graph: AppGraph) : ViewModel() {
 		_state.update { it.copy(serverUrl = value, saved = false, error = null) }
 	}
 
+	fun onShareBaseUrlChanged(value: String) {
+		_state.update { it.copy(shareBaseUrl = value, saved = false, error = null) }
+	}
+
+	fun onCreateTokenChanged(value: String) {
+		_state.update { it.copy(createToken = value, saved = false, error = null) }
+	}
+
 	fun save() {
 		viewModelScope.launch {
 			try {
 				graph.settingsStore.setServerUrl(_state.value.serverUrl)
+				graph.settingsStore.setShareBaseUrl(_state.value.shareBaseUrl)
+				graph.settingsStore.setCreateToken(_state.value.createToken.takeIf { it.isNotBlank() })
 				_state.update { it.copy(saved = true, error = null) }
 			} catch (e: IllegalArgumentException) {
-				_state.update { it.copy(saved = false, error = e.message ?: "Invalid server URL") }
+				_state.update { it.copy(saved = false, error = e.message ?: "Invalid setting") }
 			} catch (e: Exception) {
 				_state.update { it.copy(saved = false, error = e.message ?: "Could not save") }
 			}

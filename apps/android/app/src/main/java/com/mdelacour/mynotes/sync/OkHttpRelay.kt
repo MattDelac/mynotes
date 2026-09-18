@@ -1,5 +1,6 @@
 package com.mdelacour.mynotes.sync
 
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -29,9 +30,12 @@ class OkHttpRelay(
 				.get()
 				.build()
 			client.newCall(request).execute().use { response ->
-				val body = response.body.string()
 				when (response.code) {
-					200 -> RelayJson.parseUpdates(body).map { EncryptedUpdate(it.first, it.second) }
+					200 -> {
+						val body = readBounded(response, MAX_UPDATES_RESPONSE_BYTES)
+						RelayJson.parseUpdates(body).map { EncryptedUpdate(it.first, it.second) }
+					}
+
 					404 -> throw RelayException("room not found", statusCode = 404)
 					429 -> throw RelayException(
 						"rate limited",
@@ -88,6 +92,30 @@ class OkHttpRelay(
 
 	companion object {
 		private val OCTET_STREAM = "application/octet-stream".toMediaType()
+		private const val MAX_UPDATES_RESPONSE_BYTES = 8L * 1024 * 1024
+
+		private fun readBounded(response: Response, limit: Long): String {
+			val body = response.body
+			val declared = body.contentLength()
+			if (declared > limit) {
+				throw RelayException("updates response too large", statusCode = response.code)
+			}
+			val out = ByteArrayOutputStream()
+			val buffer = ByteArray(64 * 1024)
+			var total = 0L
+			body.byteStream().use { stream ->
+				while (true) {
+					val read = stream.read(buffer)
+					if (read == -1) break
+					total += read
+					if (total > limit) {
+						throw RelayException("updates response too large", statusCode = response.code)
+					}
+					out.write(buffer, 0, read)
+				}
+			}
+			return out.toString(Charsets.UTF_8.name())
+		}
 	}
 }
 
@@ -95,7 +123,7 @@ private class OkHttpRelaySocket(
 	client: OkHttpClient,
 	url: String,
 ) : RelaySocket {
-	private val channel = Channel<RelayFrame>(Channel.UNLIMITED)
+	private val channel = Channel<RelayFrame>(FRAME_BUFFER)
 	private val socket = AtomicReference<WebSocket?>(null)
 
 	override val frames: Flow<RelayFrame> = channel.receiveAsFlow()
@@ -109,11 +137,11 @@ private class OkHttpRelaySocket(
 
 			override fun onMessage(webSocket: WebSocket, text: String) {
 				val writable = RelayJson.parseWritable(text) ?: return
-				channel.trySend(RelayFrame.Writable(writable))
+				deliver(webSocket, RelayFrame.Writable(writable))
 			}
 
 			override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-				channel.trySend(RelayFrame.Binary(bytes.toByteArray()))
+				deliver(webSocket, RelayFrame.Binary(bytes.toByteArray()))
 			}
 
 			override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -131,6 +159,14 @@ private class OkHttpRelaySocket(
 			}
 		}
 		socket.set(client.newWebSocket(request, listener))
+	}
+
+	private fun deliver(webSocket: WebSocket, frame: RelayFrame) {
+		if (channel.trySend(frame).isFailure) {
+			webSocket.cancel()
+			channel.trySend(RelayFrame.Failure(RelayException("websocket frame buffer overflow")))
+			channel.close()
+		}
 	}
 
 	override suspend fun sendText(text: String) {
@@ -152,5 +188,6 @@ private class OkHttpRelaySocket(
 
 	companion object {
 		private const val NORMAL_CLOSURE = 1000
+		private const val FRAME_BUFFER = 256
 	}
 }

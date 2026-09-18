@@ -181,6 +181,55 @@ class OpenSessionTest {
 	}
 
 	@Test
+	fun applyRemoteCreateEmitsStructureAndTheNewIdAppears() = runBlocking {
+		val harness = Harness()
+		val session = harness.open()
+		session.createNote("n1")
+		val structures = mutableListOf<Unit>()
+		val collector = launch { session.structure.collect { structures += it } }
+		yield()
+
+		val remote = FakeEngineDoc()
+		remote.createNote("n1")
+		remote.openNote("n1")!!.insert(0, "one")
+		remote.createNote("n2")
+		session.applyRemoteUpdate(remote.encodeStateAsUpdate(), 1L)
+		yield()
+
+		assertEquals(listOf("n1", "n2"), session.noteIds())
+		assertTrue(structures.isNotEmpty())
+		collector.cancel()
+		session.close()
+	}
+
+	@Test
+	fun applyRemoteDeleteClosesTheHandleAndRejectsSubsequentMutations() = runBlocking {
+		val harness = Harness()
+		val session = harness.open()
+		val id = session.createNote("n1")
+		session.insert(id, 0, "one")
+		assertEquals("one", session.text(id))
+
+		session.applyRemoteUpdate(FakeEngineDoc().encodeStateAsUpdate(), 2L)
+
+		assertTrue(session.noteIds().isEmpty())
+		assertTrue(harness.engine.closedNoteIds.contains(id))
+		assertThrows(IllegalArgumentException::class.java) {
+			runBlocking { session.insert(id, 0, "x") }
+		}
+		assertThrows(IllegalArgumentException::class.java) {
+			runBlocking { session.undo(id) }
+		}
+		assertThrows(IllegalArgumentException::class.java) {
+			runBlocking { session.redo(id) }
+		}
+		assertThrows(IllegalArgumentException::class.java) {
+			runBlocking { session.stopCapturing(id) }
+		}
+		session.close()
+	}
+
+	@Test
 	fun anOversizeRedoRollsBackToTheLastDurableCheckpoint() = runBlocking {
 		val harness = Harness()
 		val session = harness.open(maxCiphertextBytes = 60_000)

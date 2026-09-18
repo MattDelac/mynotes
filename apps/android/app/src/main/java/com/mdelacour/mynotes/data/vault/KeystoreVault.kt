@@ -1,9 +1,11 @@
 package com.mdelacour.mynotes.data.vault
 
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.GeneralSecurityException
 import java.security.KeyStore
+import java.security.ProviderException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -55,25 +57,39 @@ class KeystoreVault(private val alias: String = DEFAULT_ALIAS) : WrappingKey {
 		}
 	}
 
-	private fun getOrCreateKey(): SecretKey =
-		existingKey() ?: try {
-			val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-			generator.init(
-				KeyGenParameterSpec.Builder(
-					alias,
-					KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-				)
-					.setKeySize(KEY_SIZE_BITS)
-					.setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-					.setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-					.setRandomizedEncryptionRequired(true)
-					.setUserAuthenticationRequired(false)
-					.build(),
-			)
-			generator.generateKey()
+	private fun getOrCreateKey(): SecretKey {
+		existingKey()?.let { return it }
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+			try {
+				return generateKey(strongBox = true)
+			} catch (_: ProviderException) {
+				// StrongBoxUnavailableException is a ProviderException; fall back silently.
+			}
+		}
+		return try {
+			generateKey(strongBox = false)
 		} catch (e: GeneralSecurityException) {
 			throw VaultException("failed to create wrapping key", e)
 		}
+	}
+
+	private fun generateKey(strongBox: Boolean): SecretKey {
+		val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+		val builder = KeyGenParameterSpec.Builder(
+			alias,
+			KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+		)
+			.setKeySize(KEY_SIZE_BITS)
+			.setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+			.setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+			.setRandomizedEncryptionRequired(true)
+			.setUserAuthenticationRequired(false)
+		if (strongBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+			builder.setIsStrongBoxBacked(true)
+		}
+		generator.init(builder.build())
+		return generator.generateKey()
+	}
 
 	private fun existingKey(): SecretKey? =
 		try {

@@ -60,7 +60,9 @@ fun AppNavHost(
 			SessionListScreen(
 				viewModel = viewModel,
 				onOpenSession = { localId, noteId ->
-					navController.navigate(editorRoute(localId, noteId))
+					navController.navigate(editorRoute(localId, noteId)) {
+						launchSingleTop = true
+					}
 				},
 				onOpenSettings = { navController.navigate(SETTINGS_ROUTE) },
 			)
