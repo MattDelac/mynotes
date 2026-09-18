@@ -17,6 +17,7 @@ import com.mdelacour.mynotes.domain.ReSeed
 import com.mdelacour.mynotes.domain.RoomTransactionRunner
 import com.mdelacour.mynotes.domain.Session
 import com.mdelacour.mynotes.domain.SessionRepository
+import com.mdelacour.mynotes.domain.Sharing
 import com.mdelacour.mynotes.engine.EngineExecutor
 import com.mdelacour.mynotes.engine.NativeEngineDoc
 import com.mdelacour.mynotes.sync.OkHttpRelay
@@ -121,4 +122,6 @@ class AppGraph(context: Context) {
 		)
 
 	fun reSeed(): ReSeed = ReSeed(repository, relay)
+
+	fun sharing(): Sharing = Sharing(repository, relay, settingsStore)
 }

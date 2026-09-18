@@ -37,6 +37,8 @@ class OpenSession(
 
 	suspend fun pendingOutbox(): List<OutboxEntity> = repository.pendingOutbox(session.localId)
 
+	suspend fun encodeStateAsUpdate(): ByteArray = executor.run { engine.encodeStateAsUpdate() }
+
 	suspend fun acknowledgeEcho(ciphertext: ByteArray): Boolean =
 		repository.acknowledgeOutboxEcho(session.localId, ciphertext)
 

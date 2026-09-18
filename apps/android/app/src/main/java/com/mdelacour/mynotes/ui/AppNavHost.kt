@@ -23,12 +23,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 const val SESSIONS_ROUTE = "sessions"
-const val EDITOR_ROUTE = "editor/{localId}"
+const val EDITOR_ROUTE = "editor/{localId}?noteId={noteId}"
 const val SETTINGS_ROUTE = "settings"
 
 private const val LOCAL_ID = "localId"
+private const val NOTE_ID = "noteId"
 
-fun editorRoute(localId: String): String = "editor/$localId"
+fun editorRoute(localId: String, noteId: String? = null): String =
+	if (noteId.isNullOrBlank()) "editor/$localId" else "editor/$localId?noteId=$noteId"
 
 private val NoIncomingLink = MutableStateFlow<String?>(null)
 
@@ -57,7 +59,9 @@ fun AppNavHost(
 
 			SessionListScreen(
 				viewModel = viewModel,
-				onOpenSession = { localId -> navController.navigate(editorRoute(localId)) },
+				onOpenSession = { localId, noteId ->
+					navController.navigate(editorRoute(localId, noteId))
+				},
 				onOpenSettings = { navController.navigate(SETTINGS_ROUTE) },
 			)
 		}
@@ -68,11 +72,19 @@ fun AppNavHost(
 		}
 		composable(
 			route = EDITOR_ROUTE,
-			arguments = listOf(navArgument(LOCAL_ID) { type = NavType.StringType }),
+			arguments = listOf(
+				navArgument(LOCAL_ID) { type = NavType.StringType },
+				navArgument(NOTE_ID) {
+					type = NavType.StringType
+					nullable = true
+					defaultValue = null
+				},
+			),
 		) { entry ->
 			val localId = entry.arguments?.getString(LOCAL_ID).orEmpty()
+			val noteId = entry.arguments?.getString(NOTE_ID)
 			val viewModel: EditorViewModel =
-				viewModel(factory = EditorViewModel.factory(graph, localId))
+				viewModel(factory = EditorViewModel.factory(graph, localId, noteId))
 			EditorScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
 		}
 	}

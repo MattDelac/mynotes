@@ -186,6 +186,40 @@ class SessionRepository(
 		true
 	}
 
+	suspend fun markCreating(localId: String) = tx.run {
+		val entity = sessions.get(localId) ?: return@run
+		sessions.update(entity.copy(createState = CREATE_STATE_CREATING, updatedAt = clock()))
+	}
+
+	suspend fun attachRoom(localId: String, roomId: String, wrappedEditToken: ByteArray): Session? = tx.run {
+		val entity = sessions.get(localId) ?: return@run null
+		val updated = entity.copy(
+			roomId = roomId,
+			access = Access.OWNER.name,
+			wrappedEditToken = wrappedEditToken,
+			lastSeq = -1,
+			createState = null,
+			status = SessionStatus.OFFLINE.name,
+			updatedAt = clock(),
+		)
+		sessions.update(updated)
+		updated.toDomain()
+	}
+
+	suspend fun setCreationUncertain(localId: String) = tx.run {
+		val entity = sessions.get(localId) ?: return@run
+		sessions.update(
+			entity.copy(
+				status = SessionStatus.CREATION_UNCERTAIN.name,
+				createState = CREATE_STATE_CREATION_UNCERTAIN,
+				updatedAt = clock(),
+			),
+		)
+	}
+
+	fun wrapEditToken(editToken: String): ByteArray =
+		vault.wrap(editToken.toByteArray(Charsets.UTF_8))
+
 	suspend fun replaceRoom(localId: String, roomId: String, editToken: String): Session? = tx.run {
 		val entity = sessions.get(localId) ?: return@run null
 		val updated = entity.copy(
@@ -285,6 +319,8 @@ class SessionRepository(
 
 	companion object {
 		private const val ROOM_KEY_LENGTH = 32
+		private const val CREATE_STATE_CREATING = "CREATING"
+		private const val CREATE_STATE_CREATION_UNCERTAIN = "CREATION_UNCERTAIN"
 	}
 }
 

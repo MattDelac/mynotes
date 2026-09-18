@@ -41,12 +41,14 @@ data class EditorUiState(
 class EditorViewModel(
 	private val graph: AppGraph,
 	private val localId: String,
+	private val requestedNoteId: String? = null,
 ) : ViewModel() {
 	private val _state = MutableStateFlow(EditorUiState())
 	val state: StateFlow<EditorUiState> = _state.asStateFlow()
 
 	private val mutex = Mutex()
 	private var openSession: OpenSession? = null
+	private var requestedNoteApplied = false
 
 	private val _syncStatus = MutableStateFlow(SessionStatus.LOCAL)
 	val status: StateFlow<SessionStatus> = _syncStatus.asStateFlow()
@@ -258,7 +260,9 @@ class EditorViewModel(
 	private suspend fun refresh(open: OpenSession) {
 		val ids = open.noteIds()
 		val previousSelected = _state.value.selectedNoteId
-		val selected = previousSelected?.takeIf { it in ids } ?: ids.firstOrNull()
+		val requested = requestedNoteId?.takeIf { !requestedNoteApplied && it in ids }
+		val selected = requested ?: previousSelected?.takeIf { it in ids } ?: ids.firstOrNull()
+		if (requested != null) requestedNoteApplied = true
 		val noteChanged = previousSelected != selected
 		val titles = ids.associateWith { NoteTitle.of(open.text(it)) }
 		val title = SessionTitle.of(open.session.nameOverride, ids) { noteId -> open.text(noteId) }
@@ -366,11 +370,15 @@ class EditorViewModel(
 	}
 
 	companion object {
-		fun factory(graph: AppGraph, localId: String): ViewModelProvider.Factory =
+		fun factory(
+			graph: AppGraph,
+			localId: String,
+			requestedNoteId: String? = null,
+		): ViewModelProvider.Factory =
 			object : ViewModelProvider.Factory {
 				@Suppress("UNCHECKED_CAST")
 				override fun <T : ViewModel> create(modelClass: Class<T>): T =
-					EditorViewModel(graph, localId) as T
+					EditorViewModel(graph, localId, requestedNoteId) as T
 			}
 	}
 }

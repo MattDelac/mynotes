@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mdelacour.mynotes.AppGraph
 import com.mdelacour.mynotes.crypto.ShareLink
+import com.mdelacour.mynotes.domain.CreationUncertainException
 import com.mdelacour.mynotes.domain.Session
 import com.mdelacour.mynotes.domain.SessionStatus
+import com.mdelacour.mynotes.domain.ShareLinks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,6 +18,24 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+data class OpenRequest(
+	val localId: String,
+	val noteId: String? = null,
+	val message: String? = null,
+)
+
+sealed interface ShareUiState {
+	data object Idle : ShareUiState
+
+	data object Working : ShareUiState
+
+	data class Links(val links: ShareLinks) : ShareUiState
+
+	data class Uncertain(val localId: String) : ShareUiState
+
+	data class Failed(val message: String) : ShareUiState
+}
 
 class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 	val sessions: StateFlow<List<Session>> = graph.repository.observeSessions()
@@ -29,8 +49,11 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 	private val _importError = MutableStateFlow<String?>(null)
 	val importError: StateFlow<String?> = _importError.asStateFlow()
 
-	private val _openSessionId = MutableStateFlow<String?>(null)
-	val openSessionId: StateFlow<String?> = _openSessionId.asStateFlow()
+	private val _openRequest = MutableStateFlow<OpenRequest?>(null)
+	val openRequest: StateFlow<OpenRequest?> = _openRequest.asStateFlow()
+
+	private val _shareState = MutableStateFlow<ShareUiState>(ShareUiState.Idle)
+	val shareState: StateFlow<ShareUiState> = _shareState.asStateFlow()
 
 	private val _busy = MutableStateFlow(false)
 	val busy: StateFlow<Boolean> = _busy.asStateFlow()
@@ -56,7 +79,7 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 		viewModelScope.launch {
 			_busy.value = true
 			try {
-				_openSessionId.value = graph.createLocalSession().localId
+				_openRequest.value = OpenRequest(graph.createLocalSession().localId)
 			} catch (e: Exception) {
 				_importError.value = e.message ?: "Could not create session"
 			} finally {
@@ -76,7 +99,15 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 			try {
 				val result = graph.importShare(credentials)
 				_importError.value = null
-				_openSessionId.value = result.session.localId
+				_openRequest.value = OpenRequest(
+					localId = result.session.localId,
+					noteId = credentials.noteId,
+					message = when {
+						result.created -> "Session imported"
+						result.upgraded -> "Upgraded to owner"
+						else -> "Session already in your library"
+					},
+				)
 			} catch (e: Exception) {
 				_importError.value = e.message ?: "Could not import share link"
 			} finally {
@@ -85,12 +116,40 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 		}
 	}
 
+	fun share(session: Session) {
+		viewModelScope.launch {
+			_shareState.value = ShareUiState.Working
+			try {
+				val sharing = graph.sharing()
+				val links = if (session.roomId == null) {
+					val opened = graph.openSession(session)
+					try {
+						sharing.shareSnapshot(session, opened.roomKey, opened.encodeStateAsUpdate())
+					} finally {
+						opened.close()
+					}
+				} else {
+					sharing.links(session)
+				}
+				_shareState.value = ShareUiState.Links(links)
+			} catch (e: CreationUncertainException) {
+				_shareState.value = ShareUiState.Uncertain(session.localId)
+			} catch (e: Exception) {
+				_shareState.value = ShareUiState.Failed(e.message ?: "Could not share session")
+			}
+		}
+	}
+
+	fun dismissShare() {
+		_shareState.value = ShareUiState.Idle
+	}
+
 	fun clearImportError() {
 		_importError.value = null
 	}
 
-	fun consumeOpenSession() {
-		_openSessionId.value = null
+	fun consumeOpenRequest() {
+		_openRequest.value = null
 	}
 
 	fun rename(localId: String, name: String?) {

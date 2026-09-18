@@ -15,8 +15,10 @@ class FakeRelay : Relay {
 
 	var postNoteResult: Pair<String, String>? = null
 	var postNoteError: RelayException? = null
+	val postNoteErrors = ArrayDeque<RelayException>()
 	val postNoteCalls = mutableListOf<Pair<ByteArray, String?>>()
 	var putSnapshotError: RelayException? = null
+	val putSnapshotErrors = ArrayDeque<RelayException>()
 	val snapshots = mutableListOf<Triple<String, String, ByteArray>>()
 
 	override suspend fun fetchUpdates(roomId: String, after: Long): List<EncryptedUpdate> {
@@ -28,12 +30,14 @@ class FakeRelay : Relay {
 	}
 
 	override suspend fun putSnapshot(roomId: String, editToken: String, ciphertext: ByteArray) {
+		if (putSnapshotErrors.isNotEmpty()) throw putSnapshotErrors.removeFirst()
 		putSnapshotError?.let { throw it }
 		snapshots += Triple(roomId, editToken, ciphertext)
 	}
 
 	override suspend fun postNote(ciphertext: ByteArray, createToken: String?): Pair<String, String> {
 		postNoteCalls += ciphertext to createToken
+		if (postNoteErrors.isNotEmpty()) throw postNoteErrors.removeFirst()
 		postNoteError?.let { throw it }
 		return postNoteResult ?: throw RelayException("postNote is not configured")
 	}

@@ -49,6 +49,13 @@ class SettingsStore(
 		}
 	}
 
+	suspend fun shareBaseUrl(): String =
+		context.settingsDataStore.data.first()[SHARE_BASE_URL] ?: DEFAULT_SHARE_BASE_URL
+
+	suspend fun setShareBaseUrl(url: String) {
+		context.settingsDataStore.edit { prefs -> prefs[SHARE_BASE_URL] = RelayUrls.normalizeBase(url) }
+	}
+
 	suspend fun setCreateToken(token: String?) {
 		context.settingsDataStore.edit { prefs ->
 			if (token == null) {
@@ -62,7 +69,9 @@ class SettingsStore(
 
 	companion object {
 		const val DEFAULT_SERVER_URL = "https://api-notes.mdelacour.com"
+		const val DEFAULT_SHARE_BASE_URL = "https://notes.mdelacour.com"
 		private val SERVER_URL = stringPreferencesKey("server_url")
 		private val CREATE_TOKEN = stringPreferencesKey("create_token")
+		private val SHARE_BASE_URL = stringPreferencesKey("share_base_url")
 	}
 }
