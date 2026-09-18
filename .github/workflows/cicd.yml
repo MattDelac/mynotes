@@ -37,6 +37,8 @@ jobs:
   release-android:
     name: Release Android Preview
     needs: [frontend, backend, e2e, android]
+    permissions:
+      contents: write
     uses: ./.github/workflows/_release-android.yml
     secrets: inherit
 
