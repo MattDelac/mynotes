@@ -1,0 +1,94 @@
+name: CI Android
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Privacy audit
+        run: scripts/android/privacy-audit.sh
+
+      - name: Docs check
+        run: scripts/android/check-docs.sh
+
+      - name: Preview version script self-test
+        run: scripts/android/tests/preview-version-test.sh
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.7"
+          cache-dependency-path: apps/android/engine/go.sum
+
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Install Android packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install "platforms;android-36" "build-tools;37.0.0" "ndk;29.0.14206865" "platform-tools"
+
+      - name: Tool versions
+        run: |
+          go version
+          java -version
+          sdkmanager --version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+
+      - name: Install pnpm dependencies (fixture verifier)
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+
+      - name: Go engine tests
+        working-directory: apps/android/engine
+        run: go test ./... -count=1
+
+      - name: Verify Go goldens against yjs
+        run: node apps/android/engine/fixtures/verify.mjs
+
+      - name: Fixture freshness
+        run: |
+          node apps/android/engine/fixtures/generate.mjs
+          (cd apps/android/engine && go test ./... -run TestGenerateGolden -update -count=1)
+          node apps/android/engine/fixtures/verify.mjs
+          node apps/android/testdata/gen-crypto-fixtures.mjs
+          if ! git diff --exit-code; then
+            echo "fixtures are stale; run scripts/android/gen-fixtures.sh and commit the result" >&2
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Rebuild engine AAR
+        run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865" OUT="$RUNNER_TEMP/engine.aar" scripts/android/rebuild-engine.sh
+
+      - name: Verify AAR against the committed artifact
+        run: scripts/android/verify-engine.sh "$RUNNER_TEMP/engine.aar"
+
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+      - name: Gradle lint, unit tests, debug APK
+        run: scripts/android/gradle.sh lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+
+      - name: Verify debug APK
+        run: scripts/android/verify-apk.sh apps/android/app/build/outputs/apk/debug/app-debug.apk --expected-version-code 1 --expected-version-name 0.1.0-preview
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mynotes-debug-apk
+          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

@@ -8,6 +8,12 @@ importers:
 
   .: {}
 
+  apps/android/engine/fixtures:
+    dependencies:
+      yjs:
+        specifier: 13.6.32
+        version: 13.6.32
+
   apps/web:
     dependencies:
       '@codemirror/autocomplete':

@@ -1,0 +1,12 @@
+[
+	{
+		"relation": ["delegate_permission/common.handle_all_urls"],
+		"target": {
+			"namespace": "android_app",
+			"package_name": "com.mdelacour.mynotes",
+			"sha256_cert_fingerprints": [
+				"D3:D8:5F:8D:03:BD:97:D7:07:D6:22:E6:FC:BE:9A:53:2E:0B:CA:A4:E0:FB:DA:12:1F:13:E9:42:EF:29:C3:54"
+			]
+		}
+	}
+]

@@ -12,8 +12,41 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        androidPkgs = import nixpkgs {
+          inherit system;
+          config = {
+            allowUnfree = true;
+            android_sdk.accept_license = true;
+          };
+        };
+        androidSdk = androidPkgs.androidenv.composeAndroidPackages {
+          platformVersions = [ "36" ];
+          buildToolsVersions = [ "37.0.0" ];
+          includeNDK = true;
+          ndkVersion = "29.0.14206865";
+        };
       in
       {
+        devShells.android = androidPkgs.mkShell {
+          packages = with androidPkgs; [
+            go_1_26
+            gcc
+            jdk17
+            kotlin
+            nodejs_22
+            zip
+            unzip
+          ];
+
+          ANDROID_HOME = "${androidSdk.androidsdk}/libexec/android-sdk";
+          ANDROID_NDK_HOME = "${androidSdk.ndk-bundle}/libexec/android-sdk/ndk-bundle";
+          JAVA_HOME = "${androidPkgs.jdk17}";
+
+          shellHook = ''
+            echo "mynotes android dev shell — go $(go version | cut -d' ' -f3), $(java -version 2>&1 | head -1)"
+          '';
+        };
+
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             rustc

@@ -1,0 +1,44 @@
+{
+  "titles": [
+    { "input": "hello world\nsecond line", "expected": "hello world" },
+    { "input": "## My heading", "expected": "My heading" },
+    { "input": "# Top\nbody", "expected": "Top" },
+    { "input": "#\nBody", "expected": "Body" },
+    { "input": "#\n\nBody", "expected": "Body" },
+    { "input": "#", "expected": "Untitled" },
+    { "input": "# ", "expected": "Untitled" },
+    { "input": "#NoSpace", "expected": "#NoSpace" },
+    { "input": "- item\n- two", "expected": "Untitled" },
+    { "input": "1. first\n2. second", "expected": "Untitled" },
+    { "input": "Some text\n\n- item1", "expected": "Some text" },
+    { "input": "Some text\n- item1\n- item2", "expected": "Untitled" },
+    { "input": "> quoted", "expected": "Untitled" },
+    { "input": "```\ncode\n```", "expected": "Untitled" },
+    { "input": "| a | b |\n| - | - |", "expected": "Untitled" },
+    { "input": "---\n\nBody", "expected": "Untitled" },
+    { "input": "\u00A0\nBody", "expected": "Body" },
+    { "input": "\u3000# Heading", "expected": "Heading" },
+    { "input": "Heading\u3000", "expected": "Heading" },
+    { "input": "Café déjà vu", "expected": "Café déjà vu" },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  ],
+  "filenames": [
+    { "input": "# My Great Ideas!\n\nbody", "expected": "my-great-ideas.md" },
+    { "input": "", "expected": "untitled.md" },
+    { "input": "Hello,   World!!", "expected": "hello-world.md" },
+    { "input": "Café & déjà vu", "expected": "caf-d-j-vu.md" },
+    { "input": "   \nbody line", "expected": "body-line.md" },
+    { "input": "#", "expected": "untitled.md" },
+    { "input": "Heading\u3000", "expected": "heading.md" },
+    { "input": "---\n\nBody", "expected": "untitled.md" },
+    { "input": "A/B C_D-E", "expected": "a-b-c-d-e.md" },
+    { "input": "\u65E5\u672C", "expected": "note.md" },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.md"
+    }
+  ]
+}

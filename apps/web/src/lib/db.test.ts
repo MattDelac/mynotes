@@ -70,6 +70,15 @@ describe('noteTitle', () => {
 	it('truncates long titles', () => {
 		expect(noteTitle('x'.repeat(100))).toHaveLength(60);
 	});
+
+	it('treats the JS whitespace class as blank and trims it', () => {
+		expect(noteTitle('\u00a0\u3000')).toBe('Untitled');
+		expect(noteTitle('\u00a0\n\u3000')).toBe('Untitled');
+		expect(noteTitle('\u3000# Heading')).toBe('Heading');
+		expect(noteTitle('#\u00a0Heading')).toBe('Heading');
+		expect(noteTitle('Heading\u3000')).toBe('Heading');
+		expect(noteTitle('\u00a0\nBody')).toBe('Body');
+	});
 });
 
 describe('db', () => {

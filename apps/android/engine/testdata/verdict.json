@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "yjsVersion": "13.6.32",
+  "checks": [
+    {
+      "name": "full",
+      "ok": true
+    },
+    {
+      "name": "diff",
+      "ok": true
+    },
+    {
+      "name": "full-idempotent",
+      "ok": true
+    }
+  ],
+  "sha256": {
+    "go_ops_full.bin": "fe0f9c0c4caa30641c29718bb450ca7534dbe49474ac25b70fd6a5012490e2f0",
+    "go_ops_sv.bin": "f6087f83b2c8493ceb62c29a1e35e094dce355d04c0b7c9ba61c77ede47aa6fc",
+    "go_ops_diff.bin": "8fc4edc248b6d18bb206579b0dfcf52351825cbd94e825ea19ded01aeecbe6af",
+    "expect.json": "ca519aa26cb0625b4fc2d1fa5b037a6c8fd5c9ccbf8fe5d778ef6af0b71639c7"
+  }
+}

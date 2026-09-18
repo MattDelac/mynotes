@@ -1,0 +1,188 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "ac1da55683cb1710443c0808b02ada58",
+    "entities": [
+      {
+        "tableName": "sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`localId` TEXT NOT NULL, `roomId` TEXT, `access` TEXT NOT NULL, `nameOverride` TEXT, `orderIndex` INTEGER NOT NULL, `lastSeq` INTEGER NOT NULL, `encryptedCheckpoint` BLOB, `wrappedRoomKey` BLOB, `wrappedEditToken` BLOB, `createState` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `status` TEXT NOT NULL, PRIMARY KEY(`localId`))",
+        "fields": [
+          {
+            "fieldPath": "localId",
+            "columnName": "localId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "roomId",
+            "columnName": "roomId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "access",
+            "columnName": "access",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nameOverride",
+            "columnName": "nameOverride",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "orderIndex",
+            "columnName": "orderIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeq",
+            "columnName": "lastSeq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedCheckpoint",
+            "columnName": "encryptedCheckpoint",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "wrappedRoomKey",
+            "columnName": "wrappedRoomKey",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "wrappedEditToken",
+            "columnName": "wrappedEditToken",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "createState",
+            "columnName": "createState",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "localId"
+          ]
+        }
+      },
+      {
+        "tableName": "note_order",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `noteId` TEXT NOT NULL, `orderIndex` INTEGER NOT NULL, `firstSeenAt` INTEGER NOT NULL, PRIMARY KEY(`sessionId`, `noteId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noteId",
+            "columnName": "noteId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderIndex",
+            "columnName": "orderIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSeenAt",
+            "columnName": "firstSeenAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "noteId"
+          ]
+        }
+      },
+      {
+        "tableName": "outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `ciphertext` BLOB NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ciphertext",
+            "columnName": "ciphertext",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbox_sessionId_ciphertext",
+            "unique": true,
+            "columnNames": [
+              "sessionId",
+              "ciphertext"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_outbox_sessionId_ciphertext` ON `${TABLE_NAME}` (`sessionId`, `ciphertext`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ac1da55683cb1710443c0808b02ada58')"
+    ]
+  }
+}

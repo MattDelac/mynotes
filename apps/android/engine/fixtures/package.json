@@ -1,0 +1,9 @@
+{
+	"name": "mynotes-android-engine-fixtures",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"description": "Generates and verifies the committed Yjs byte fixtures for the Android engine gate.",
+	"dependencies": { "yjs": "13.6.32" },
+	"scripts": { "generate": "node generate.mjs", "verify": "node verify.mjs" }
+}
