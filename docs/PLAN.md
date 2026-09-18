@@ -121,10 +121,23 @@ browser-reservation audit of every chord):
 - Abuse posture: nothing is sent from our server; it's the user's own mail
   client. No relay to protect, no rate limits needed.
 
-### Removed: AI chat
+### Session assistant (BYOK, direct to provider)
 
-A BYOK AI sidecar chat was built in M4 and later removed — the project stays
-focused on notes + collaboration.
+The M4 AI sidecar was removed, then reintroduced as a session-scoped
+bring-your-own-key assistant. Requests go directly from the client to the
+selected provider; there is no MyNotes proxy, no telemetry and no server-side
+key or prompt handling. Web supports Anthropic Claude, OpenAI GPT and
+DeepSeek; Android additionally supports Moonshot Kimi (web Kimi is a product
+allowlist decision, not a CORS fact — both Moonshot endpoints grant CORS).
+Keys live in browser `localStorage` on web and in an app-global
+Keystore-wrapped store on Android, one per provider. Chat history is local to
+the device; “Save conversation as note” is the only path into the shared
+document. The assistant can read every note in the open session and, in
+writable sessions, edit/delete/create notes through capability-checked tools
+with a per-message Revert journal. True view-link sessions are read-only. The
+versioned contract, per-provider lowering rules and CORS evidence are in
+`docs/ai-chat-contract.md`; provider-neutral fixtures live in
+`fixtures/ai-chat/v1/` and are consumed by both clients.
 
 ### Removed: Voice input
 

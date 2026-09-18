@@ -1,0 +1,72 @@
+{
+	"contract": "v1",
+	"cases": [
+		{
+			"provider": "anthropic",
+			"status": 401,
+			"body": "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}",
+			"expected": { "code": "authentication", "retryable": false }
+		},
+		{
+			"provider": "anthropic",
+			"status": 429,
+			"body": "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"slow down\"}}",
+			"headers": { "retry-after": "30" },
+			"expected": { "code": "rate_limited", "retryable": true, "retryAfterMs": 30000 }
+		},
+		{
+			"provider": "anthropic",
+			"status": 529,
+			"body": "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"overloaded\"}}",
+			"expected": { "code": "provider_overloaded", "retryable": true }
+		},
+		{
+			"provider": "anthropic",
+			"status": 400,
+			"body": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"bad request\"}}",
+			"expected": { "code": "invalid_request", "retryable": false }
+		},
+		{
+			"provider": "openai",
+			"status": 401,
+			"body": "{\"error\":{\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\",\"message\":\"Incorrect API key\"}}",
+			"expected": { "code": "authentication", "retryable": false }
+		},
+		{
+			"provider": "openai",
+			"status": 429,
+			"body": "{\"error\":{\"type\":\"insufficient_quota\",\"code\":\"insufficient_quota\",\"message\":\"quota\"}}",
+			"expected": { "code": "quota_exhausted", "retryable": false }
+		},
+		{
+			"provider": "openai",
+			"status": 404,
+			"body": "{\"error\":{\"code\":\"model_not_found\",\"message\":\"no model\"}}",
+			"expected": { "code": "model_not_found", "retryable": false }
+		},
+		{
+			"provider": "deepseek",
+			"status": 401,
+			"body": "{\"error\":{\"type\":\"authentication_error\",\"code\":\"invalid_api_key\",\"message\":\"bad key\"}}",
+			"expected": { "code": "authentication", "retryable": false }
+		},
+		{
+			"provider": "deepseek",
+			"status": 429,
+			"body": "{\"error\":{\"type\":\"rate_limit_exceeded\",\"code\":\"rate_limit_exceeded\",\"message\":\"slow\"}}",
+			"expected": { "code": "rate_limited", "retryable": true }
+		},
+		{
+			"provider": "deepseek",
+			"status": 400,
+			"body": "{\"error\":{\"type\":\"invalid_request_error\",\"code\":\"context_length_exceeded\",\"message\":\"too long\"}}",
+			"expected": { "code": "context_limit", "retryable": false }
+		},
+		{
+			"provider": "kimi",
+			"status": 429,
+			"body": "{\"error\":{\"type\":\"rate_limit_exceeded\",\"message\":\"slow\"}}",
+			"expected": { "code": "rate_limited", "retryable": true }
+		}
+	]
+}

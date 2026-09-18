@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import {
+		Bot,
 		Download,
 		Eye,
 		FilePlus2,
@@ -33,6 +34,11 @@
 		showDeleteNote?: boolean;
 		preview?: boolean;
 		sidebarOpen?: boolean;
+		chatOpen?: boolean;
+		chatAvailable?: boolean;
+		onToggleChat?: () => void;
+		onRenameSession?: () => void;
+		onDeleteChat?: () => void;
 	}
 
 	let {
@@ -51,7 +57,12 @@
 		showNewSession = false,
 		showDeleteNote = false,
 		preview = false,
-		sidebarOpen = false
+		sidebarOpen = false,
+		chatOpen = false,
+		chatAvailable = false,
+		onToggleChat,
+		onRenameSession,
+		onDeleteChat
 	}: Props = $props();
 
 	let menuOpen = $state(false);
@@ -194,6 +205,19 @@
 		</button>
 	{/if}
 
+	{#if onToggleChat && chatAvailable}
+		<button
+			class="icon"
+			class:active={chatOpen}
+			aria-label="Session assistant"
+			aria-pressed={chatOpen}
+			title="Session assistant"
+			onclick={() => onToggleChat?.()}
+		>
+			<Bot size={18} />
+		</button>
+	{/if}
+
 	{#if onMenuAction}
 		<div class="menu-wrapper">
 			<button
@@ -269,6 +293,32 @@
 						>
 							<Trash2 size={15} />
 							<span>Delete note</span>
+						</button>
+					{/if}
+					{#if onRenameSession}
+						<button
+							class="menu-item"
+							onclick={() => {
+								onRenameSession();
+								closeMenu();
+							}}
+							aria-label="Rename session"
+						>
+							<Pencil size={15} />
+							<span>Rename session</span>
+						</button>
+					{/if}
+					{#if onDeleteChat}
+						<button
+							class="menu-item"
+							onclick={() => {
+								onDeleteChat();
+								closeMenu();
+							}}
+							aria-label="Delete local assistant conversation"
+						>
+							<Trash2 size={15} />
+							<span>Delete assistant chat</span>
 						</button>
 					{/if}
 					{#if onGrammarCheck && !readOnly}
@@ -361,6 +411,10 @@
 	.icon:hover {
 		background: var(--bg-hover);
 		color: var(--fg);
+	}
+	.icon.active {
+		color: var(--fg);
+		background: var(--bg-hover);
 	}
 	.icon:disabled {
 		opacity: 0.4;

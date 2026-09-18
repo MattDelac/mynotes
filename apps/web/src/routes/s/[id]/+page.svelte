@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { renderMarkdown } from '$lib/markdown';
 	import { forgetShareKey } from '$lib/shared';
-	import { RoomSession, type SessionState } from '$lib/collab';
+	import { LocalWriteChannel, RoomSession, type SessionState, type WriteState } from '$lib/collab';
 	import { encryptBytes, exportKey, generateKey, importKey } from '$lib/crypto';
 	import { pushBlob, pushSnapshot } from '$lib/api';
 	import {
@@ -16,8 +16,10 @@
 		deleteNote,
 		deleteNoteSelection,
 		noteTitle,
+		sessionDisplayName,
 		type Note,
-		type ShareInfo
+		type ShareInfo,
+		type Session
 	} from '$lib/db';
 	import {
 		addNote,
@@ -39,12 +41,15 @@
 	import { GrammarChecker, type GrammarSuggestion } from '$lib/grammar';
 	import { loadGrammarModel, type ModelLoadProgress } from '$lib/grammar-model';
 	import { grammarCheckEnabled, setGrammarCheckEnabled } from '$lib/grammar-prefs';
+	import { chatScope, clearThreadsForSession, WebChatStore } from '$lib/ai/chat-db';
+	import type { AgentCapability, AgentWriteChannel } from '$lib/ai/session-tools';
 	import Editor from '$lib/Editor.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import SharePanel from '$lib/components/SharePanel.svelte';
 	import ToastStack from '$lib/components/ToastStack.svelte';
 	import GrammarPanel from '$lib/components/GrammarPanel.svelte';
+	import ChatPanel from '$lib/components/ChatPanel.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -74,6 +79,32 @@
 	let grammarModelProgress = $state<ModelLoadProgress>({ percent: null, loadedBytes: 0 });
 	let grammarSuggestions = $state<GrammarSuggestion[]>([]);
 	let dismissedSuggestionKey = $state('');
+	let chatOpen = $state(false);
+	let collabWriteState = $state<WriteState>('read-only');
+	let sessionMeta = $state<Session | null>(null);
+	let localChannel = $state<LocalWriteChannel | null>(null);
+
+	const chatScopeKey = $derived(chatScope(data.sessionId, data.shared?.remoteId ?? null));
+	const chatName = $derived(
+		data.shared
+			? sessionDisplayName(sessionMeta ?? undefined, !data.shared.owner)
+			: sessionDisplayName(sessionMeta ?? undefined, false)
+	);
+	const chatCapability = $derived.by<AgentCapability>(() => {
+		if (data.shared) {
+			if (!data.shared.owner) return { writable: false, reason: 'read-only' };
+			if (collabWriteState === 'writable') return { writable: true, reason: 'writable' };
+			if (collabWriteState === 'pending') return { writable: false, reason: 'pending' };
+			return { writable: false, reason: 'offline' };
+		}
+		if (share) {
+			if (collabWriteState === 'writable') return { writable: true, reason: 'writable' };
+			if (collabWriteState === 'pending') return { writable: false, reason: 'pending' };
+			return { writable: false, reason: 'offline' };
+		}
+		return { writable: true, reason: 'writable' };
+	});
+	const chatChannel = $derived<AgentWriteChannel | null>(data.shared ? collab : localChannel);
 
 	const canWrite = $derived(!data.shared || data.shared.owner);
 	const title = $derived(noteTitle(content));
@@ -154,7 +185,43 @@
 		const remoteId = data.shared.remoteId;
 		forgetShareKey(remoteId);
 		await destroySessionDoc(remoteId);
+		if (confirm('Also delete the local assistant conversation for this shared session?')) {
+			const store = new WebChatStore(chatScope(null, remoteId), null, remoteId);
+			await store.clear();
+		}
 		await goto(resolve('/'));
+	}
+
+	async function renameSession() {
+		if (!data.sessionId || !sessionMeta) return;
+		const next = prompt(
+			'Session name (device-local, used by the assistant context)',
+			sessionMeta.nameOverride ?? ''
+		);
+		if (next === null) return;
+		const trimmed = next.trim();
+		const updated: Session = { ...sessionMeta, updatedAt: Date.now() };
+		if (trimmed) updated.nameOverride = trimmed;
+		else delete updated.nameOverride;
+		await saveSession(updated);
+		sessionMeta = updated;
+	}
+
+	async function saveConversationAsNote(markdown: string) {
+		if (!sessionDoc || !canWrite) return;
+		const id = await addNote(docId());
+		const target = sessionDoc.notes.get(id);
+		if (target) target.insert(0, markdown);
+		selectNote(id);
+	}
+
+	async function deleteLocalChat() {
+		if (!data.sessionId) return;
+		if (!confirm('Delete the local assistant conversation and revert journals for this session?')) {
+			return;
+		}
+		await clearThreadsForSession(data.sessionId);
+		showToast('success', 'Local assistant conversation deleted.');
 	}
 
 	async function syncMetadata() {
@@ -311,7 +378,8 @@
 			roomId: info.remoteId,
 			key: await importKey(info.key),
 			editToken: info.editToken,
-			onState: (state) => (sessionState = state)
+			onState: (state) => (sessionState = state),
+			onWriteState: (state) => (collabWriteState = state)
 		});
 		try {
 			await collab.start();
@@ -331,7 +399,9 @@
 			if (cancelled) return;
 			sessionDoc = doc;
 			boundDoc = doc;
+			localChannel = new LocalWriteChannel(doc.ydoc);
 			const meta = await getSession(sessionId);
+			sessionMeta = meta ?? null;
 			share = meta?.share ?? null;
 			await syncMetadata();
 			mapObserver = () => void syncMeta();
@@ -353,6 +423,7 @@
 			sessionDoc = null;
 			ytext = null;
 			noteId = '';
+			localChannel = null;
 		};
 	});
 
@@ -371,7 +442,8 @@
 				roomId: remoteId,
 				key: await importKey(shared.key),
 				editToken: shared.editToken,
-				onState: (state) => (sessionState = state)
+				onState: (state) => (sessionState = state),
+				onWriteState: (state) => (collabWriteState = state)
 			});
 			collab = room;
 			try {
@@ -496,6 +568,9 @@
 		else if (action === 'newSession') startEmptySession();
 		else if (action === 'deleteNote') void deleteCurrentNote();
 		else if (action === 'toggleGrammar' && canWrite) toggleGrammar();
+		else if (action === 'renameSession') void renameSession();
+		else if (action === 'deleteChat') void deleteLocalChat();
+		else if (action === 'toggleChat') chatOpen = !chatOpen;
 	}
 
 	function toggleTaskLine(line: number, expectChecked: boolean) {
@@ -540,6 +615,11 @@
 		grammarEnabled={grammarOn}
 		showNewSession={!data.shared}
 		showDeleteNote={isMobile}
+		{chatOpen}
+		chatAvailable={Boolean(sessionDoc)}
+		onToggleChat={() => (chatOpen = !chatOpen)}
+		onRenameSession={data.sessionId ? renameSession : undefined}
+		onDeleteChat={data.sessionId ? deleteLocalChat : undefined}
 	/>
 
 	<NoteList
@@ -598,6 +678,24 @@
 					onDismiss={dismissGrammar}
 				/>
 			{/if}
+		{/if}
+		{#if chatOpen && sessionDoc && chatChannel}
+			{#key chatScopeKey}
+				<ChatPanel
+					session={sessionDoc}
+					channel={chatChannel}
+					scope={chatScopeKey}
+					sessionId={data.sessionId}
+					remoteId={data.shared?.remoteId ?? null}
+					displayName={chatName}
+					capability={chatCapability}
+					currentNoteId={noteId || null}
+					{notes}
+					onSaveNote={saveConversationAsNote}
+					onClose={() => (chatOpen = false)}
+					mobile={isMobile}
+				/>
+			{/key}
 		{/if}
 	</main>
 
