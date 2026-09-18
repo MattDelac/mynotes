@@ -3,6 +3,9 @@ name: Release Android Preview
 on:
   workflow_call:
   workflow_dispatch:
+  push:
+    tags:
+      - "android-preview-*"
 
 permissions:
   contents: write
