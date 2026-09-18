@@ -112,6 +112,21 @@ class SessionRepositoryTest {
 	}
 
 	@Test
+	fun findByRoomIdFindsImportedSessionsAndReturnsNullOtherwise() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val imported = repository.importShare(
+			ShareCredentials("room-1", Base64Url.encode(roomKey), editToken = "edit-token"),
+		)
+		repository.createLocal(null)
+
+		val found = repository.findByRoomId("room-1")
+		assertNotNull(found)
+		assertEquals(imported.session.localId, found!!.localId)
+		assertNull(repository.findByRoomId("room-unknown"))
+	}
+
+	@Test
 	fun importShareRejectsAKeyThatIsNot32Bytes() {
 		val db = FakeDb()
 		val repository = db.repository()

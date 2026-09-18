@@ -75,6 +75,7 @@ fun SessionListScreen(
 	val titles by viewModel.titles.collectAsStateWithLifecycle()
 	val importError by viewModel.importError.collectAsStateWithLifecycle()
 	val openRequest by viewModel.openRequest.collectAsStateWithLifecycle()
+	val pendingImport by viewModel.pendingImport.collectAsStateWithLifecycle()
 	val shareState by viewModel.shareState.collectAsStateWithLifecycle()
 	val busy by viewModel.busy.collectAsStateWithLifecycle()
 	val context = LocalContext.current
@@ -174,6 +175,14 @@ fun SessionListScreen(
 				viewModel.clearImportError()
 			},
 			onImport = { viewModel.importLink(it) },
+		)
+	}
+
+	pendingImport?.let { credentials ->
+		ImportConfirmDialog(
+			roomId = credentials.roomId,
+			onDismiss = { viewModel.dismissImport() },
+			onConfirm = { viewModel.confirmImport() },
 		)
 	}
 
@@ -495,6 +504,30 @@ private fun ImportDialog(
 					Text("Import")
 				}
 			}
+		},
+		dismissButton = {
+			TextButton(onClick = onDismiss) { Text("Cancel") }
+		},
+	)
+}
+
+@Composable
+private fun ImportConfirmDialog(
+	roomId: String,
+	onDismiss: () -> Unit,
+	onConfirm: () -> Unit,
+) {
+	AlertDialog(
+		onDismissRequest = onDismiss,
+		title = { Text("Import this session?") },
+		text = {
+			Text(
+				"This app will keep an encrypted local copy of the shared session.\n\n" +
+					"Room: $roomId",
+			)
+		},
+		confirmButton = {
+			TextButton(onClick = onConfirm) { Text("Import") }
 		},
 		dismissButton = {
 			TextButton(onClick = onDismiss) { Text("Cancel") }

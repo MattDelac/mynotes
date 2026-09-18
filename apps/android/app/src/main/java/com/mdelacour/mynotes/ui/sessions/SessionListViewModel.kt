@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mdelacour.mynotes.AppGraph
+import com.mdelacour.mynotes.crypto.ShareCredentials
 import com.mdelacour.mynotes.crypto.ShareLink
 import com.mdelacour.mynotes.domain.CreationUncertainException
 import com.mdelacour.mynotes.domain.Session
@@ -52,6 +53,9 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 	private val _openRequest = MutableStateFlow<OpenRequest?>(null)
 	val openRequest: StateFlow<OpenRequest?> = _openRequest.asStateFlow()
 
+	private val _pendingImport = MutableStateFlow<ShareCredentials?>(null)
+	val pendingImport: StateFlow<ShareCredentials?> = _pendingImport.asStateFlow()
+
 	private val _shareState = MutableStateFlow<ShareUiState>(ShareUiState.Idle)
 	val shareState: StateFlow<ShareUiState> = _shareState.asStateFlow()
 
@@ -94,6 +98,40 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 			_importError.value = "Invalid share link"
 			return
 		}
+		import(credentials)
+	}
+
+	fun handleIncomingLink(link: String) {
+		val credentials = ShareLink.parse(link.trim())
+		if (credentials == null) {
+			_importError.value = "Invalid share link"
+			return
+		}
+		viewModelScope.launch {
+			val existing = graph.repository.findByRoomId(credentials.roomId)
+			_importError.value = null
+			if (existing != null) {
+				_openRequest.value = OpenRequest(
+					localId = existing.localId,
+					noteId = credentials.noteId,
+				)
+			} else {
+				_pendingImport.value = credentials
+			}
+		}
+	}
+
+	fun confirmImport() {
+		val credentials = _pendingImport.value ?: return
+		_pendingImport.value = null
+		import(credentials)
+	}
+
+	fun dismissImport() {
+		_pendingImport.value = null
+	}
+
+	private fun import(credentials: ShareCredentials) {
 		viewModelScope.launch {
 			_busy.value = true
 			try {

@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -86,6 +87,7 @@ fun EditorScreen(
 	var confirmReSeed by remember { mutableStateOf(false) }
 	var pendingExport by remember { mutableStateOf<ExportRequest?>(null) }
 
+	val tasks = remember(state.text) { TaskList.parse(state.text) }
 	var fieldValue by remember { mutableStateOf(TextFieldValue(state.text)) }
 	LaunchedEffect(state.text, state.selectionStart, state.selectionEnd) {
 		val desired = TextFieldValue(
@@ -258,34 +260,50 @@ fun EditorScreen(
 					onAction = viewModel::format,
 					modifier = Modifier.fillMaxWidth(),
 				)
-				Box(
-					modifier = Modifier
-						.fillMaxSize()
-						.verticalScroll(rememberScrollState())
-						.padding(16.dp),
-				) {
-					BasicTextField(
-						value = fieldValue,
-						onValueChange = { newValue ->
-							fieldValue = newValue
-							viewModel.onSelectionChanged(
-								newValue.selection.start,
-								newValue.selection.end,
-							)
-							viewModel.onTextChanged(newValue.text)
-						},
-						enabled = !state.readOnly,
-						modifier = Modifier
-							.fillMaxWidth()
-							.defaultMinSize(minHeight = 240.dp)
-							.onPreviewKeyEvent { event ->
-								handleShortcut(event, state.readOnly, viewModel)
-							},
-						textStyle = MaterialTheme.typography.bodyLarge.copy(
-							fontFamily = FontFamily.Monospace,
-						),
-						cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+				if (tasks.isNotEmpty()) {
+					TaskPanel(
+						tasks = tasks,
+						readOnly = state.readOnly,
+						onToggle = viewModel::toggleTask,
 					)
+				}
+				Surface(
+					modifier = Modifier
+						.fillMaxWidth()
+						.weight(1f),
+					color = MaterialTheme.colorScheme.background,
+					contentColor = MaterialTheme.colorScheme.onBackground,
+				) {
+					Box(
+						modifier = Modifier
+							.fillMaxSize()
+							.verticalScroll(rememberScrollState())
+							.padding(16.dp),
+					) {
+						BasicTextField(
+							value = fieldValue,
+							onValueChange = { newValue ->
+								fieldValue = newValue
+								viewModel.onSelectionChanged(
+									newValue.selection.start,
+									newValue.selection.end,
+								)
+								viewModel.onTextChanged(newValue.text)
+							},
+							enabled = !state.readOnly,
+							modifier = Modifier
+								.fillMaxWidth()
+								.defaultMinSize(minHeight = 240.dp)
+								.onPreviewKeyEvent { event ->
+									handleShortcut(event, state.readOnly, viewModel)
+								},
+							textStyle = MaterialTheme.typography.bodyLarge.copy(
+								fontFamily = FontFamily.Monospace,
+								color = MaterialTheme.colorScheme.onSurface,
+							),
+							cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+						)
+					}
 				}
 			}
 		}

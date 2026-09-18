@@ -75,6 +75,8 @@ class SessionRepository(
 
 	suspend fun getSession(localId: String): Session? = sessions.get(localId)?.toDomain()
 
+	suspend fun findByRoomId(roomId: String): Session? = sessions.findByRoomId(roomId)?.toDomain()
+
 	suspend fun listSessions(): List<Session> = sessions.listAll().map { it.toDomain() }
 
 	fun observeSessions(): Flow<List<Session>> =

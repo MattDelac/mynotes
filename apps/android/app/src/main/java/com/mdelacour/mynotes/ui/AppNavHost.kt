@@ -52,7 +52,7 @@ fun AppNavHost(
 			LaunchedEffect(incomingLink) {
 				val link = incomingLink
 				if (link != null) {
-					viewModel.importLink(link)
+					viewModel.handleIncomingLink(link)
 					onLinkConsumed()
 				}
 			}

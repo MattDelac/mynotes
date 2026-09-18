@@ -229,6 +229,41 @@ class EditorViewModel(
 		}
 	}
 
+	fun toggleTask(item: TaskItem) {
+		viewModelScope.launch {
+			mutex.withLock {
+				val open = openSession ?: return@withLock
+				val current = _state.value
+				val noteId = current.selectedNoteId ?: return@withLock
+				if (current.readOnly) return@withLock
+				try {
+					open.stopCapturing(noteId)
+					val before = open.text(noteId)
+					val after = TaskList.toggle(before, item)
+					if (after != before) {
+						for (edit in TextDiff.between(before, after)) {
+							when (edit) {
+								is TextEdit.Insert -> open.insert(noteId, edit.index, edit.value)
+								is TextEdit.Delete -> open.delete(noteId, edit.index, edit.length)
+							}
+						}
+					}
+					open.stopCapturing(noteId)
+					_state.update {
+						it.copy(
+							text = after,
+							noteTitles = it.noteTitles + (noteId to NoteTitle.of(after)),
+						)
+					}
+					refreshTitle(open)
+					refreshHistory(open, noteId)
+				} catch (e: Exception) {
+					setError(e)
+				}
+			}
+		}
+	}
+
 	fun undo() = applyHistory { open, id -> open.undo(id) }
 
 	fun redo() = applyHistory { open, id -> open.redo(id) }
