@@ -75,6 +75,10 @@ kotlin {
 	}
 }
 
+ksp {
+	arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
 	implementation(rootProject.files("engine/libs/engine.aar"))
 
