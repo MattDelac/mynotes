@@ -98,6 +98,7 @@ jobs:
             echo "- The APK is a release build, but unminified on purpose while the app is in preview."
           } > "$RUNNER_TEMP/release-notes.md"
           gh release create "$tag" \
+            --target "$GITHUB_SHA" \
             "mynotes-preview-$PREVIEW_COUNT-$PREVIEW_SHORT_SHA.apk" \
             --prerelease \
             --title "MyNotes Android preview $PREVIEW_COUNT ($short_sha)" \
