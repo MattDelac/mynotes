@@ -60,3 +60,9 @@ jobs:
       - name: Build
         run: nix develop --command pnpm build
         working-directory: packages/mynotes-mcp
+
+      - name: Nix package
+        run: |
+          nix build .#mynotes-mcp
+          ./result/bin/mynotes-mcp --version
+          ./result/bin/mynotes-mcp list --state-dir "$RUNNER_TEMP/mynotes-mcp-state"

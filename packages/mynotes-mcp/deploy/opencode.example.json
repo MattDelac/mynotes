@@ -1,0 +1,13 @@
+{
+	"mcp": {
+		"mynotes": {
+			"type": "remote",
+			"url": "http://100.64.0.1:3100/mcp",
+			"enabled": true,
+			"oauth": false,
+			"headers": {
+				"Authorization": "Bearer {env:MYNOTES_MCP_TOKEN}"
+			}
+		}
+	}
+}

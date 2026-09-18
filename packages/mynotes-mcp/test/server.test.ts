@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -193,31 +194,29 @@ describe('streamable http mcp server', () => {
 		);
 		expect(allowedOrigin.status).toBe(200);
 
-		const otherPort = await freePort();
-		const strict = await startMcpServer({
-			manager,
-			host: '127.0.0.1',
-			port: otherPort,
-			allowedHosts: ['other.example'],
-			allowedOrigins: [],
-			maxSessions: 1,
-			sessionTtlMs: 60_000,
-			auditPath: join(dir, 'audit-2.jsonl')
-		});
-		try {
-			const rejected = await fetch(`http://127.0.0.1:${otherPort}/mcp`, {
-				method: 'POST',
-				headers: {
-					authorization: `Bearer ${token}`,
-					'content-type': 'application/json',
-					accept: 'application/json, text/event-stream'
+		const forgedHost = await new Promise<number>((resolve, reject) => {
+			const request = httpRequest(
+				{
+					host: '127.0.0.1',
+					port,
+					path: '/mcp',
+					method: 'POST',
+					headers: {
+						host: 'evil.example',
+						authorization: `Bearer ${token}`,
+						'content-type': 'application/json',
+						accept: 'application/json, text/event-stream'
+					}
 				},
-				body: JSON.stringify(INITIALIZE)
-			});
-			expect(rejected.status).toBe(403);
-		} finally {
-			await strict.close();
-		}
+				(response) => {
+					response.resume();
+					resolve(response.statusCode ?? 0);
+				}
+			);
+			request.on('error', reject);
+			request.end(JSON.stringify(INITIALIZE));
+		});
+		expect(forgedHost).toBe(403);
 	});
 
 	it('caps concurrent sessions and expires idle ones', async () => {

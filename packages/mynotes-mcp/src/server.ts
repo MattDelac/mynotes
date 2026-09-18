@@ -380,6 +380,14 @@ export async function startMcpServer(options: McpServerOptions): Promise<Running
 			resolve(address !== null && typeof address === 'object' ? address.port : options.port);
 		});
 	});
+	for (const host of [
+		`${options.host}:${port}`,
+		`localhost:${port}`,
+		`127.0.0.1:${port}`,
+		`[::1]:${port}`
+	]) {
+		allowedHosts.add(host.toLowerCase());
+	}
 
 	let closed = false;
 	const close = async (): Promise<void> => {
