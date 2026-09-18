@@ -9,7 +9,7 @@ internal class NoteState(var text: String)
 
 private class PendingMutation(val noteId: String, val value: String)
 
-internal class FakeEngineDoc : EngineDoc {
+internal class FakeEngineDoc(private val captureGroups: Boolean = false) : EngineDoc {
 	private val states = linkedMapOf<String, NoteState>()
 	private val pending = mutableListOf<PendingMutation>()
 	private var version = 0L
@@ -101,7 +101,7 @@ internal class FakeEngineDoc : EngineDoc {
 
 	override fun openNote(id: String): EngineNote? {
 		val state = states[id] ?: return null
-		return FakeEngineNote(this, id, state)
+		return FakeEngineNote(this, id, state, captureGroups)
 	}
 
 	private fun writeBytes(out: DataOutputStream, bytes: ByteArray) {
@@ -131,9 +131,11 @@ internal class FakeEngineNote(
 	private val doc: FakeEngineDoc,
 	private val id: String,
 	private val state: NoteState,
+	private val captureGroups: Boolean = false,
 ) : EngineNote {
 	private val undoStack = ArrayDeque<String>()
 	private val redoStack = ArrayDeque<String>()
+	private var capturing = false
 
 	var closed = false
 		private set
@@ -156,6 +158,7 @@ internal class FakeEngineNote(
 		if (undoStack.isEmpty()) return false
 		redoStack.addLast(state.text)
 		state.text = undoStack.removeLast()
+		capturing = false
 		doc.bumpVersion()
 		doc.record(id, state.text)
 		return true
@@ -165,6 +168,7 @@ internal class FakeEngineNote(
 		if (redoStack.isEmpty()) return false
 		undoStack.addLast(state.text)
 		state.text = redoStack.removeLast()
+		capturing = false
 		doc.bumpVersion()
 		doc.record(id, state.text)
 		return true
@@ -174,7 +178,9 @@ internal class FakeEngineNote(
 
 	override fun canRedo(): Boolean = redoStack.isNotEmpty()
 
-	override fun stopCapturing() = Unit
+	override fun stopCapturing() {
+		capturing = false
+	}
 
 	override fun close() {
 		if (closed) return
@@ -184,8 +190,11 @@ internal class FakeEngineNote(
 
 	private fun apply(newText: String) {
 		if (!doc.isApplyingRemote()) {
-			undoStack.addLast(state.text)
-			redoStack.clear()
+			if (!captureGroups || !capturing) {
+				undoStack.addLast(state.text)
+				redoStack.clear()
+			}
+			if (captureGroups) capturing = true
 		}
 		state.text = newText
 		doc.bumpVersion()

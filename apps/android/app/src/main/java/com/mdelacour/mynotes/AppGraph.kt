@@ -9,6 +9,7 @@ import com.mdelacour.mynotes.data.db.MyNotesDb
 import com.mdelacour.mynotes.data.export.ExportManager
 import com.mdelacour.mynotes.data.prefs.SettingsStore
 import com.mdelacour.mynotes.data.vault.KeystoreVault
+import com.mdelacour.mynotes.data.vault.WrappingKey
 import com.mdelacour.mynotes.domain.ImportResult
 import com.mdelacour.mynotes.domain.LocalChangeEnqueuer
 import com.mdelacour.mynotes.domain.NoteOrderer
@@ -18,6 +19,7 @@ import com.mdelacour.mynotes.domain.RoomTransactionRunner
 import com.mdelacour.mynotes.domain.Session
 import com.mdelacour.mynotes.domain.SessionRepository
 import com.mdelacour.mynotes.domain.Sharing
+import com.mdelacour.mynotes.engine.EngineDoc
 import com.mdelacour.mynotes.engine.EngineExecutor
 import com.mdelacour.mynotes.engine.NativeEngineDoc
 import com.mdelacour.mynotes.sync.OkHttpRelay
@@ -34,10 +36,19 @@ import okhttp3.OkHttpClient
 
 class CheckpointException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
-class AppGraph(context: Context) {
+class AppGraph(
+	context: Context,
+	dbOverride: MyNotesDb? = null,
+	vaultOverride: WrappingKey? = null,
+	relayOverride: Relay? = null,
+	engineFactoryOverride: (() -> EngineDoc)? = null,
+	maxCiphertextBytesOverride: Int = LocalChangeEnqueuer.MAX_CIPHERTEXT_BYTES,
+) {
 	private val appContext = context.applicationContext
-	val db: MyNotesDb = MyNotesDb.open(appContext)
-	val vault = KeystoreVault()
+	val db: MyNotesDb = dbOverride ?: MyNotesDb.open(appContext)
+	val vault: WrappingKey = vaultOverride ?: KeystoreVault()
+	val newEngine: () -> EngineDoc = engineFactoryOverride ?: { NativeEngineDoc() }
+	private val maxCiphertextBytes = maxCiphertextBytesOverride
 	val repository = SessionRepository(
 		sessions = db.sessions(),
 		noteOrder = db.noteOrder(),
@@ -54,14 +65,16 @@ class AppGraph(context: Context) {
 	val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
 
 	@Volatile
-	private var relayImpl: Relay = OkHttpRelay(httpClient, SettingsStore.DEFAULT_SERVER_URL)
+	private var relayImpl: Relay = relayOverride ?: OkHttpRelay(httpClient, SettingsStore.DEFAULT_SERVER_URL)
 	val relay: Relay get() = relayImpl
 
 	init {
-		applicationScope.launch {
-			settingsStore.serverUrl.collect { url ->
-				_serverUrl.value = url
-				relayImpl = OkHttpRelay(httpClient, url)
+		if (relayOverride == null) {
+			applicationScope.launch {
+				settingsStore.serverUrl.collect { url ->
+					_serverUrl.value = url
+					relayImpl = OkHttpRelay(httpClient, url)
+				}
 			}
 		}
 	}
@@ -73,7 +86,7 @@ class AppGraph(context: Context) {
 
 	suspend fun openSession(session: Session): OpenSession {
 		val roomKey = repository.openRoomKey(session.localId)
-		val engine = NativeEngineDoc()
+		val engine = newEngine()
 		session.encryptedCheckpoint?.let { checkpoint ->
 			val update = try {
 				RelayCrypto.open(roomKey, checkpoint)
@@ -88,6 +101,7 @@ class AppGraph(context: Context) {
 			roomKey = roomKey,
 			repository = repository,
 			outbox = db.outbox(),
+			maxCiphertextBytes = maxCiphertextBytes,
 		)
 		enqueuer.reset(engine.encodeStateVector())
 		val orderer = NoteOrderer(db.noteOrder())
@@ -95,7 +109,7 @@ class AppGraph(context: Context) {
 			session = session,
 			roomKey = roomKey,
 			engine = engine,
-			newEngine = { NativeEngineDoc() },
+			newEngine = newEngine,
 			executor = executor,
 			enqueuer = enqueuer,
 			orderer = orderer,

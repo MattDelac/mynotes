@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.mdelacour.mynotes.AppGraph
 import com.mdelacour.mynotes.crypto.ShareCredentials
 import com.mdelacour.mynotes.crypto.ShareLink
+import com.mdelacour.mynotes.domain.Access
 import com.mdelacour.mynotes.domain.CreationUncertainException
 import com.mdelacour.mynotes.domain.Session
 import com.mdelacour.mynotes.domain.SessionStatus
@@ -42,7 +43,7 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 	val sessions: StateFlow<List<Session>> = graph.repository.observeSessions()
 		.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-	private val titleCache = SessionTitleCache(graph.db.noteOrder())
+	private val titleCache = SessionTitleCache(graph.db.noteOrder(), newEngine = graph.newEngine)
 
 	private val _titles = MutableStateFlow<Map<String, String>>(emptyMap())
 	val titles: StateFlow<Map<String, String>> = _titles.asStateFlow()
@@ -110,7 +111,9 @@ class SessionListViewModel(private val graph: AppGraph) : ViewModel() {
 		viewModelScope.launch {
 			val existing = graph.repository.findByRoomId(credentials.roomId)
 			_importError.value = null
-			if (existing != null) {
+			if (existing != null && credentials.editToken != null && existing.access == Access.VIEWER) {
+				import(credentials)
+			} else if (existing != null) {
 				_openRequest.value = OpenRequest(
 					localId = existing.localId,
 					noteId = credentials.noteId,
