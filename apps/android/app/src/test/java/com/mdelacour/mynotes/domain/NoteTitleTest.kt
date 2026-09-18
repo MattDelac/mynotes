@@ -77,4 +77,9 @@ class NoteTitleTest {
 	fun truncatesLongTitles() {
 		assertEquals(60, NoteTitle.of("x".repeat(100)).length)
 	}
+
+	@Test
+	fun truncatesAHundredKibSingleLineToSixtyUtf16Units() {
+		assertEquals(60, NoteTitle.of("x".repeat(100 * 1024)).length)
+	}
 }

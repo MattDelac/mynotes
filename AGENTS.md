@@ -75,6 +75,8 @@ nix develop .#android -c ./scripts/android/rebuild-engine.sh   # AAR (ANDROID_AB
 `scripts/android/verify-engine.sh <fresh.aar>` compares a rebuilt AAR against the committed one
 (entries, manifest, `classes.jar`, native symbols); CI (`_ci-android.yml`) rebuilds and verifies
 it. Fixtures come from the workspace's resolved `yjs@13.6.32` and are verified back against it.
+`scripts/android/privacy-audit.sh` (no Nix needed) fails if any `Log.`/`println`/`System.out` line
+mentions a key, token, ciphertext, blob, content, or URL fragment; CI runs it before Gradle.
 
 Env vars: `DATABASE_URL` (default `sqlite:mynotes.db`), `BIND_ADDR` (default `0.0.0.0:3000`).
 Abuse-protection env vars (`api/src/config.rs`, all with defaults): `MAX_BLOB_SIZE` (64KB),

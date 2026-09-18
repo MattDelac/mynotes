@@ -49,4 +49,28 @@ class ChunkerTest {
 	fun anEmptyValueProducesNoChunks() {
 		assertTrue(Chunker.split("").isEmpty())
 	}
+
+	@Test
+	fun aOneMebibyteAsciiStringSplitsUnderTheLimitAndRoundTrips() {
+		val value = "a".repeat(1024 * 1024)
+		val chunks = Chunker.split(value)
+
+		assertTrue(chunks.size > 1)
+		assertTrue(chunks.all { utf8Size(it) <= Chunker.MAX_PLAINTEXT_CHUNK_BYTES })
+		assertEquals(value, chunks.joinToString(""))
+	}
+
+	@Test
+	fun aTwoHundredFiftySixKibEmojiStringNeverSplitsSurrogatePairs() {
+		val value = "😀".repeat((256 * 1024) / 4)
+		assertEquals(256 * 1024, utf8Size(value))
+		val chunks = Chunker.split(value)
+
+		assertTrue(chunks.size > 1)
+		assertTrue(chunks.all { utf8Size(it) <= Chunker.MAX_PLAINTEXT_CHUNK_BYTES })
+		for (chunk in chunks) {
+			assertTrue(chunk.codePoints().noneMatch { it in 0xD800..0xDFFF })
+		}
+		assertEquals(value, chunks.joinToString(""))
+	}
 }

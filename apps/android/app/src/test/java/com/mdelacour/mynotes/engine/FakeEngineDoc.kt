@@ -7,8 +7,11 @@ import java.io.DataOutputStream
 
 internal class NoteState(var text: String)
 
+private class PendingMutation(val noteId: String, val value: String)
+
 internal class FakeEngineDoc : EngineDoc {
 	private val states = linkedMapOf<String, NoteState>()
+	private val pending = mutableListOf<PendingMutation>()
 	private var version = 0L
 	private var applyingRemote = false
 
@@ -18,6 +21,10 @@ internal class FakeEngineDoc : EngineDoc {
 
 	fun bumpVersion() {
 		version++
+	}
+
+	fun record(noteId: String, value: String) {
+		pending += PendingMutation(noteId, value)
 	}
 
 	fun onNoteClosed(id: String) {
@@ -54,14 +61,23 @@ internal class FakeEngineDoc : EngineDoc {
 	}
 
 	override fun encodeStateVector(): ByteArray {
+		pending.clear()
 		val out = ByteArray(8)
 		for (i in 0 until 8) out[i] = ((version ushr (i * 8)) and 0xFF).toByte()
 		return out
 	}
 
 	override fun encodeDiff(stateVector: ByteArray): ByteArray {
-		if (decodeVersion(stateVector) == version) return ByteArray(0)
-		return encodeStateAsUpdate()
+		if (pending.isEmpty()) return ByteArray(0)
+		val bytes = ByteArrayOutputStream()
+		val out = DataOutputStream(bytes)
+		out.writeLong(version)
+		for (mutation in pending) {
+			writeBytes(out, mutation.noteId.toByteArray(Charsets.UTF_8))
+			writeBytes(out, mutation.value.toByteArray(Charsets.UTF_8))
+		}
+		pending.clear()
+		return bytes.toByteArray()
 	}
 
 	override fun noteIds(): List<String> = states.keys.toList()
@@ -73,10 +89,14 @@ internal class FakeEngineDoc : EngineDoc {
 		require(states[id] == null) { "note already exists: $id" }
 		states[id] = NoteState("")
 		version++
+		record(id, "")
 	}
 
 	override fun deleteNote(id: String) {
-		if (states.remove(id) != null) version++
+		if (states.remove(id) != null) {
+			version++
+			record(id, "")
+		}
 	}
 
 	override fun openNote(id: String): EngineNote? {
@@ -105,13 +125,6 @@ internal class FakeEngineDoc : EngineDoc {
 		}
 		return result
 	}
-
-	private fun decodeVersion(stateVector: ByteArray): Long {
-		if (stateVector.size != 8) return -1L
-		var value = 0L
-		for (i in 0 until 8) value = value or ((stateVector[i].toLong() and 0xFF) shl (i * 8))
-		return value
-	}
 }
 
 internal class FakeEngineNote(
@@ -131,10 +144,12 @@ internal class FakeEngineNote(
 
 	override fun insert(index: Int, value: String) {
 		apply(state.text.substring(0, index) + value + state.text.substring(index))
+		doc.record(id, value)
 	}
 
 	override fun delete(index: Int, length: Int) {
 		apply(state.text.removeRange(index, index + length))
+		doc.record(id, "")
 	}
 
 	override fun undo(): Boolean {
@@ -142,6 +157,7 @@ internal class FakeEngineNote(
 		redoStack.addLast(state.text)
 		state.text = undoStack.removeLast()
 		doc.bumpVersion()
+		doc.record(id, state.text)
 		return true
 	}
 
@@ -150,6 +166,7 @@ internal class FakeEngineNote(
 		undoStack.addLast(state.text)
 		state.text = redoStack.removeLast()
 		doc.bumpVersion()
+		doc.record(id, state.text)
 		return true
 	}
 

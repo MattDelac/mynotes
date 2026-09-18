@@ -215,11 +215,14 @@ class SessionRepositoryTest {
 		val repository = db.repository()
 		val session = repository.createLocal(null)
 		val stored = db.sessions.rows.getValue(session.localId)
-		db.sessions.update(stored.copy(wrappedRoomKey = byteArrayOf(1, 2, 3)))
+		val wrapped = byteArrayOf(1, 2, 3)
+		db.sessions.update(stored.copy(wrappedRoomKey = wrapped))
 
 		repository.startupCleanup()
 
-		assertEquals(SessionStatus.KEY_MISSING.name, db.sessions.rows.getValue(session.localId).status)
+		val after = db.sessions.rows.getValue(session.localId)
+		assertEquals(SessionStatus.KEY_MISSING.name, after.status)
+		assertArrayEquals(wrapped, after.wrappedRoomKey)
 	}
 
 	@Test
