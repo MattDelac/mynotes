@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.mdelacour.mynotes.AppGraph
 import com.mdelacour.mynotes.CheckpointException
 import com.mdelacour.mynotes.data.vault.VaultException
+import com.mdelacour.mynotes.domain.Access
 import com.mdelacour.mynotes.domain.NoteTitle
 import com.mdelacour.mynotes.domain.OpenSession
+import com.mdelacour.mynotes.domain.Session
 import com.mdelacour.mynotes.domain.SessionStatus
 import com.mdelacour.mynotes.domain.SessionTitle
 import com.mdelacour.mynotes.sync.SyncEngine
@@ -31,6 +33,7 @@ data class EditorUiState(
 	val canRedo: Boolean = false,
 	val error: String? = null,
 	val readOnly: Boolean = false,
+	val canReSeed: Boolean = false,
 )
 
 class EditorViewModel(
@@ -76,6 +79,9 @@ class EditorViewModel(
 			syncStatusJob = viewModelScope.launch {
 				engine.status.collect { next ->
 					_syncStatus.value = next
+					_state.update {
+						it.copy(canReSeed = canReSeed(next, opened.session.access))
+					}
 					if (next == SessionStatus.LIVE) {
 						mutex.withLock { refresh(opened) }
 					}
@@ -196,6 +202,7 @@ class EditorViewModel(
 				canRedo = selected?.let { noteId -> open.canRedo(noteId) } ?: false,
 				error = null,
 				readOnly = !graph.repository.canWrite(open.session.access),
+				canReSeed = canReSeed(_syncStatus.value, open.session.access),
 			)
 		}
 	}
@@ -209,6 +216,42 @@ class EditorViewModel(
 	private suspend fun refreshHistory(open: OpenSession, id: String) {
 		_state.update { it.copy(canUndo = open.canUndo(id), canRedo = open.canRedo(id)) }
 	}
+
+	fun reSeed() {
+		viewModelScope.launch {
+			mutex.withLock {
+				val open = openSession ?: return@withLock
+				if (open.session.access != Access.OWNER) return@withLock
+				try {
+					val updated = open.reSeed(graph.reSeed(), graph.settingsStore.createToken())
+					_state.update { it.copy(error = null, canReSeed = false) }
+					restartSync(updated)
+				} catch (e: Exception) {
+					setError(e)
+				}
+			}
+		}
+	}
+
+	private fun restartSync(session: Session) {
+		val open = openSession ?: return
+		syncStatusJob?.cancel()
+		syncStatusJob = null
+		syncEngine?.stop()
+		syncEngine = graph.openSyncEngine(open, viewModelScope, session).also { engine ->
+			_syncStatus.value = engine.status.value
+			syncStatusJob = viewModelScope.launch {
+				engine.status.collect { next ->
+					_syncStatus.value = next
+					_state.update { it.copy(canReSeed = canReSeed(next, session.access)) }
+				}
+			}
+			engine.start()
+		}
+	}
+
+	private fun canReSeed(status: SessionStatus, access: Access): Boolean =
+		status == SessionStatus.EXPIRED && access == Access.OWNER
 
 	private fun setError(error: Throwable) {
 		_state.update { it.copy(error = error.message ?: "Something went wrong") }

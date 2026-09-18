@@ -6,6 +6,11 @@ import com.mdelacour.mynotes.data.db.OutboxEntity
 import com.mdelacour.mynotes.engine.EngineDoc
 import java.util.UUID
 
+class UpdateTooLargeException(
+	val actualBytes: Int,
+	val maxBytes: Int,
+) : IllegalStateException("sealed update is $actualBytes bytes, limit is $maxBytes")
+
 class LocalChangeEnqueuer(
 	private val sessionLocalId: String,
 	private val roomKey: ByteArray,
@@ -30,6 +35,13 @@ class LocalChangeEnqueuer(
 			throw IllegalStateException("a local mutation must produce a non-empty diff")
 		}
 		val ciphertext = RelayCrypto.seal(roomKey, diff)
+		if (ciphertext.size > MAX_CIPHERTEXT_BYTES) {
+			// Tripwire only: the engine mutation above already happened and cannot be
+			// rolled back. Callers pre-split large values with Chunker, so reaching this
+			// means a chunk-size bug. Skipping the durable append keeps the outbox and
+			// state vector consistent with each other.
+			throw UpdateTooLargeException(ciphertext.size, MAX_CIPHERTEXT_BYTES)
+		}
 		val checkpoint = RelayCrypto.seal(roomKey, engine.encodeStateAsUpdate())
 		val ordinal = outbox.nextOrdinal(sessionLocalId) ?: 0L
 		val entity = OutboxEntity(
@@ -42,5 +54,9 @@ class LocalChangeEnqueuer(
 		repository.appendOutboxAndCheckpoint(entity, checkpoint)
 		enqueuedSV = engine.encodeStateVector()
 		return ciphertext
+	}
+
+	companion object {
+		const val MAX_CIPHERTEXT_BYTES = 64 * 1024
 	}
 }

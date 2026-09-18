@@ -56,6 +56,7 @@ fun EditorScreen(
 	val status by viewModel.status.collectAsStateWithLifecycle()
 	var menuOpen by remember { mutableStateOf(false) }
 	var confirmDelete by remember { mutableStateOf(false) }
+	var confirmReSeed by remember { mutableStateOf(false) }
 
 	Scaffold(
 		topBar = {
@@ -103,6 +104,15 @@ fun EditorScreen(
 								confirmDelete = true
 							},
 						)
+						if (state.canReSeed) {
+							DropdownMenuItem(
+								text = { Text("Re-seed room") },
+								onClick = {
+									menuOpen = false
+									confirmReSeed = true
+								},
+							)
+						}
 					}
 				},
 			)
@@ -204,6 +214,32 @@ fun EditorScreen(
 			},
 			dismissButton = {
 				TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+			},
+		)
+	}
+
+	if (confirmReSeed) {
+		AlertDialog(
+			onDismissRequest = { confirmReSeed = false },
+			title = { Text("Re-seed this room?") },
+			text = {
+				Text(
+					"This creates a new room from the current notes. Existing share links " +
+						"stop working, so collaborators must be re-invited with new links.",
+				)
+			},
+			confirmButton = {
+				TextButton(
+					onClick = {
+						confirmReSeed = false
+						viewModel.reSeed()
+					},
+				) {
+					Text("Re-seed")
+				}
+			},
+			dismissButton = {
+				TextButton(onClick = { confirmReSeed = false }) { Text("Cancel") }
 			},
 		)
 	}

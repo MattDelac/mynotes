@@ -11,6 +11,7 @@ import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -18,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,13 +34,22 @@ class SyncEngine(
 	private val clock: () -> Long = System::currentTimeMillis,
 	private val connectTimeoutMs: Long = 15_000,
 	private val keepaliveMs: Long = 240_000,
+	private val logger: (String) -> Unit = {},
 ) {
 	private val _status = MutableStateFlow(session.status)
 	val status: StateFlow<SessionStatus> = _status.asStateFlow()
 
+	private val _isWritable = MutableStateFlow(false)
+	val isWritable: StateFlow<Boolean> = _isWritable.asStateFlow()
+
+	private val _catchUpCount = MutableStateFlow(0)
+	val catchUpCount: StateFlow<Int> = _catchUpCount.asStateFlow()
+
 	private val random = Random(clock())
 	private var loopJob: Job? = null
 	private var stopped = false
+	private var blocked = false
+	private var accumulatedBytes = 0L
 	private var cursor: Long = session.lastSeq
 
 	fun start() {
@@ -49,6 +60,7 @@ class SyncEngine(
 
 	fun stop() {
 		stopped = true
+		_isWritable.value = false
 		val job = loopJob
 		loopJob = null
 		job?.cancel()
@@ -88,9 +100,10 @@ class SyncEngine(
 	}
 
 	private suspend fun connect(roomId: String) {
+		_isWritable.value = false
 		val socket = relay.openSocket(roomId)
 		val termination = CompletableDeferred<Throwable?>()
-		val writable = CompletableDeferred<Boolean>()
+		val writableAck = CompletableDeferred<Boolean>()
 		val catchUpDone = CompletableDeferred<Unit>()
 
 		val collector = scope.launch {
@@ -99,10 +112,15 @@ class SyncEngine(
 					when (frame) {
 						is RelayFrame.Binary -> {
 							catchUpDone.await()
-							applyRemote(frame.bytes, null)
+							if (!openSession.acknowledgeEcho(frame.bytes)) {
+								applyRemote(frame.bytes, null)
+							}
 						}
 
-						is RelayFrame.Writable -> if (frame.writable) writable.complete(true)
+						is RelayFrame.Writable -> {
+							_isWritable.value = frame.writable
+							if (frame.writable) writableAck.complete(true)
+						}
 
 						is RelayFrame.Closed -> termination.complete(null)
 
@@ -118,23 +136,32 @@ class SyncEngine(
 		}
 
 		var keepalive: Job? = null
+		var sender: Job? = null
 		try {
 			if (session.access == Access.OWNER) {
 				val token = repository.editToken(session.localId)
 				if (!token.isNullOrEmpty()) {
 					socket.sendText("""{"edit_token":"$token"}""")
-					withTimeoutOrNull(connectTimeoutMs) { writable.await() }
+					withTimeoutOrNull(connectTimeoutMs) { writableAck.await() }
 				}
 			}
 
 			val updates = relay.fetchUpdates(roomId, cursor)
+			_catchUpCount.value = updates.size
+			if (updates.size > CATCH_UP_WARN_THRESHOLD) {
+				logger("catch-up returned ${updates.size} updates")
+			}
+			if (updates.size >= MAX_UPDATE_ROWS) {
+				block("room has ${updates.size} updates")
+			}
 			for (update in updates) {
 				applyRemote(update.blob, update.seq)
 				if (update.seq > cursor) cursor = update.seq
 			}
 			catchUpDone.complete(Unit)
 
-			setStatus(SessionStatus.LIVE)
+			sender = startSending(socket)
+			setStatus(if (blocked) SessionStatus.SYNC_BLOCKED else SessionStatus.LIVE)
 			keepalive = scope.launch {
 				while (currentCoroutineContext().isActive) {
 					delay(keepaliveMs)
@@ -149,22 +176,71 @@ class SyncEngine(
 			val failure = termination.await()
 			if (failure != null) throw failure
 		} finally {
+			sender?.cancel()
 			keepalive?.cancel()
 			collector.cancel()
 			catchUpDone.complete(Unit)
+			_isWritable.value = false
 			withContext(NonCancellable) {
 				runCatching { socket.close() }
 			}
 		}
 	}
 
+	private fun startSending(socket: RelaySocket): Job {
+		val replayGate = CompletableDeferred<Unit>()
+		return scope.launch {
+			launch(start = CoroutineStart.UNDISPATCHED) {
+				openSession.outbound.collect { bytes ->
+					replayGate.await()
+					sendBinary(socket, bytes)
+				}
+			}
+			_isWritable.first { it }
+			if (canSend()) {
+				for (row in openSession.pendingOutbox()) {
+					if (!canSend()) break
+					sendBinary(socket, row.ciphertext)
+				}
+			}
+			replayGate.complete(Unit)
+		}
+	}
+
+	private suspend fun sendBinary(socket: RelaySocket, bytes: ByteArray) {
+		if (!canSend()) return
+		try {
+			socket.sendBinary(bytes)
+		} catch (e: CancellationException) {
+			throw e
+		} catch (e: Throwable) {
+			// The row stays in the outbox: it is only removed once its echo returns.
+			logger("binary send failed: ${e.message}")
+		}
+	}
+
 	private suspend fun applyRemote(blob: ByteArray, seq: Long?) {
 		val plaintext = RelayCrypto.open(openSession.roomKey, blob)
 		openSession.applyRemoteUpdate(plaintext, seq)
+		accumulatedBytes += blob.size
+		if (accumulatedBytes > MAX_ROOM_BYTES) {
+			block("room exceeds $MAX_ROOM_BYTES bytes")
+		}
+	}
+
+	private fun canSend(): Boolean = !stopped && !blocked && _isWritable.value
+
+	private fun block(reason: String) {
+		if (blocked) return
+		blocked = true
+		logger("sync blocked: $reason")
+		setStatus(SessionStatus.SYNC_BLOCKED)
 	}
 
 	private fun setStatus(value: SessionStatus) {
-		if (!stopped) _status.value = value
+		if (stopped) return
+		if (blocked && value != SessionStatus.SYNC_BLOCKED && value != SessionStatus.EXPIRED) return
+		_status.value = value
 	}
 
 	private fun backoffDelay(attempt: Int): Long {
@@ -176,6 +252,9 @@ class SyncEngine(
 	companion object {
 		private const val STABLE_MS = 30_000L
 		private const val JITTER_MS = 250L
+		private const val MAX_UPDATE_ROWS = 5_000
+		private const val MAX_ROOM_BYTES = 10L * 1024 * 1024
+		private const val CATCH_UP_WARN_THRESHOLD = 500
 		private val BACKOFF_MS = longArrayOf(1_000, 2_000, 4_000, 8_000, 10_000)
 	}
 }

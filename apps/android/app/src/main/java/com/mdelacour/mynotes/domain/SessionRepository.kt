@@ -177,6 +177,29 @@ class SessionRepository(
 		sessions.update(entity.copy(encryptedCheckpoint = encryptedCheckpoint, updatedAt = clock()))
 	}
 
+	suspend fun pendingOutbox(localId: String): List<OutboxEntity> = outbox.listForSession(localId)
+
+	suspend fun acknowledgeOutboxEcho(localId: String, ciphertext: ByteArray): Boolean = tx.run {
+		val match = outbox.listForSession(localId).firstOrNull { it.ciphertext.contentEquals(ciphertext) }
+			?: return@run false
+		outbox.deleteById(match.id)
+		true
+	}
+
+	suspend fun replaceRoom(localId: String, roomId: String, editToken: String): Session? = tx.run {
+		val entity = sessions.get(localId) ?: return@run null
+		val updated = entity.copy(
+			roomId = roomId,
+			access = Access.OWNER.name,
+			wrappedEditToken = vault.wrap(editToken.toByteArray(Charsets.UTF_8)),
+			lastSeq = -1,
+			status = SessionStatus.OFFLINE.name,
+			updatedAt = clock(),
+		)
+		sessions.update(updated)
+		updated.toDomain()
+	}
+
 	suspend fun openRoomKey(localId: String): ByteArray {
 		val wrapped = sessions.get(localId)?.wrappedRoomKey
 			?: throw VaultException("session $localId has no room key")

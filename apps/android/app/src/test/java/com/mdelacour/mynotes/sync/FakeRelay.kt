@@ -13,6 +13,12 @@ class FakeRelay : Relay {
 	val sockets = mutableListOf<FakeRelaySocket>()
 	var socketFactory: () -> FakeRelaySocket = { FakeRelaySocket() }
 
+	var postNoteResult: Pair<String, String>? = null
+	var postNoteError: RelayException? = null
+	val postNoteCalls = mutableListOf<Pair<ByteArray, String?>>()
+	var putSnapshotError: RelayException? = null
+	val snapshots = mutableListOf<Triple<String, String, ByteArray>>()
+
 	override suspend fun fetchUpdates(roomId: String, after: Long): List<EncryptedUpdate> {
 		fetchAfters += after
 		val index = fetchCount.value
@@ -22,11 +28,14 @@ class FakeRelay : Relay {
 	}
 
 	override suspend fun putSnapshot(roomId: String, editToken: String, ciphertext: ByteArray) {
-		throw RelayException("putSnapshot is not used by the read path")
+		putSnapshotError?.let { throw it }
+		snapshots += Triple(roomId, editToken, ciphertext)
 	}
 
 	override suspend fun postNote(ciphertext: ByteArray, createToken: String?): Pair<String, String> {
-		throw RelayException("postNote is not used by the read path")
+		postNoteCalls += ciphertext to createToken
+		postNoteError?.let { throw it }
+		return postNoteResult ?: throw RelayException("postNote is not configured")
 	}
 
 	override fun openSocket(roomId: String): RelaySocket = socketFactory().also { sockets += it }
@@ -41,6 +50,9 @@ class FakeRelaySocket(
 
 	val sentTexts = mutableListOf<String>()
 	val sentBinary = mutableListOf<ByteArray>()
+	val sentBinaryCount = MutableStateFlow(0)
+	val sendAttempts = MutableStateFlow(0)
+	var binarySendFailures = 0
 
 	init {
 		if (writableOnOpen) channel.trySend(RelayFrame.Writable(true))
@@ -51,7 +63,13 @@ class FakeRelaySocket(
 	}
 
 	override suspend fun sendBinary(bytes: ByteArray) {
+		sendAttempts.value += 1
+		if (binarySendFailures > 0) {
+			binarySendFailures -= 1
+			throw RelayException("socket did not accept the binary frame")
+		}
 		sentBinary += bytes
+		sentBinaryCount.value += 1
 	}
 
 	override suspend fun close() {

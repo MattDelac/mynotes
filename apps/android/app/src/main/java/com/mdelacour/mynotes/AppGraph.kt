@@ -1,6 +1,7 @@
 package com.mdelacour.mynotes
 
 import android.content.Context
+import android.util.Log
 import com.mdelacour.mynotes.crypto.CryptoException
 import com.mdelacour.mynotes.crypto.RelayCrypto
 import com.mdelacour.mynotes.crypto.ShareCredentials
@@ -11,6 +12,7 @@ import com.mdelacour.mynotes.domain.ImportResult
 import com.mdelacour.mynotes.domain.LocalChangeEnqueuer
 import com.mdelacour.mynotes.domain.NoteOrderer
 import com.mdelacour.mynotes.domain.OpenSession
+import com.mdelacour.mynotes.domain.ReSeed
 import com.mdelacour.mynotes.domain.RoomTransactionRunner
 import com.mdelacour.mynotes.domain.Session
 import com.mdelacour.mynotes.domain.SessionRepository
@@ -101,12 +103,19 @@ class AppGraph(context: Context) {
 	suspend fun importShare(credentials: ShareCredentials): ImportResult =
 		repository.importShare(credentials)
 
-	fun openSyncEngine(openSession: OpenSession, scope: CoroutineScope): SyncEngine =
+	fun openSyncEngine(
+		openSession: OpenSession,
+		scope: CoroutineScope,
+		session: Session = openSession.session,
+	): SyncEngine =
 		SyncEngine(
-			session = openSession.session,
+			session = session,
 			openSession = openSession,
 			relay = relay,
 			repository = repository,
 			scope = scope,
+			logger = { message -> Log.w("SyncEngine", message) },
 		)
+
+	fun reSeed(): ReSeed = ReSeed(repository, relay)
 }

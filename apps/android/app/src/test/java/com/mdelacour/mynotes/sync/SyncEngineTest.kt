@@ -14,6 +14,7 @@ import com.mdelacour.mynotes.engine.EngineExecutor
 import com.mdelacour.mynotes.engine.FakeEngineDoc
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -21,6 +22,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -159,6 +161,166 @@ class SyncEngineTest {
 		assertEquals(1, fake.fetchCount.value)
 
 		harness.openSession.close()
+	}
+
+	@Test
+	fun noBinaryFrameIsSentBeforeTheWritableAck() = runTest {
+		val roomKey = key()
+		val fake = FakeRelay().apply { batches = listOf(emptyList()) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val id = harness.openSession.createNote("n1")
+		harness.openSession.insert(id, 0, "one")
+		val expected = harness.db.outbox.rows.size
+		val socket = FakeRelaySocket(writableOnOpen = false)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.status.first { it == SessionStatus.LIVE }
+
+		assertFalse(engine.isWritable.value)
+		assertTrue(socket.sentBinary.isEmpty())
+
+		socket.emit(RelayFrame.Writable(true))
+		withTimeout(10_000) { socket.sentBinaryCount.first { it >= expected } }
+
+		assertTrue(engine.isWritable.value)
+		assertEquals(expected, socket.sentBinary.size)
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun outboxIsReplayedInOrdinalOrderWithTheStoredBytes() = runTest {
+		val roomKey = key()
+		val fake = FakeRelay().apply { batches = listOf(emptyList()) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val id = harness.openSession.createNote("n1")
+		harness.openSession.insert(id, 0, "one")
+		harness.openSession.insert(id, 3, "two")
+		val expected = harness.db.outbox.rows.sortedBy { it.ordinal }.map { it.ciphertext }
+		val socket = FakeRelaySocket(writableOnOpen = true)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.status.first { it == SessionStatus.LIVE }
+		withTimeout(10_000) { socket.sentBinaryCount.first { it >= expected.size } }
+
+		assertEquals(expected.size, socket.sentBinary.size)
+		for (index in expected.indices) {
+			assertArrayEquals(expected[index], socket.sentBinary[index])
+		}
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun anEchoDeletesItsOutboxRowAndIsNotApplied() = runTest {
+		val roomKey = key()
+		val fake = FakeRelay().apply { batches = listOf(emptyList()) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val id = harness.openSession.createNote("n1")
+		harness.openSession.insert(id, 0, "one")
+		val target = harness.db.outbox.rows.sortedBy { it.ordinal }.last()
+		val remaining = harness.db.outbox.rows.size - 1
+		val socket = FakeRelaySocket(writableOnOpen = false)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.status.first { it == SessionStatus.LIVE }
+		val checkpointsBefore = harness.db.sessions.checkpointWrites.value
+
+		socket.emit(RelayFrame.Binary(target.ciphertext))
+		awaitOutboxSize(harness, remaining)
+
+		assertEquals(remaining, harness.db.outbox.rows.size)
+		assertTrue(harness.db.outbox.rows.none { it.id == target.id })
+		assertEquals(checkpointsBefore, harness.db.sessions.checkpointWrites.value)
+		assertEquals("one", harness.engineDoc.openNote("n1")!!.string())
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun aFailedSendLeavesTheRowPendingAndReconnectReplaysIt() = runTest {
+		val roomKey = key()
+		val fake = FakeRelay().apply { batches = listOf(emptyList(), emptyList()) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val id = harness.openSession.createNote("n1")
+		harness.openSession.insert(id, 0, "one")
+		val row = harness.db.outbox.rows.sortedBy { it.ordinal }.last()
+		val first = FakeRelaySocket(writableOnOpen = true).apply { binarySendFailures = 10 }
+		val second = FakeRelaySocket(writableOnOpen = true)
+		var opened = 0
+		fake.socketFactory = { if (opened++ == 0) first else second }
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.status.first { it == SessionStatus.LIVE }
+		withTimeout(10_000) { first.sendAttempts.first { it >= 2 } }
+
+		assertTrue(first.sentBinary.isEmpty())
+		assertTrue(harness.db.outbox.rows.any { it.id == row.id })
+
+		first.closeWith()
+		withTimeout(30_000) { second.sentBinaryCount.first { it >= 2 } }
+
+		assertTrue(second.sentBinary.any { it.contentEquals(row.ciphertext) })
+		assertTrue(harness.db.outbox.rows.any { it.id == row.id })
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun aLocalEditWhileWritableIsSentImmediately() = runTest {
+		val roomKey = key()
+		val fake = FakeRelay().apply { batches = listOf(emptyList()) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		val id = harness.openSession.createNote("n1")
+		val socket = FakeRelaySocket(writableOnOpen = true)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.status.first { it == SessionStatus.LIVE }
+		withTimeout(10_000) { socket.sentBinaryCount.first { it >= 1 } }
+
+		harness.openSession.insert(id, 0, "new")
+		val appended = harness.db.outbox.rows.sortedBy { it.ordinal }.last()
+		withTimeout(10_000) { socket.sentBinaryCount.first { it >= 2 } }
+
+		assertArrayEquals(appended.ciphertext, socket.sentBinary.last())
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	@Test
+	fun aCatchUpAtTheUpdateCapMarksSyncBlockedAndStopsSending() = runTest {
+		val roomKey = key()
+		val update = RelayCrypto.seal(roomKey, updateWith("n1" to "one"))
+		val updates = List(5_000) { EncryptedUpdate((it + 1).toLong(), update) }
+		val fake = FakeRelay().apply { batches = listOf(updates) }
+		val harness = makeHarness(this, roomKey, editToken = "edit")
+		harness.openSession.createNote("pending")
+		val socket = FakeRelaySocket(writableOnOpen = true)
+		fake.socketFactory = { socket }
+		val engine = engineFor(harness, fake, backgroundScope)
+		engine.start()
+		engine.status.first { it == SessionStatus.SYNC_BLOCKED }
+
+		assertEquals(5_000, engine.catchUpCount.value)
+		assertTrue(socket.sentBinary.isEmpty())
+
+		engine.stop()
+		harness.openSession.close()
+	}
+
+	private suspend fun awaitOutboxSize(harness: Harness, expected: Int) {
+		withTimeout(10_000) {
+			while (harness.db.outbox.rows.size != expected) delay(1)
+		}
 	}
 
 	private fun engineFor(
