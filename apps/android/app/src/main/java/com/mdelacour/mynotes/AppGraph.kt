@@ -39,7 +39,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
 
 class CheckpointException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -73,7 +72,7 @@ class AppGraph(
 	val settingsStore = SettingsStore(appContext, vault)
 	val exportManager = ExportManager(appContext)
 
-	private val httpClient = OkHttpClient()
+	private val httpClient = OkHttpRelay.defaultClient()
 	private val _serverUrl = MutableStateFlow(SettingsStore.DEFAULT_SERVER_URL)
 	val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
 

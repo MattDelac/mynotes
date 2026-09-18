@@ -64,12 +64,17 @@ class FakeRelaySocket(
 	val sentBinaryCount = MutableStateFlow(0)
 	val sendAttempts = MutableStateFlow(0)
 	var binarySendFailures = 0
+	var textSendFailures = 0
 
 	init {
 		if (writableOnOpen) channel.trySend(RelayFrame.Writable(true))
 	}
 
 	override suspend fun sendText(text: String) {
+		if (textSendFailures > 0) {
+			textSendFailures -= 1
+			throw RelayException("socket did not accept the text frame")
+		}
 		sentTexts += text
 	}
 

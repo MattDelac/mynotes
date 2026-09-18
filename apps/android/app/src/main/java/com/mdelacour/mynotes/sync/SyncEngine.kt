@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -34,6 +37,9 @@ class SyncEngine(
 	private val clock: () -> Long = System::currentTimeMillis,
 	private val connectTimeoutMs: Long = 15_000,
 	private val keepaliveMs: Long = 240_000,
+	private val verifyIntervalMs: Long = 45_000,
+	private val staleAfterMs: Long = 90_000,
+	private val watchdogTickMs: Long = 15_000,
 	private val logger: (String) -> Unit = {},
 ) {
 	private val _status = MutableStateFlow(session.status)
@@ -51,12 +57,26 @@ class SyncEngine(
 	private val _warning = MutableStateFlow<String?>(null)
 	val warning: StateFlow<String?> = _warning.asStateFlow()
 
+	private val _lastVerifiedAt = MutableStateFlow(0L)
+	val lastVerifiedAt: StateFlow<Long> = _lastVerifiedAt.asStateFlow()
+
 	private val random = Random(clock())
+	private val verifyMutex = Mutex()
+	private val verifySignals = Channel<Unit>(Channel.CONFLATED)
 	private var loopJob: Job? = null
 	private var stopped = false
 	private var blocked = false
 	private var caughtUp = false
 	private var cursor: Long = session.lastSeq
+
+	@Volatile
+	private var lastContactAt: Long = clock()
+
+	@Volatile
+	private var activeSocket: RelaySocket? = null
+
+	@Volatile
+	private var forceFullCatchUp = false
 
 	fun start() {
 		if (loopJob != null || stopped) return
@@ -75,6 +95,19 @@ class SyncEngine(
 			scope.launch {
 				runCatching { repository.setStatus(session.localId, SessionStatus.OFFLINE) }
 			}
+		}
+	}
+
+	fun verifyNow() {
+		if (stopped) return
+		verifySignals.trySend(Unit)
+	}
+
+	fun forceResync() {
+		if (stopped) return
+		forceFullCatchUp = true
+		activeSocket?.let { socket ->
+			scope.launch { runCatching { socket.close() } }
 		}
 	}
 
@@ -117,6 +150,8 @@ class SyncEngine(
 		blocked = false
 		caughtUp = false
 		val socket = relay.openSocket(roomId)
+		activeSocket = socket
+		lastContactAt = clock()
 		val termination = CompletableDeferred<Throwable?>()
 		val writableAck = CompletableDeferred<Boolean>()
 		val catchUpDone = CompletableDeferred<Unit>()
@@ -130,6 +165,8 @@ class SyncEngine(
 							if (!openSession.acknowledgeEcho(frame.bytes)) {
 								applyRemote(frame.bytes, null)
 							}
+							lastContactAt = clock()
+							_lastVerifiedAt.value = clock()
 						}
 
 						is RelayFrame.Writable -> {
@@ -156,6 +193,8 @@ class SyncEngine(
 
 		var keepalive: Job? = null
 		var sender: Job? = null
+		var verifier: Job? = null
+		var watchdog: Job? = null
 		try {
 			val token = if (session.access == Access.OWNER) repository.editToken(session.localId) else null
 			if (token.isNullOrEmpty()) {
@@ -171,27 +210,14 @@ class SyncEngine(
 				}
 			}
 
-			val updates = relay.fetchUpdates(roomId, cursor)
-			_catchUpCount.value = updates.size
-			_warning.value = if (updates.size > CATCH_UP_WARN_THRESHOLD) {
-				"This session has a large update history (${updates.size} updates); " +
-					"first sync may take a while"
-			} else {
-				null
-			}
-			var batchBytes = 0L
-			for (update in updates) {
-				if (!openSession.acknowledgeEcho(update.blob)) {
-					applyRemote(update.blob, update.seq)
-				}
-				batchBytes += update.blob.size
-				if (update.seq > cursor) cursor = update.seq
-			}
-			if (updates.size >= MAX_UPDATE_ROWS || batchBytes > MAX_ROOM_BYTES) {
-				block("room has ${updates.size} updates (${batchBytes} bytes)")
-			}
+			val fullCatchUp = forceFullCatchUp
+			forceFullCatchUp = false
+			val updates = relay.fetchUpdates(roomId, if (fullCatchUp) -1L else cursor)
+			applyFetched(updates)
 			caughtUp = true
 			catchUpDone.complete(Unit)
+			lastContactAt = clock()
+			_lastVerifiedAt.value = clock()
 
 			sender = startSending(socket)
 			setStatus(if (blocked || _authFailed.value) SessionStatus.SYNC_BLOCKED else SessionStatus.LIVE)
@@ -200,22 +226,100 @@ class SyncEngine(
 					delay(keepaliveMs)
 					try {
 						socket.sendText("{}")
-					} catch (_: Throwable) {
-						break
+					} catch (e: CancellationException) {
+						throw e
+					} catch (e: Throwable) {
+						termination.complete(e)
+						return@launch
 					}
 				}
 			}
+			verifier = scope.launch { runVerifier(roomId, termination) }
+			watchdog = scope.launch { runWatchdog(termination) }
 
 			val failure = termination.await()
 			if (failure != null) throw failure
 		} finally {
 			sender?.cancel()
 			keepalive?.cancel()
+			verifier?.cancel()
+			watchdog?.cancel()
 			collector.cancel()
 			catchUpDone.complete(Unit)
 			_isWritable.value = false
+			activeSocket = null
 			withContext(NonCancellable) {
 				runCatching { socket.close() }
+			}
+		}
+	}
+
+	private suspend fun applyFetched(updates: List<EncryptedUpdate>) {
+		_catchUpCount.value = updates.size
+		_warning.value = if (updates.size > CATCH_UP_WARN_THRESHOLD) {
+			"This session has a large update history (${updates.size} updates); " +
+				"first sync may take a while"
+		} else {
+			null
+		}
+		var batchBytes = 0L
+		for (update in updates) {
+			if (!openSession.acknowledgeEcho(update.blob)) {
+				applyRemote(update.blob, update.seq)
+			}
+			batchBytes += update.blob.size
+			if (update.seq > cursor) cursor = update.seq
+		}
+		if (updates.size >= MAX_UPDATE_ROWS || batchBytes > MAX_ROOM_BYTES) {
+			block("room has ${updates.size} updates (${batchBytes} bytes)")
+		}
+	}
+
+	private suspend fun runVerifier(
+		roomId: String,
+		termination: CompletableDeferred<Throwable?>,
+	) {
+		verifySignals.tryReceive()
+		while (currentCoroutineContext().isActive) {
+			withTimeoutOrNull(verifyIntervalMs) { verifySignals.receive() }
+			if (stopped) return
+			val fatal = verifyOnce(roomId)
+			if (fatal != null) {
+				termination.complete(fatal)
+				return
+			}
+		}
+	}
+
+	private suspend fun verifyOnce(roomId: String): RelayException? = verifyMutex.withLock {
+		if (blocked || stopped) return@withLock null
+		val updates = try {
+			relay.fetchUpdates(roomId, cursor)
+		} catch (e: CancellationException) {
+			throw e
+		} catch (e: RelayException) {
+			if (e.statusCode == 404) return@withLock e
+			logger("verification failed: ${e.statusCode ?: e.message}")
+			return@withLock null
+		} catch (e: Throwable) {
+			logger("verification failed: ${e.message}")
+			return@withLock null
+		}
+		applyFetched(updates)
+		lastContactAt = clock()
+		_lastVerifiedAt.value = clock()
+		null
+	}
+
+	private suspend fun runWatchdog(termination: CompletableDeferred<Throwable?>) {
+		while (currentCoroutineContext().isActive) {
+			delay(watchdogTickMs)
+			if (blocked || stopped) continue
+			val idleMs = clock() - lastContactAt
+			if (idleMs > staleAfterMs) {
+				logger("no server contact for ${idleMs}ms; reconnecting")
+				termination.complete(StaleConnectionException())
+				return
 			}
 		}
 	}
@@ -292,3 +396,5 @@ class SyncEngine(
 		private val BACKOFF_MS = longArrayOf(1_000, 2_000, 4_000, 8_000, 10_000)
 	}
 }
+
+private class StaleConnectionException : Exception("no server contact within the freshness window")

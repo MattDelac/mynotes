@@ -184,7 +184,7 @@ class SessionListViewModelTest {
 	}
 
 	@Test
-	fun sessionStatusChipReflectsThePersistedStatusAfterTheEditorCloses() = runBlocking {
+	fun theSessionListDemotesAPersistedLiveStatusBecauseNoEngineRunsThere() = runBlocking {
 		relay.batches = listOf(emptyList())
 		val session = importOwner()
 		val store = ViewModelStore()
@@ -192,16 +192,23 @@ class SessionListViewModelTest {
 		val editor = ViewModelProvider(store, EditorViewModel.factory(graph, session.localId))
 			.get(EditorViewModel::class.java)
 		waitFor { editor.status.value.takeIf { it == SessionStatus.LIVE } }
+		assertEquals(SessionStatus.LIVE, graph.repository.getSession(session.localId)!!.status)
 
 		val list = sessionList()
-		val live = list.sessions.first { sessions ->
-			sessions.any { it.localId == session.localId && it.status == SessionStatus.LIVE }
+		val afterStartup = list.sessions.first { sessions ->
+			sessions.any {
+				it.localId == session.localId && it.status == SessionStatus.OFFLINE
+			}
 		}
-		assertEquals(SessionStatus.LIVE, live.first { it.localId == session.localId }.status)
+		assertEquals(
+			SessionStatus.OFFLINE,
+			afterStartup.first { it.localId == session.localId }.status,
+		)
 
 		store.clear()
 
 		val persisted = graph.repository.getSession(session.localId)!!.status
+		assertEquals(SessionStatus.OFFLINE, persisted)
 		val after = list.sessions.first { sessions ->
 			sessions.any { it.localId == session.localId && it.status == persisted }
 		}
