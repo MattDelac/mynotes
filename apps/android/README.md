@@ -93,6 +93,16 @@ were pinned to the newest AGP-8-compatible releases.
   marks the session `KEY_MISSING`; the wrapped key and ciphertext are left untouched, so a
   restored/regenerated key can still recover the session.
 
+## App icon
+
+The launcher icon is the Foldmark mark (concept 1 of the approved logo set): one vector path on a
+pure white adaptive background, with the same geometry reused as the Android 13+ monochrome layer.
+No rounded-square container is baked in; Android's mask applies. The geometry lives in exactly one
+file, `app/src/main/res/drawable/ic_launcher_mark.xml`, which is referenced by both
+`mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` as `foreground` and `monochrome`, so
+swapping to concept 2 (Cipherlink) or concept 3 (Quiet Page) means replacing that one file with the
+concept's 108x108 path. Keep the 108x108 viewport and the 21..87 safe zone.
+
 ## Release previews
 
 `.github/workflows/_release-android.yml` builds a signed release APK and publishes it as a GitHub
