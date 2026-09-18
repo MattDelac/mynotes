@@ -15,6 +15,7 @@ Share links carry the AES-GCM key in the URL fragment. Routes: `/s/{sessionId}` 
 | Path                 | Description                                                       |
 | -------------------- | ----------------------------------------------------------------- |
 | `apps/web/`          | SvelteKit 2 + Svelte 5 frontend, TypeScript strict, static adapter |
+| `apps/android/engine/` | Go CRDT engine binding (ygo + gomobile AAR) for the Android client; see its README |
 | `api/`               | Rust backend: Axum 0.8 + sqlx (SQLite), zero-knowledge blob store |
 | `api/migrations/`    | SQL migrations, embedded at compile time via `sqlx::migrate!`     |
 | `api/Dockerfile`     | Multi-stage build; distroless nonroot runtime; Litestream sidecar binary  |
@@ -56,6 +57,22 @@ cargo test              # integration tests use in-memory SQLite
 cargo clippy -- -D warnings
 cargo fmt --check
 ```
+
+### Android engine (`apps/android/engine`)
+
+Go module over `github.com/Deln0r/ygo` with a gomobile binding; the committed AAR
+(`libs/engine.aar`) is the Android build input. The default shell has no Go/JDK/Android SDK, so
+use the dedicated one:
+
+```sh
+nix develop .#android -c bash -c 'cd apps/android/engine && go test ./...'
+nix develop .#android -c ./scripts/android/rebuild-engine.sh   # AAR (ABIs: ANDROID_ABIS, default arm64-v8a,x86_64)
+./scripts/android/gen-fixtures.sh                              # deterministic JS/Go interop fixtures
+```
+
+Fixtures come from the workspace's resolved `yjs@13.6.32` and are verified back against it; see
+`apps/android/engine/README.md` for the binding surface, the golden-byte tripwire, and measured
+AAR sizes.
 
 Env vars: `DATABASE_URL` (default `sqlite:mynotes.db`), `BIND_ADDR` (default `0.0.0.0:3000`).
 Abuse-protection env vars (`api/src/config.rs`, all with defaults): `MAX_BLOB_SIZE` (64KB),
@@ -149,3 +166,10 @@ Entrypoints orchestrate the reusable `_*.yml` workflows (each also manually disp
 
 Run: `pnpm lint && pnpm check && pnpm test` (frontend) and `cargo fmt --check && cargo clippy
 --all-targets -- -D warnings && cargo test` (backend).
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
