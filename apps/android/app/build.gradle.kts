@@ -68,6 +68,14 @@ android {
 	lint {
 		abortOnError = true
 	}
+
+	testOptions {
+		unitTests {
+			isIncludeAndroidResources = true
+		}
+	}
+
+	sourceSets.getByName("test").resources.srcDir("$projectDir/schemas")
 }
 
 kotlin {
@@ -110,6 +118,12 @@ dependencies {
 
 	testImplementation(libs.junit)
 	testImplementation(libs.kotlinx.coroutines.test)
+	testImplementation(libs.robolectric)
+	testImplementation(libs.androidx.test.core)
+	testImplementation(libs.room.testing)
+	testImplementation(platform(libs.compose.bom))
+	testImplementation(libs.compose.ui.test.junit4)
+	testImplementation(libs.compose.ui.test.manifest)
 
 	androidTestImplementation(libs.androidx.test.junit)
 	androidTestImplementation(libs.androidx.test.runner)
