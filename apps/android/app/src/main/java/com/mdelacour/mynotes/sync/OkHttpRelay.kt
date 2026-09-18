@@ -1,6 +1,7 @@
 package com.mdelacour.mynotes.sync
 
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +94,14 @@ class OkHttpRelay(
 	companion object {
 		private val OCTET_STREAM = "application/octet-stream".toMediaType()
 		private const val MAX_UPDATES_RESPONSE_BYTES = 8L * 1024 * 1024
+
+		const val WEBSOCKET_PING_INTERVAL_MS = 20_000L
+
+		fun defaultClient(
+			pingIntervalMs: Long = WEBSOCKET_PING_INTERVAL_MS,
+		): OkHttpClient = OkHttpClient.Builder()
+			.pingInterval(pingIntervalMs, TimeUnit.MILLISECONDS)
+			.build()
 
 		private fun readBounded(response: Response, limit: Long): String {
 			val body = response.body

@@ -263,6 +263,42 @@ class SessionRepositoryTest {
 	}
 
 	@Test
+	fun startupCleanupDemotesTransientStatusesToOffline() = runBlocking {
+		val db = FakeDb()
+		val repository = db.repository()
+		val live = repository.importShare(
+			ShareCredentials("room-live", Base64Url.encode(roomKey)),
+		).session
+		val connecting = repository.importShare(
+			ShareCredentials("room-connecting", Base64Url.encode(roomKey)),
+		).session
+		val local = repository.createLocal("local")
+		val expired = repository.importShare(
+			ShareCredentials("room-expired", Base64Url.encode(roomKey)),
+		).session
+		db.sessions.update(
+			db.sessions.rows.getValue(live.localId).copy(status = SessionStatus.LIVE.name),
+		)
+		db.sessions.update(
+			db.sessions.rows.getValue(connecting.localId)
+				.copy(status = SessionStatus.CONNECTING.name),
+		)
+		db.sessions.update(
+			db.sessions.rows.getValue(expired.localId).copy(status = SessionStatus.EXPIRED.name),
+		)
+
+		repository.startupCleanup()
+
+		assertEquals(SessionStatus.OFFLINE.name, db.sessions.rows.getValue(live.localId).status)
+		assertEquals(
+			SessionStatus.OFFLINE.name,
+			db.sessions.rows.getValue(connecting.localId).status,
+		)
+		assertEquals(SessionStatus.LOCAL.name, db.sessions.rows.getValue(local.localId).status)
+		assertEquals(SessionStatus.EXPIRED.name, db.sessions.rows.getValue(expired.localId).status)
+	}
+
+	@Test
 	fun reorderAssignsAscendingOrderIndexes() = runBlocking {
 		val db = FakeDb()
 		val repository = db.repository()
