@@ -37,6 +37,7 @@ data class EditorUiState(
 	val readOnly: Boolean = false,
 	val canReSeed: Boolean = false,
 	val warning: String? = null,
+	val rendered: Boolean = true,
 )
 
 class EditorViewModel(
@@ -200,6 +201,10 @@ class EditorViewModel(
 				it.copy(selectionStart = start, selectionEnd = end)
 			}
 		}
+	}
+
+	fun toggleRendered() {
+		_state.update { it.copy(rendered = !it.rendered) }
 	}
 
 	fun format(action: MarkdownAction) {

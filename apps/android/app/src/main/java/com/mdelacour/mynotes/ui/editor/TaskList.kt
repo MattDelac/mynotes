@@ -6,6 +6,7 @@ data class TaskItem(
 	val markerOffset: Int,
 	val checked: Boolean,
 	val text: String,
+	val indent: Int = 0,
 )
 
 object TaskList {
@@ -30,6 +31,7 @@ object TaskList {
 					markerOffset = lineStart + match.groups[6]!!.range.first,
 					checked = match.groupValues[6].equals("x", ignoreCase = true),
 					text = match.groupValues[7],
+					indent = match.groupValues[1].length / 2,
 				)
 			}
 			if (newline == -1) break

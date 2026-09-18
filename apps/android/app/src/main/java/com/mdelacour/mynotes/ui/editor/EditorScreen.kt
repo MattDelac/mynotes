@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -87,7 +89,7 @@ fun EditorScreen(
 	var confirmReSeed by remember { mutableStateOf(false) }
 	var pendingExport by remember { mutableStateOf<ExportRequest?>(null) }
 
-	val tasks = remember(state.text) { TaskList.parse(state.text) }
+	val blocks = remember(state.text) { NoteBlocks.parse(state.text) }
 	var fieldValue by remember { mutableStateOf(TextFieldValue(state.text)) }
 	LaunchedEffect(state.text, state.selectionStart, state.selectionEnd) {
 		val desired = TextFieldValue(
@@ -143,6 +145,13 @@ fun EditorScreen(
 					}
 				},
 				actions = {
+					IconButton(onClick = viewModel::toggleRendered) {
+						if (state.rendered) {
+							Icon(Icons.Outlined.Edit, contentDescription = "Edit markdown")
+						} else {
+							Icon(Icons.Outlined.Visibility, contentDescription = "Preview note")
+						}
+					}
 					IconButton(
 						onClick = viewModel::undo,
 						enabled = state.canUndo && !state.readOnly,
@@ -268,54 +277,58 @@ fun EditorScreen(
 						)
 					}
 				}
-				MarkdownToolbar(
-					enabled = !state.readOnly,
-					onAction = viewModel::format,
-					modifier = Modifier.fillMaxWidth(),
-				)
-				if (tasks.isNotEmpty()) {
-					TaskPanel(
-						tasks = tasks,
+				if (state.rendered) {
+					NoteView(
+						blocks = blocks,
 						readOnly = state.readOnly,
-						onToggle = viewModel::toggleTask,
-					)
-				}
-				Surface(
-					modifier = Modifier
-						.fillMaxWidth()
-						.weight(1f),
-					color = MaterialTheme.colorScheme.background,
-					contentColor = MaterialTheme.colorScheme.onBackground,
-				) {
-					Box(
+						onToggleTask = viewModel::toggleTask,
 						modifier = Modifier
-							.fillMaxSize()
-							.verticalScroll(rememberScrollState())
-							.padding(16.dp),
+							.fillMaxWidth()
+							.weight(1f),
+					)
+				} else {
+					MarkdownToolbar(
+						enabled = !state.readOnly,
+						onAction = viewModel::format,
+						modifier = Modifier.fillMaxWidth(),
+					)
+					Surface(
+						modifier = Modifier
+							.fillMaxWidth()
+							.weight(1f),
+						color = MaterialTheme.colorScheme.background,
+						contentColor = MaterialTheme.colorScheme.onBackground,
 					) {
-						BasicTextField(
-							value = fieldValue,
-							onValueChange = { newValue ->
-								fieldValue = newValue
-								viewModel.onSelectionChanged(
-									newValue.selection.start,
-									newValue.selection.end,
-								)
-								viewModel.onTextChanged(newValue.text)
-							},
-							enabled = !state.readOnly,
+						Box(
 							modifier = Modifier
-								.fillMaxWidth()
-								.defaultMinSize(minHeight = 240.dp)
-								.onPreviewKeyEvent { event ->
-									handleShortcut(event, state.readOnly, viewModel)
+								.fillMaxSize()
+								.verticalScroll(rememberScrollState())
+								.padding(16.dp),
+						) {
+							BasicTextField(
+								value = fieldValue,
+								onValueChange = { newValue ->
+									fieldValue = newValue
+									viewModel.onSelectionChanged(
+										newValue.selection.start,
+										newValue.selection.end,
+									)
+									viewModel.onTextChanged(newValue.text)
 								},
-							textStyle = MaterialTheme.typography.bodyLarge.copy(
-								fontFamily = FontFamily.Monospace,
-								color = MaterialTheme.colorScheme.onSurface,
-							),
-							cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-						)
+								enabled = !state.readOnly,
+								modifier = Modifier
+									.fillMaxWidth()
+									.defaultMinSize(minHeight = 240.dp)
+									.onPreviewKeyEvent { event ->
+										handleShortcut(event, state.readOnly, viewModel)
+									},
+								textStyle = MaterialTheme.typography.bodyLarge.copy(
+									fontFamily = FontFamily.Monospace,
+									color = MaterialTheme.colorScheme.onSurface,
+								),
+								cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+							)
+						}
 					}
 				}
 			}
