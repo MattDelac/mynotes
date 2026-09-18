@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class FakeSessionDao : SessionDao {
 	val rows = linkedMapOf<String, SessionEntity>()
 	val events = mutableListOf<String>()
+	val checkpointWrites = MutableStateFlow(0)
 	var failOnInsert = false
 
 	private val all = MutableStateFlow<List<SessionEntity>>(emptyList())
@@ -80,6 +81,7 @@ class FakeSessionDao : SessionDao {
 				updatedAt = updatedAt,
 			),
 		)
+		checkpointWrites.value += 1
 	}
 
 	override suspend fun findByRoomId(roomId: String): SessionEntity? =

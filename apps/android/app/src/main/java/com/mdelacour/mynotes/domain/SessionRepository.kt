@@ -13,6 +13,8 @@ import com.mdelacour.mynotes.data.vault.VaultException
 import com.mdelacour.mynotes.data.vault.WrappingKey
 import java.security.SecureRandom
 import java.util.UUID
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 enum class Access { LOCAL, CREATING, OWNER, VIEWER, DELETING }
 
@@ -70,6 +72,13 @@ class SessionRepository(
 	private val newId: () -> String = { UUID.randomUUID().toString() },
 ) {
 	private val random = SecureRandom()
+
+	suspend fun getSession(localId: String): Session? = sessions.get(localId)?.toDomain()
+
+	suspend fun listSessions(): List<Session> = sessions.listAll().map { it.toDomain() }
+
+	fun observeSessions(): Flow<List<Session>> =
+		sessions.observeAll().map { entities -> entities.map { it.toDomain() } }
 
 	suspend fun createLocal(name: String?): Session = tx.run {
 		val roomKey = ByteArray(ROOM_KEY_LENGTH).also { random.nextBytes(it) }
@@ -155,6 +164,11 @@ class SessionRepository(
 
 	suspend fun checkpoint(localId: String, encryptedCheckpoint: ByteArray, lastSeq: Long) = tx.run {
 		sessions.setCheckpoint(localId, encryptedCheckpoint, lastSeq, clock())
+	}
+
+	suspend fun checkpoint(localId: String, encryptedCheckpoint: ByteArray, lastSeq: Long?) = tx.run {
+		val entity = sessions.get(localId) ?: return@run
+		sessions.setCheckpoint(localId, encryptedCheckpoint, lastSeq ?: entity.lastSeq, clock())
 	}
 
 	suspend fun appendOutboxAndCheckpoint(outboxEntity: OutboxEntity, encryptedCheckpoint: ByteArray) = tx.run {

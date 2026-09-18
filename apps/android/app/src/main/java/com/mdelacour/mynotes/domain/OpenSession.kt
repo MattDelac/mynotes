@@ -1,5 +1,6 @@
 package com.mdelacour.mynotes.domain
 
+import com.mdelacour.mynotes.crypto.RelayCrypto
 import com.mdelacour.mynotes.engine.EngineDoc
 import com.mdelacour.mynotes.engine.EngineExecutor
 import com.mdelacour.mynotes.engine.EngineNote
@@ -69,6 +70,10 @@ class OpenSession(
 		}
 	}
 
+	suspend fun canUndo(id: String): Boolean = executor.run { noteHandle(id)?.canUndo() ?: false }
+
+	suspend fun canRedo(id: String): Boolean = executor.run { noteHandle(id)?.canRedo() ?: false }
+
 	suspend fun redo(id: String): Boolean {
 		repository.checkWritable(session)
 		return onEngine {
@@ -81,6 +86,15 @@ class OpenSession(
 
 	suspend fun stopCapturing(id: String) {
 		executor.run { noteHandle(id)?.stopCapturing() }
+	}
+
+	suspend fun applyRemoteUpdate(plaintextUpdate: ByteArray, lastSeq: Long?) {
+		onEngine {
+			engine.applyUpdate(plaintextUpdate)
+			enqueuer.reset(engine.encodeStateVector())
+			val checkpoint = RelayCrypto.seal(roomKey, engine.encodeStateAsUpdate())
+			repository.checkpoint(session.localId, checkpoint, lastSeq)
+		}
 	}
 
 	override fun close() {
