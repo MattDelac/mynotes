@@ -76,6 +76,7 @@ android {
 	}
 
 	sourceSets.getByName("test").resources.srcDir("$projectDir/schemas")
+	sourceSets.getByName("test").resources.srcDir("$projectDir/../testdata")
 }
 
 kotlin {
