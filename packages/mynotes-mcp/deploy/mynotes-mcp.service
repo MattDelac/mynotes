@@ -1,0 +1,53 @@
+# mynotes-mcp hardened systemd user unit sample.
+#
+# Install:
+#   install -Dm644 deploy/mynotes-mcp.service ~/.config/systemd/user/mynotes-mcp.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now mynotes-mcp
+#
+# Before enabling, set MYNOTES_MCP_HOST to the explicit Tailscale address this
+# machine should serve on (never 0.0.0.0), adjust MYNOTES_MCP_STATE_DIR if you
+# do not want the default, and point ExecStart at the installed binary.
+#
+# The token for remote clients is created with `mynotes-mcp token add <name>`
+# and supplied to the client as an Authorization: Bearer header. It is not
+# stored in this unit.
+
+[Unit]
+Description=MyNotes MCP read-only server
+Documentation=https://github.com/MattDelac/mynotes
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+Environment=MYNOTES_MCP_HOST=100.64.0.1
+Environment=MYNOTES_MCP_PORT=3100
+Environment=MYNOTES_MCP_STATE_DIR=%S/mynotes-mcp
+Environment=MYNOTES_MCP_MAX_RSS_BYTES=536870912
+ExecStartPre=/bin/sh -c 'until ip -o addr show tailscale0 | grep -q "inet "; do sleep 1; done'
+ExecStart=%h/.local/bin/mynotes-mcp serve
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%S/mynotes-mcp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+MemoryMax=512M
+TasksMax=64
+
+[Install]
+WantedBy=default.target

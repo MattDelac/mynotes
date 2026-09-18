@@ -3,6 +3,8 @@ dist/
 build/
 .svelte-kit/
 target/
+result
+result-*
 .env
 .env.*
 !.env.example

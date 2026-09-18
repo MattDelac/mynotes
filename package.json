@@ -18,6 +18,10 @@
     "lint": "pnpm --filter web lint",
     "format": "pnpm --filter web format",
     "check": "pnpm --filter web check",
-    "test": "pnpm --filter web test"
+    "test": "pnpm --filter web test",
+    "mcp:build": "pnpm --filter mynotes-mcp build",
+    "mcp:check": "pnpm --filter mynotes-mcp check",
+    "mcp:lint": "pnpm --filter mynotes-mcp lint",
+    "mcp:test": "pnpm --filter mynotes-mcp test"
   }
 }

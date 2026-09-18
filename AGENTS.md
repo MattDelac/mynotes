@@ -16,6 +16,7 @@ Share links carry the AES-GCM key in the URL fragment. Routes: `/s/{sessionId}` 
 | -------------------- | ----------------------------------------------------------------- |
 | `apps/web/`          | SvelteKit 2 + Svelte 5 frontend, TypeScript strict, static adapter |
 | `apps/android/`      | Native Kotlin/Compose Android client + the Go CRDT engine binding in `engine/` |
+| `packages/mynotes-mcp/` | Read-only MCP server for sessions (CLI + daemon); `README.md` is the operator contract |
 | `api/`               | Rust backend: Axum 0.8 + sqlx (SQLite), zero-knowledge blob store |
 | `api/migrations/`    | SQL migrations, embedded at compile time via `sqlx::migrate!`     |
 | `api/Dockerfile`     | Multi-stage build; distroless nonroot runtime; Litestream sidecar binary  |
@@ -56,6 +57,21 @@ cargo run               # serves on :3000, creates sqlite:mynotes.db
 cargo test              # integration tests use in-memory SQLite
 cargo clippy -- -D warnings
 cargo fmt --check
+```
+
+### MCP server (`packages/mynotes-mcp`)
+
+Read-only MCP daemon + CLI; the operator contract is `packages/mynotes-mcp/README.md`. Tests boot
+the real Rust relay on a unique port (built on demand), so run them where a C compiler is
+available (the dev shell). The flake package uses `pnpm.fetchDeps`/`pnpm.configHook` and pnpm 11
+needs `--offline` + `pnpm_config_inject_workspace_packages=true` for its deploy step:
+
+```sh
+pnpm mcp:lint            # prettier + eslint
+pnpm mcp:check           # tsc --noEmit
+pnpm mcp:test            # vitest: unit, mock relay, real relay, e2e proof
+pnpm mcp:build           # tsc -> packages/mynotes-mcp/dist
+nix build .#mynotes-mcp  # package + CLI wrapper
 ```
 
 ### Android (`apps/android`)
@@ -138,13 +154,14 @@ presence/awareness yet.
 Entrypoints orchestrate the reusable `_*.yml` workflows (each also manually dispatchable via
 `workflow_dispatch`). No path filters — all legs run on every trigger, in parallel.
 
-- `pull_request.yml`: 4 parallel legs — Frontend, Backend, E2E, Screenshots — plus a Preview leg
-  gated on Frontend + Backend. Concurrency group `pr-<ref>`, cancels superseded runs.
-- `cicd.yml` (push to main): the same 4 legs, then Release Frontend + Release Backend, each gated
-  on Frontend + Backend + E2E (Screenshots gates PR merge only, not deploys). Concurrency group
-  `cicd-main` (no cancel) serializes deploys.
+- `pull_request.yml`: parallel legs — Frontend, Backend, E2E, Screenshots, Android, MCP — plus a
+  Preview leg gated on Frontend + Backend. Concurrency group `pr-<ref>`, cancels superseded runs.
+- `cicd.yml` (push to main): the same legs, then Release Frontend + Release Backend + Release
+  Android, each gated on Frontend + Backend + E2E (Screenshots gates PR merge only, not deploys).
+  Concurrency group `cicd-main` (no cancel) serializes deploys.
 - `_ci-frontend.yml`: lint → type check → unit tests → build (`apps/web`).
 - `_ci-backend.yml`: fmt → clippy → tests (`api`).
+- `_ci-mcp.yml`: lint → type check → tests (boots the Rust relay) → build → `nix build .#mynotes-mcp`.
 - `_e2e.yml`: Playwright e2e (boots preview + Rust backend on :3000).
 - `_ci-screenshots.yml`: regenerates UI screenshots and fails if they differ from the committed
   ones (keeps `apps/screenshots/` current; `screenshots.yml` regenerates and opens a PR instead).
@@ -175,8 +192,9 @@ Entrypoints orchestrate the reusable `_*.yml` workflows (each also manually disp
 
 ## Before finishing any task
 
-Run: `pnpm lint && pnpm check && pnpm test` (frontend) and `cargo fmt --check && cargo clippy
---all-targets -- -D warnings && cargo test` (backend).
+Run: `pnpm lint && pnpm check && pnpm test` (frontend), `cargo fmt --check && cargo clippy
+--all-targets -- -D warnings && cargo test` (backend, in the dev shell), and `pnpm mcp:lint &&
+pnpm mcp:check && pnpm mcp:test` (MCP).
 
 ## Maintaining this file
 
