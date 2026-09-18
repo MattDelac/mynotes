@@ -15,9 +15,10 @@ export interface Fixture {
 
 export async function createFixture(
 	contents: Record<string, string> = { 'note-a': '# Hello' },
-	name = 'work'
+	name = 'work',
+	existingRelay?: MockRelay
 ): Promise<Fixture> {
-	const relay = new MockRelay();
+	const relay = existingRelay ?? new MockRelay();
 	const doc = new Y.Doc();
 	const notes = doc.getMap<Y.Text>('notes');
 	doc.transact(() => {
@@ -85,6 +86,14 @@ export async function pushContent(
 	});
 	const update = Y.encodeStateAsUpdate(fx.doc, before);
 	return fx.relay.push(fx.entry.room_id, fx.key, update);
+}
+
+export async function deleteNote(fx: Fixture, noteId: string): Promise<number> {
+	const before = Y.encodeStateVector(fx.doc);
+	fx.doc.transact(() => {
+		fx.doc.getMap<Y.Text>('notes').delete(noteId);
+	});
+	return fx.relay.push(fx.entry.room_id, fx.key, Y.encodeStateAsUpdate(fx.doc, before));
 }
 
 export function managerFor(

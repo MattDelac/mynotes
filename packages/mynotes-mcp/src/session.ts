@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import MiniSearch from 'minisearch';
 import * as Y from 'yjs';
 import {
 	CHECKPOINTS_DIR,
@@ -107,6 +108,58 @@ export interface NoteSummary {
 	observed_at: string | null;
 }
 
+interface SearchDoc {
+	id: string;
+	title: string;
+	body: string;
+}
+
+export interface SearchHit {
+	id: string;
+	title: string;
+	score: number;
+	terms: string[];
+	snippet: string;
+}
+
+export interface SearchOptions {
+	limit?: number;
+	fuzzy?: boolean;
+}
+
+export function stripMarkdownPresentation(text: string): string {
+	return text
+		.replace(/^\s{0,3}#{1,6}\s+/gm, '')
+		.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+		.replace(/(\*\*|__)(.*?)\1/g, '$2')
+		.replace(/(\*|_)(.*?)\1/g, '$2')
+		.replace(/`([^`]*)`/g, '$1')
+		.replace(/^\s{0,3}>\s?/gm, '');
+}
+
+export function makeSnippet(content: string, terms: string[], maxLength = 240): string {
+	if (content.trim() === '') return '';
+	const lines = content.split('\n');
+	const lowered = terms.map((term) => term.toLowerCase()).filter((term) => term.length > 0);
+	let lineIndex = lines.findIndex((line) => {
+		const lower = line.toLowerCase();
+		return lowered.some((term) => lower.includes(term));
+	});
+	if (lineIndex === -1) lineIndex = 0;
+	const line = lines[lineIndex] ?? '';
+	const matched = lowered.find((term) => line.toLowerCase().includes(term));
+	let start = 0;
+	if (matched !== undefined) {
+		const at = line.toLowerCase().indexOf(matched);
+		start = Math.max(0, at - 80);
+	}
+	let snippet = line.slice(start, start + maxLength);
+	if (start > 0) snippet = `…${snippet}`;
+	if (start + maxLength < line.length) snippet = `${snippet}…`;
+	return stripMarkdownPresentation(snippet.trim());
+}
+
 export interface WebSocketLike {
 	readyState: number;
 	send(data: string | Uint8Array): void;
@@ -142,6 +195,7 @@ export interface SessionOptions {
 	createWebSocket?: WebSocketFactory;
 	now?: () => number;
 	accessClock?: () => number;
+	indexDebounceMs?: number;
 	log?: (message: string) => void;
 	onChanged?: () => void;
 }
@@ -172,6 +226,7 @@ export class Session {
 	private readonly createWebSocket: WebSocketFactory;
 	private readonly now: () => number;
 	private readonly accessClock: () => number;
+	private readonly indexDebounceMs: number;
 	private readonly log: (message: string) => void;
 	private readonly onChanged: () => void;
 
@@ -190,6 +245,9 @@ export class Session {
 	private key: CryptoKey | null = null;
 	private observed = new Map<string, number>();
 	private fingerprints = new Map<string, string>();
+	private index: MiniSearch<SearchDoc> | null = null;
+	private indexedFingerprints = new Map<string, string>();
+	private indexTimer: ReturnType<typeof setTimeout> | null = null;
 	private ws: WebSocketLike | null = null;
 	private wsDesired = false;
 	private wsConnectedAt: number | null = null;
@@ -212,6 +270,7 @@ export class Session {
 			options.createWebSocket ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
 		this.now = options.now ?? (() => Date.now());
 		this.accessClock = options.accessClock ?? this.now;
+		this.indexDebounceMs = options.indexDebounceMs ?? 500;
 		this.log = options.log ?? (() => undefined);
 		this.onChanged = options.onChanged ?? (() => undefined);
 		this.accessAt = this.accessClock();
@@ -301,6 +360,92 @@ export class Session {
 		}
 		this.indexedCharacters = characters;
 		this.indexOversized = characters > this.maxIndexedChars;
+		if (this.indexOversized) {
+			this.clearIndex();
+		} else {
+			this.scheduleIndexUpdate();
+		}
+	}
+
+	private clearIndex(): void {
+		if (this.indexTimer !== null) {
+			clearTimeout(this.indexTimer);
+			this.indexTimer = null;
+		}
+		this.index = null;
+		this.indexedFingerprints.clear();
+	}
+
+	private scheduleIndexUpdate(): void {
+		if (this.indexTimer !== null) clearTimeout(this.indexTimer);
+		this.indexTimer = setTimeout(() => {
+			this.indexTimer = null;
+			this.updateIndex();
+		}, this.indexDebounceMs);
+		this.indexTimer.unref?.();
+	}
+
+	flushIndex(): void {
+		if (this.indexTimer !== null) {
+			clearTimeout(this.indexTimer);
+			this.indexTimer = null;
+		}
+		this.updateIndex();
+	}
+
+	private updateIndex(): void {
+		const doc = this.ydoc;
+		if (!doc || this.indexOversized) return;
+		const index =
+			this.index ??
+			new MiniSearch<SearchDoc>({
+				fields: ['title', 'body'],
+				storeFields: ['id'],
+				searchOptions: {
+					prefix: true,
+					combineWith: 'OR',
+					boost: { title: 3 }
+				}
+			});
+		this.index = index;
+		const notes = doc.getMap<Y.Text>('notes');
+		for (const [id, text] of notes.entries()) {
+			const fingerprint = this.fingerprints.get(id) ?? '';
+			if (this.indexedFingerprints.get(id) === fingerprint) continue;
+			const content = text.toString();
+			const entry: SearchDoc = { id, title: noteTitle(content), body: content };
+			if (this.indexedFingerprints.has(id)) index.replace(entry);
+			else index.add(entry);
+			this.indexedFingerprints.set(id, fingerprint);
+		}
+		for (const id of [...this.indexedFingerprints.keys()]) {
+			if (!notes.has(id)) {
+				index.discard(id);
+				this.indexedFingerprints.delete(id);
+			}
+		}
+	}
+
+	search(query: string, options: SearchOptions = {}): SearchHit[] {
+		this.flushIndex();
+		if (!this.index || this.indexOversized) return [];
+		const results = this.index.search(query, {
+			prefix: true,
+			fuzzy: options.fuzzy ?? false,
+			combineWith: 'OR',
+			boost: { title: 3 }
+		});
+		return results.slice(0, options.limit ?? 10).map((result) => {
+			const id = String(result.id);
+			const content = this.noteContent(id) ?? '';
+			return {
+				id,
+				title: noteTitle(content),
+				score: result.score,
+				terms: result.terms,
+				snippet: makeSnippet(content, result.terms)
+			};
+		});
 	}
 
 	private applyRemoteUpdate(update: Uint8Array): boolean {
@@ -563,6 +708,7 @@ export class Session {
 		this.destroyed = true;
 		this.wsDesired = false;
 		if (this.rateLimitTimer !== null) clearTimeout(this.rateLimitTimer);
+		this.clearIndex();
 		this.disconnectWs();
 		this.ydoc?.destroy();
 		this.ydoc = null;
@@ -572,6 +718,7 @@ export class Session {
 
 	unload(): void {
 		this.wsDesired = false;
+		this.clearIndex();
 		this.disconnectWs();
 		this.ydoc?.destroy();
 		this.ydoc = null;
