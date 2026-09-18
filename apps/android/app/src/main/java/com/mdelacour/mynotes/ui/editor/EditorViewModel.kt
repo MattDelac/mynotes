@@ -13,6 +13,8 @@ import com.mdelacour.mynotes.domain.Session
 import com.mdelacour.mynotes.domain.SessionStatus
 import com.mdelacour.mynotes.domain.SessionTitle
 import com.mdelacour.mynotes.sync.SyncEngine
+import com.mdelacour.mynotes.ui.chat.ChatController
+import com.mdelacour.mynotes.ui.chat.OpenSessionReader
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +53,20 @@ class EditorViewModel(
 	private val mutex = Mutex()
 	private var openSession: OpenSession? = null
 	private var requestedNoteApplied = false
+
+	val chat =
+		ChatController(
+			graph = graph,
+			scope = viewModelScope,
+			openSession = { openSession },
+			session = { openSession?.session },
+			reader = { OpenSessionReader({ openSession }, { sessionDisplayName() }) },
+			currentNoteId = { _state.value.selectedNoteId },
+			onSavedNote = { id -> selectNote(id) },
+		)
+
+	fun sessionDisplayName(): String =
+		openSession?.session?.nameOverride?.takeIf { it.isNotBlank() } ?: "Untitled session"
 
 	private val _syncStatus = MutableStateFlow(SessionStatus.LOCAL)
 	val status: StateFlow<SessionStatus> = _syncStatus.asStateFlow()

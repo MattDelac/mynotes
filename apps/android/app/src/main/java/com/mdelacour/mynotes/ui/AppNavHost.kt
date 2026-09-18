@@ -17,6 +17,8 @@ import com.mdelacour.mynotes.ui.editor.EditorScreen
 import com.mdelacour.mynotes.ui.editor.EditorViewModel
 import com.mdelacour.mynotes.ui.sessions.SessionListScreen
 import com.mdelacour.mynotes.ui.sessions.SessionListViewModel
+import com.mdelacour.mynotes.ui.settings.AiKeysScreen
+import com.mdelacour.mynotes.ui.settings.AiKeysViewModel
 import com.mdelacour.mynotes.ui.settings.SettingsScreen
 import com.mdelacour.mynotes.ui.settings.SettingsViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 const val SESSIONS_ROUTE = "sessions"
 const val EDITOR_ROUTE = "editor/{localId}?noteId={noteId}"
 const val SETTINGS_ROUTE = "settings"
+const val AI_KEYS_ROUTE = "ai-keys"
 
 private const val LOCAL_ID = "localId"
 private const val NOTE_ID = "noteId"
@@ -70,7 +73,16 @@ fun AppNavHost(
 		composable(SETTINGS_ROUTE) {
 			val viewModel: SettingsViewModel =
 				viewModel(factory = SettingsViewModel.factory(graph))
-			SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+			SettingsScreen(
+				viewModel = viewModel,
+				onBack = { navController.popBackStack() },
+				onOpenAiKeys = { navController.navigate(AI_KEYS_ROUTE) },
+			)
+		}
+		composable(AI_KEYS_ROUTE) {
+			val viewModel: AiKeysViewModel =
+				viewModel(factory = AiKeysViewModel.factory(graph))
+			AiKeysScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
 		}
 		composable(
 			route = EDITOR_ROUTE,
@@ -87,7 +99,11 @@ fun AppNavHost(
 			val noteId = entry.arguments?.getString(NOTE_ID)
 			val viewModel: EditorViewModel =
 				viewModel(factory = EditorViewModel.factory(graph, localId, noteId))
-			EditorScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+			EditorScreen(
+				viewModel = viewModel,
+				onBack = { navController.popBackStack() },
+				onOpenAiKeys = { navController.navigate(AI_KEYS_ROUTE) },
+			)
 		}
 	}
 }

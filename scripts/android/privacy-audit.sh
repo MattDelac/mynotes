@@ -18,7 +18,7 @@ SRC="${1:-$ROOT/apps/android/app/src/main}"
 }
 
 CALL_RE='Log\.|println|printStackTrace|System\.out'
-SENSITIVE_RE='key|token|fragment|authorization|x-edit-token|x-create-token|ciphertext|blob|content|plaintext|password|#'
+SENSITIVE_RE='key|token|fragment|authorization|x-edit-token|x-create-token|ciphertext|blob|content|plaintext|password|#|prompt|completion|conversation|tool_call|tool_result|reasoning|assistant|provider'
 
 # Genuinely safe calls exempt from the keyword match. Add an exact substring
 # only for a statement that cannot expose a key, token, ciphertext, or note

@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -67,6 +68,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mdelacour.mynotes.data.export.ExportManager
+import com.mdelacour.mynotes.ui.chat.ChatScreen
 import com.mdelacour.mynotes.ui.sessions.sessionStatusLabel
 import kotlinx.coroutines.launch
 
@@ -75,6 +77,34 @@ private enum class ExportRequest { SAVE, SHARE }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
+	viewModel: EditorViewModel,
+	onBack: () -> Unit,
+	onOpenAiKeys: () -> Unit,
+) {
+	val chatState by viewModel.chat.state.collectAsStateWithLifecycle()
+	if (chatState.open) {
+		ChatScreen(
+			state = chatState,
+			sessionTitle = viewModel.sessionDisplayName(),
+			onBack = { viewModel.chat.close() },
+			onSend = { viewModel.chat.send(it) },
+			onStop = { viewModel.chat.stop() },
+			onRevert = { viewModel.chat.revert(it) },
+			onSaveAsNote = { viewModel.chat.saveAsNote() },
+			onClear = { viewModel.chat.clear() },
+			onSelectProvider = { viewModel.chat.selectProvider(it) },
+			onSelectModel = { viewModel.chat.selectModel(it) },
+			onApplyCustomModel = { viewModel.chat.applyCustomModel(it) },
+			onOpenKeys = onOpenAiKeys,
+		)
+		return
+	}
+	EditorScaffold(viewModel = viewModel, onBack = onBack)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditorScaffold(
 	viewModel: EditorViewModel,
 	onBack: () -> Unit,
 ) {
@@ -166,6 +196,9 @@ fun EditorScreen(
 					}
 					IconButton(onClick = viewModel::createNote, enabled = !state.readOnly) {
 						Icon(Icons.Default.Add, contentDescription = "Add note")
+					}
+					IconButton(onClick = { viewModel.chat.open() }) {
+						Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Session assistant")
 					}
 					IconButton(onClick = { menuOpen = true }) {
 						Icon(Icons.Default.MoreVert, contentDescription = "More options")
