@@ -1,0 +1,62 @@
+name: CI MCP
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - uses: DeterminateSystems/flakehub-cache-action@v3
+
+      - name: Cache cargo build
+        uses: actions/cache@v6
+        with:
+          path: |
+            api/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-mcp-${{ runner.os }}-${{ hashFiles('api/Cargo.lock') }}
+          restore-keys: |
+            cargo-mcp-${{ runner.os }}-
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(nix develop --command pnpm store path | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-mcp-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-mcp-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: nix develop --command pnpm install --frozen-lockfile
+
+      - name: Build relay backend
+        run: nix develop --command cargo build --manifest-path api/Cargo.toml
+
+      - name: Lint
+        run: nix develop --command pnpm lint
+        working-directory: packages/mynotes-mcp
+
+      - name: Type check
+        run: nix develop --command pnpm check
+        working-directory: packages/mynotes-mcp
+
+      - name: Unit and integration tests
+        run: nix develop --command pnpm test
+        working-directory: packages/mynotes-mcp
+
+      - name: Build
+        run: nix develop --command pnpm build
+        working-directory: packages/mynotes-mcp
