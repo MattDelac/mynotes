@@ -46,8 +46,11 @@ jobs:
       - name: Verify signature and alignment
         run: |
           apk="apps/android/app/build/outputs/apk/release/app-release.apk"
-          apksigner verify --verbose --print-certs "$apk"
-          zipalign -c -P 16 -v 4 "$apk"
+          tools="$ANDROID_HOME/build-tools/37.0.0"
+          "$tools/apksigner" verify --verbose --print-certs "$apk"
+          "$tools/zipalign" -c -P 16 -v 4 "$apk"
+          fingerprint="$("$tools/apksigner" verify --print-certs "$apk" | grep -m1 'SHA-256 digest' | awk '{print $NF}')"
+          echo "PREVIEW_CERT_SHA256=$fingerprint" >> "$GITHUB_ENV"
 
       - name: Publish prerelease
         env:
@@ -75,6 +78,7 @@ jobs:
             echo "## Notes"
             echo
             echo "- Signed with a **dedicated preview key**, not the final release key. Preview updates share that key; the final release will need a separate install (uninstall first if Android refuses the signature)."
+            echo "- Preview signing certificate SHA-256: \`$PREVIEW_CERT_SHA256\`. Publishing that fingerprint in \`/.well-known/assetlinks.json\` is what enables verified App Links; the captain owns that publication step."
             echo "- Default server: \`https://api-notes.mdelacour.com\`."
             echo "- The APK is a release build, but unminified on purpose while the app is in preview."
           } > "$RUNNER_TEMP/release-notes.md"
