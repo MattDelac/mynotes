@@ -129,6 +129,14 @@ presence/awareness yet.
   shortcut + `formatKeys` for the help sheet), `Editor.svelte` (CodeMirror 6 + yCollab binding).
   Routes: `s/[id]` (session page), `n/[id]` (frozen legacy per-note shares, redirects local
   notes to their session).
+- BYOK session assistant: `apps/web/src/lib/ai/` (contract, SSE, provider adapters, agent loop,
+  context builder, capability-checked session tools, mutation journal + revert, key/chat stores)
+  and Android `.../mynotes/ai/` + `data/ai/` mirror the same contract. Authoritative spec:
+  `docs/ai-chat-contract.md`; cross-client fixtures: `fixtures/ai-chat/v1/*.json` (loaded by both
+  test suites; Android wires them via the `test` source set in `app/build.gradle.kts`). The
+  assistant never touches the relay or API; keys stay per-client and chat history is local.
+  Engine batch edits and relative-position anchors live in `apps/android/engine/engine.go`
+  (`ApplyEditsJSON`, `CreateAnchor`, `ResolveAnchor`); rebuild the AAR after touching them.
 - Svelte 5 runes (`$state`, `$derived`), tabs for indentation (Prettier config), no comments
   unless asked.
 - Commit style: conventional commits (`feat:`, `fix:`, `chore:`).
